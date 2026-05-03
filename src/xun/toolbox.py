@@ -23,7 +23,7 @@ def tool_to_openai_format(tool: mcp.types.Tool):
 
 F = TypeVar("F", bound=Callable)
 class ToolBox:
-    STANDARD_TOOL_SET: list[Callable[[], list[Callable]]] = [
+    STANDARD_TOOL_FACTORIES: list[Callable[[], list[Callable]]] = [
         expose_system_tools,
         expose_fs_tools, 
         expose_cmd_tools,
@@ -40,7 +40,7 @@ class ToolBox:
         Register all standard tools provided by the system. 
         Call this method to quickly set up a toolbox with a wide range of capabilities for your agent.
         """
-        for tool_set_fn in self.STANDARD_TOOL_SET:
+        for tool_set_fn in self.STANDARD_TOOL_FACTORIES:
             tool_set = tool_set_fn()
             self.register_many(tool_set)
         return self

@@ -32,7 +32,7 @@ REPL_HELP_MSG = """\
 """
 
 
-def _input_to_instruction(raw_input: str) -> Instruction:
+def input_to_instruction(raw_input: str) -> Instruction:
     if raw_input.startswith("."):
         raw_command = raw_input[1:].strip()
         command = raw_command.split()[0] if raw_command else ""
@@ -41,8 +41,10 @@ def _input_to_instruction(raw_input: str) -> Instruction:
     return MessageInstruction(content=raw_input)
 
 class Display(DisplayAbstract):
-    console = rich.console.Console()
-    lock = threading.Lock()
+
+    def __init__(self):
+        self.console = rich.console.Console()
+        self.lock = threading.Lock()
 
     def _print(self, *args, **kwargs):
         with self.lock:
@@ -57,7 +59,7 @@ class Display(DisplayAbstract):
             with self.lock:
                 raw_input = input(">>> ").strip()
             if raw_input:
-                return _input_to_instruction(raw_input)
+                return input_to_instruction(raw_input)
     
     def get_confirm(
         self,
@@ -69,8 +71,8 @@ class Display(DisplayAbstract):
         ) -> bool:
         with self.lock:
             if message:
-                _note(message, title, subtitle)
-            return _confirm(prompt, default)
+                _note(self.console, message, title, subtitle)
+            return _confirm(self.console, prompt, default)
 
     def handle(self, event: DisplayEvent):
         match event.event:
@@ -190,12 +192,11 @@ class Display(DisplayAbstract):
                     self._print(f":red_circle: tool error: {result['error']}")
             
             case _:
-                ...
+                self._print(f":question: Unhandled event: {event}")
 
-def _confirm(prompt: str, default: bool = False) -> bool:
+def _confirm(console: rich.console.Console, prompt: str, default: bool = False) -> bool:
 
     cfg = app_config()
-    console = Display.console
     if not cfg.auto_confirm:
         ret = rich.prompt.Confirm.ask(prompt, default=default)
         console.print()  # add a newline after the prompt
@@ -252,10 +253,10 @@ def _confirm(prompt: str, default: bool = False) -> bool:
         finally:
             selector.close()
 
-def _note(message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
+def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(
         message, border_style="yellow", 
         title=f"[bold yellow]{title}[/bold yellow]" if title else None,
         subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None,
         )
-    Display.console.print(panel)
+    console.print(panel)

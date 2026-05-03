@@ -4,24 +4,15 @@ import readline     # noqa
 import argparse
 from dotenv import load_dotenv
 from pathlib import Path
-import shlex
 from typing import Callable
 
-from .display_abstract import CommandInstruction, ErrorEvent, MessageInstruction, ShowHelpEvent, ShowHistoryEvent
+from .display_abstract import CommandInstruction, ErrorEvent, ShowHelpEvent, ShowHistoryEvent
+from .display import input_to_instruction
 from .context import global_context
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
-
-
-def input_to_instruction(raw_input: str) -> MessageInstruction | CommandInstruction:
-    if raw_input.startswith("."):
-        raw_command = raw_input[1:].strip()
-        command = raw_command.split()[0] if raw_command else ""
-        args = shlex.split(raw_command)[1:] if raw_command else []
-        return CommandInstruction(command=command, args=args)
-    return MessageInstruction(content=raw_input)
 
 
 def evaluate_command(instruction: CommandInstruction, agent: Agent):
@@ -113,15 +104,18 @@ def setup_agent(
     return agent
 
 def interactive_session(agent: Agent, task = ""):
-    while True:
-        user_input = input_to_instruction(task) if task else global_context.lock().display.get_instruction()
-        task = ""  # only use the initial task once
+    display = global_context.lock().display
+    if task:
+        inst = input_to_instruction(task)
+    else:
+        inst = display.get_instruction()
 
-        if isinstance(user_input, CommandInstruction):
-            evaluate_command(user_input, agent)
+    while True:
+        if isinstance(inst, CommandInstruction):
+            evaluate_command(inst, agent)
             continue
-        
-        agent.instruct(user_input.content).execute()
+        agent.instruct(inst.content).execute()
+        inst = display.get_instruction()
 
 def main():
     load_dotenv()
