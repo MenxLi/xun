@@ -37,16 +37,12 @@ xun
 
 ## Features
 
-- **🔧 File System** — Read, write, list, and manage files securely within the working directory.
-- **💻 Command Execution** — Run shell commands with an allowlist and safety checks.
-- **🌐 Web Search** — Search the web and retrieve structured results.
-- **🌍 Browser Automation** — Fetch rendered pages and convert HTML to markdown.
-- **🤖 Sub-Agents** — Spawn isolated child agents for complex, multi-step tasks.
-- **🖥️ Rich CLI** — Beautiful terminal output with spinners, panels, and syntax highlighting.
-
-## Interactive Commands
+![Features](https://limengxun-public-1322620498.cos.ap-guangzhou.myqcloud.com/images/260504-xun-3jyR8sMPHP.png)
 
 Input `.help` to see the full list of commands.
+
+<details>
+<summary>Interactive Commands</summary>
 
 - **`.help`** — Show help message.
 - **`.restart`** — Clear conversation history and restart.
@@ -59,6 +55,8 @@ Input `.help` to see the full list of commands.
 - **`.load`** — Load conversation history from a JSON file (defaults to the latest).
 - **`.history`** — Show conversation history in the terminal.
 - **`.exit`** — Exit the program.
+
+</details>
 
 ## Configuration
 
