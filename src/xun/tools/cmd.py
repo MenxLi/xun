@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable, TypedDict
 
-from ..context import tool_call_context, global_context
+from ..context import tool_call_context
 
 CMD_ALLOWLIST = {
     "ls",
@@ -370,7 +370,8 @@ def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
     )
 
 def expose_cmd_tools() -> list[Callable]:
+    import rich
     if os.name == "nt":
-        global_context.lock().display.info("The cmd_exec tool is not available on Windows. Skip registering it.")
+        rich.print("[Warning] The cmd_exec tool is not available on Windows. Skip registering it.")
         return []
     return [cmd_exec]

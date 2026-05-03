@@ -24,6 +24,12 @@ def _get_ttl_hash():
     return round(time.time() / 3600)
 
 class Browser:
+    def __init__(self):
+        # test if playwright can be launched successfully
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            browser.close()
+        
     def _with_page(self, timeout_ms: int, action: Callable[[Page], PageResult]) -> PageResult:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
@@ -102,5 +108,10 @@ class Browser:
         return _slice_content(r.content, start_char, max_chars)
 
 def expose_browser_tools() -> list[Callable]:
-    browser = Browser()
-    return [browser.browser_get_page]
+    import rich
+    try:
+        browser = Browser()
+        return [browser.browser_get_page]
+    except Exception as e:
+        rich.print(f"[Warning] Failed to initialize Browser tools: {e}. Skip registering browser tools.")
+        return []
