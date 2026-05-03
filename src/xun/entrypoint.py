@@ -1,7 +1,7 @@
 # import for arrow key support in input()
 import readline     # noqa
 
-import argparse
+import argparse, sys
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
@@ -130,12 +130,23 @@ def interactive_session(agent: Agent, task = ""):
                 display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
         inst = display.get_instruction()
 
+def non_interactive_session(agent: Agent, instruction: str):
+    inst = input_to_instruction(instruction)
+    match inst:
+        case CommandInstruction():
+            evaluate_command(inst, agent)
+        case MessageInstruction():
+            agent.instruct(inst.content).execute()
+        case _:
+            agent.display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
+
 def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Run the agent.")
     parser.add_argument("instruction", type=str, help="The instruction for the agent.", default="", nargs="?")
     parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
+    parser.add_argument("--non-interactive", action="store_true", help="Run in non-interactive mode, the instruction will be executed directly without interactive command loop. ")
     args = parser.parse_args()
 
     user_input = args.instruction.strip()
@@ -147,6 +158,12 @@ def main():
         persistent_store = None
 
     agent = setup_agent(persistent_store=persistent_store)
-    interactive_session(agent, user_input)
+    interactive = sys.stdin.isatty() and sys.stdout.isatty() and not args.non_interactive
+    if interactive:
+        interactive_session(agent, user_input)
+    else:
+        if not user_input:
+            raise ValueError("Instruction is required in non-interactive mode.")
+        non_interactive_session(agent, user_input)
 
 __all__ = ["main", "setup_agent", "interactive_session"]
