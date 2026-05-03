@@ -40,6 +40,7 @@ def input_to_instruction(raw_input: str) -> Instruction:
         return CommandInstruction(command=command, args=args)
     return MessageInstruction(content=raw_input)
 
+
 class Display(DisplayAbstract):
 
     def __init__(self):
@@ -49,7 +50,7 @@ class Display(DisplayAbstract):
     def _print(self, *args, **kwargs):
         with self.lock:
             self.console.print(*args, **kwargs)
-    
+
     def get_instruction(self) -> Instruction:
         while True:
             self._print("[gray]Input (`.help` to show help message).[/gray]")
@@ -57,14 +58,14 @@ class Display(DisplayAbstract):
                 raw_input = input(">>> ").strip()
             if raw_input:
                 return input_to_instruction(raw_input)
-    
+
     def get_confirm(
         self,
         prompt: str,
         message: Optional[str] = None,
         title: Optional[str] = None,
         subtitle: str | None = None,
-        default: bool = True, 
+        default: bool = True,
         ) -> bool:
         with self.lock:
             if message:
@@ -74,125 +75,156 @@ class Display(DisplayAbstract):
     def on_event(self, event: DisplayEvent):
         match event.event:
             case ShowHelpEvent():
-                self._print(
-                    rich.panel.Panel.fit(
-                        REPL_HELP_MSG,
-                        title="[bold blue]Help[/bold blue]",
-                        border_style="green",
-                    )
-                )
-
-            case ShowHistoryEvent(history=history):
-                def role_color(role: str) -> str:
-                    if role == "system": return "magenta"
-                    elif role == "user": return "cyan"
-                    elif role == "assistant": return "green"
-                    elif role == "tool": return "yellow"
-                    else: return "white"
-
-                if not history:
-                    self._print(
-                        rich.panel.Panel(
-                            "[dim]No conversation history yet.[/dim]",
-                            title="[bold blue]Conversation History[/bold blue]",
-                            border_style="green",
-                            box=rich.box.ROUNDED,
-                            padding=(0, 1),
-                        )
-                    )
-                    return
-
-                sub_panels: list[rich.panel.Panel] = []
-                counter = 0
-                for record in history:
-                    if not record['content']:
-                        continue
-                    counter += 1
-                    color = role_color(record["role"])
-                    row = rich.table.Table.grid(expand=True)
-                    row.add_column(style=f"bold {color}", width=10)
-                    row.add_column(ratio=1)
-                    row.add_row(
-                        record["role"],
-                        rich.markdown.Markdown(
-                            record["content"],
-                            code_theme="monokai",
-                            hyperlinks=True,
-                        ),
-                    )
-                    sub_panels.append(
-                        rich.panel.Panel(
-                            row,
-                            border_style=color,
-                            box=rich.box.ROUNDED,
-                            padding=(0, 0),
-                        )
-                    )
-
-                self._print(
-                    rich.panel.Panel(
-                        rich.console.Group(*sub_panels),
-                        title="[bold blue]Conversation History[/bold blue]",
-                        subtitle=f"[dim]{counter} msgs[/dim]",
-                        box=rich.box.ROUNDED,
-                        padding=(0, 1),
-                    )
-                )
-            
-            case ToolCallEvent(tool_name=tool_name, args=arguments, tool_call_id=tool_call_id):
-                assert event.tool_call_context is not None, "ToolCallEvent must have been emitted within a tool call context"
-                def arg_str(args: JsonType) -> str:
-                    if isinstance(args, (str, int, float, bool, type(None))):
-                        return repr(args)
-                    elif isinstance(args, list):
-                        return "[" + ", ".join(arg_str(item) for item in args) + "]"
-                    assert isinstance(args, dict)
-
-                    s = []
-                    for k, v in args.items():
-                        if isinstance(v, str):
-                            if len(v) > 50:
-                                v = v[:47] + "..."
-                            v = "\'" + v + "\'"
-                        s.append(f"[bold yellow]{k}[/bold yellow]: {v}")
-                    return ", ".join(s)
-                tool_call_sha = hashlib.sha1(tool_call_id.encode()).hexdigest()[:6]
-                leading = f":wrench: {event.tool_call_context.agent.name} [dim]{tool_call_sha}[/dim]"
-                self._print(f"{leading} [bold green]{tool_name}[/bold green]({arg_str(arguments)})")
-
-            case ModelWorkingEvent(remaining_iterations=remaining_iterations):
-                assert event.execution_context is not None, "ModelWorkingEvent must have been emitted within an execution context"
-                self._print(
-                    f":green_circle: {event.execution_context.agent.name} running. " + 
-                    (f"(max remaining iterations: {remaining_iterations})" if remaining_iterations is not None and remaining_iterations < 8 else "")
-                    )
-            
-            case ModelMessageEvent(content=message):
-                assert event.execution_context is not None, "ModelMessageEvent must have been emitted within an execution context"
-                self._print(
-                    rich.panel.Panel(
-                        rich.markdown.Markdown(
-                            message, 
-                            code_theme="monokai",
-                            hyperlinks=True,
-                        ),
-                        title=f"[bold blue]{event.execution_context.agent.name}[/bold blue]",
-                        border_style="blue",
-                    ), 
-                )
-
-            case ErrorEvent(message=message):
-                self._print(f":red_circle: {message}")
-
-            case ToolResultEvent(result=result):
-                if isinstance(result, dict) and "error" in result:
-                    self._print(f":red_circle: tool error: {result['error']}")
-
-            case InfoEvent(message=message):
-                self._print(f":information_source: {message}")
-
+                self.__on_show_help(event)
+            case ShowHistoryEvent():
+                self.__on_show_history(event)
+            case ToolCallEvent():
+                self.__on_tool_call(event)
+            case ModelWorkingEvent():
+                self.__on_model_working(event)
+            case ModelMessageEvent():
+                self.__on_model_message(event)
+            case ErrorEvent():
+                self.__on_error(event)
+            case ToolResultEvent():
+                self.__on_tool_result(event)
+            case InfoEvent():
+                self.__on_info(event)
             case _:
-                self._print(f":question: Unhandled event: {event}")
+                self.__on_unhandled(event)
+
+    # ── Private dispatch handlers ──────────────────────────────────────
+
+    def __on_show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:
+        self._print(
+            rich.panel.Panel.fit(
+                REPL_HELP_MSG,
+                title="[bold blue]Help[/bold blue]",
+                border_style="green",
+            )
+        )
+
+    def __on_show_history(self, event: DisplayEvent[ShowHistoryEvent]) -> None:
+        history: list[Conversation.MessageRecord] = event.event.history
+
+        if not history:
+            self._print(
+                rich.panel.Panel(
+                    "[dim]No conversation history yet.[/dim]",
+                    title="[bold blue]Conversation History[/bold blue]",
+                    border_style="green",
+                    box=rich.box.ROUNDED,
+                    padding=(0, 1),
+                )
+            )
+            return
+
+        sub_panels: list[rich.panel.Panel] = []
+        counter = 0
+        for record in history:
+            if not record['content']:
+                continue
+            counter += 1
+            color = self.__role_color(record["role"])
+            row = rich.table.Table.grid(expand=True)
+            row.add_column(style=f"bold {color}", width=10)
+            row.add_column(ratio=1)
+            row.add_row(
+                record["role"],
+                rich.markdown.Markdown(
+                    record["content"],
+                    code_theme="monokai",
+                    hyperlinks=True,
+                ),
+            )
+            sub_panels.append(
+                rich.panel.Panel(
+                    row,
+                    border_style=color,
+                    box=rich.box.ROUNDED,
+                    padding=(0, 0),
+                )
+            )
+
+        self._print(
+            rich.panel.Panel(
+                rich.console.Group(*sub_panels),
+                title="[bold blue]Conversation History[/bold blue]",
+                subtitle=f"[dim]{counter} msgs[/dim]",
+                box=rich.box.ROUNDED,
+                padding=(0, 1),
+            )
+        )
+
+    def __on_tool_call(self, event: DisplayEvent[ToolCallEvent]) -> None:
+        assert event.tool_call_context is not None, "ToolCallEvent must have been emitted within a tool call context"
+        ev: ToolCallEvent = event.event
+        tool_call_sha = hashlib.sha1(ev.tool_call_id.encode()).hexdigest()[:6]
+        leading = f":wrench: {event.tool_call_context.agent.name} [dim]{tool_call_sha}[/dim]"
+        self._print(f"{leading} [bold green]{ev.tool_name}[/bold green]({self.__arg_str(ev.args)})")
+
+    def __on_model_working(self, event: DisplayEvent[ModelWorkingEvent]) -> None:
+        assert event.execution_context is not None, "ModelWorkingEvent must have been emitted within an execution context"
+        ev: ModelWorkingEvent = event.event
+        self._print(
+            f":green_circle: {event.execution_context.agent.name} running. " +
+            (f"(max remaining iterations: {ev.remaining_iterations})" if ev.remaining_iterations is not None and ev.remaining_iterations < 8 else "")
+        )
+
+    def __on_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
+        assert event.execution_context is not None, "ModelMessageEvent must have been emitted within an execution context"
+        ev: ModelMessageEvent = event.event
+        self._print(
+            rich.panel.Panel(
+                rich.markdown.Markdown(
+                    ev.content,
+                    code_theme="monokai",
+                    hyperlinks=True,
+                ),
+                title=f"[bold blue]{event.execution_context.agent.name}[/bold blue]",
+                border_style="blue",
+            ),
+        )
+
+    def __on_error(self, event: DisplayEvent[ErrorEvent]) -> None:
+        self._print(f":red_circle: {event.event.message}")
+
+    def __on_tool_result(self, event: DisplayEvent[ToolResultEvent]) -> None:
+        ev: ToolResultEvent = event.event
+        if isinstance(ev.result, dict) and "error" in ev.result:
+            self._print(f":red_circle: tool error: {ev.result['error']}")
+
+    def __on_info(self, event: DisplayEvent[InfoEvent]) -> None:
+        self._print(f":information_source: {event.event.message}")
+
+    def __on_unhandled(self, event: DisplayEvent) -> None:
+        self._print(f":question: Unhandled event: {event}")
+
+    # ── Helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def __role_color(role: str) -> str:
+        match role:
+            case "system": return "magenta"
+            case "user": return "cyan"
+            case "assistant": return "green"
+            case "tool": return "yellow"
+            case _: return "white"
+
+    @staticmethod
+    def __arg_str(args: JsonType) -> str:
+        if isinstance(args, (str, int, float, bool, type(None))):
+            return repr(args)
+        if isinstance(args, list):
+            return "[" + ", ".join(Display.__arg_str(item) for item in args) + "]"
+        assert isinstance(args, dict)
+        s = []
+        for k, v in args.items():
+            if isinstance(v, str):
+                v = ("'" + v[:47] + "...'") if len(v) > 50 else ("'" + v + "'")
+            s.append(f"[bold yellow]{k}[/bold yellow]: {v}")
+        return ", ".join(s)
+
 
 def _confirm(console: rich.console.Console, prompt: str, default: bool = False) -> bool:
 
@@ -255,7 +287,7 @@ def _confirm(console: rich.console.Console, prompt: str, default: bool = False) 
 
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(
-        message, border_style="yellow", 
+        message, border_style="yellow",
         title=f"[bold yellow]{title}[/bold yellow]" if title else None,
         subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None,
         )
