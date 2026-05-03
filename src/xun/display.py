@@ -50,9 +50,6 @@ class Display(DisplayAbstract):
         with self.lock:
             self.console.print(*args, **kwargs)
     
-    def info(self, message: str):
-        self._print(f":information_source: {message}")
-    
     def get_instruction(self) -> Instruction:
         while True:
             self._print("[gray]Input (`.help` to show help message).[/gray]")
@@ -190,7 +187,10 @@ class Display(DisplayAbstract):
             case ToolResultEvent(result=result):
                 if isinstance(result, dict) and "error" in result:
                     self._print(f":red_circle: tool error: {result['error']}")
-            
+
+            case InfoEvent(message=message):
+                self._print(f":information_source: {message}")
+
             case _:
                 self._print(f":question: Unhandled event: {event}")
 

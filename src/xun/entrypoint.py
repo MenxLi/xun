@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
 
-from .display_abstract import DisplayAbstract, CommandInstruction, ErrorEvent, ShowHelpEvent, ShowHistoryEvent
+from .display_abstract import DisplayAbstract, CommandInstruction, ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
 from .display import input_to_instruction
 from .context import global_context
 from .toolbox import ToolBox
@@ -23,33 +23,33 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
 
         case "restart":
             agent.conversation.clear()
-            display.info("Conversation history cleared.")
+            display.emit(InfoEvent(message="Conversation history cleared."))
 
         case "retry":
             records = agent.conversation.pop_from_last_user_message()
             assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
             msg = records[0]["content"]
-            display.info(f"Cleared to last user message. ({msg[:50] + '...' if len(msg) > 50 else msg})")
+            display.emit(InfoEvent(message=f"Cleared to last user message. ({msg[:50] + '...' if len(msg) > 50 else msg})"))
 
         case "revise":
             agent.conversation.pop_from_last_user_message(inclusive=False)
-            display.info("Cleared to last user message.")
+            display.emit(InfoEvent(message="Cleared to last user message."))
 
         case "config":
             config = agent.app_config
-            display.info(str(config.dict()))
+            display.emit(InfoEvent(message=str(config.dict())))
 
         case "tools":
             tools = agent.toolbox.list_tools()
             if not tools:
-                display.info("No tools registered.")
+                display.emit(InfoEvent(message="No tools registered."))
                 return
-            display.info("\n".join([f"{tool.name}: {tool.description}" for tool in tools]))
+            display.emit(InfoEvent(message="\n".join([f"{tool.name}: {tool.description}" for tool in tools])))
 
         case "dump":
             store = Store()
             agent.dump(aim_dir:=store.next_history_store())
-            display.info(f"Conversation history dumped to {aim_dir}")
+            display.emit(InfoEvent(message=f"Conversation history dumped to {aim_dir}"))
 
         case "load":
             if instruction.args:
@@ -64,11 +64,11 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
                 store = Store()
                 latest_dir = store.latest_history_store()
                 if latest_dir is None:
-                    display.info("No conversation history found.")
+                    display.emit(InfoEvent(message="No conversation history found."))
                     return
                 aim_dir = latest_dir
             agent.load(aim_dir)
-            display.info(f"Conversation history loaded from {aim_dir}")
+            display.emit(InfoEvent(message=f"Conversation history loaded from {aim_dir}"))
 
         case "condense":
             agent.condense_conversation()

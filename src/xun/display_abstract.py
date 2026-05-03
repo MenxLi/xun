@@ -9,6 +9,10 @@ if TYPE_CHECKING:
 JsonType = str | int | float | bool | None | dict[str, "JsonType"] | list["JsonType"]
 
 @dataclass
+class InfoEvent:
+    message: str
+
+@dataclass
 class ModelWorkingEvent:
     model_call_id: str
     remaining_iterations: Optional[int] = None
@@ -48,6 +52,7 @@ DisplayEventType = (
     | ModelMessageEvent 
     | ToolCallEvent 
     | ToolResultEvent
+    | InfoEvent
     | ErrorEvent
     )
 DisplayEventT = TypeVar( "DisplayEventT", bound=DisplayEventType)
@@ -73,11 +78,11 @@ def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
         tool_call_context=tool_call_context.get(),
         event=event,
     )
+
 class DisplayAbstract(ABC):
     @abstractmethod
-    def info(self, message: str):...
-    @abstractmethod
     def get_instruction(self) -> Instruction:...
+
     @abstractmethod
     def get_confirm(
         self,
@@ -87,8 +92,13 @@ class DisplayAbstract(ABC):
         subtitle: str | None = None,
         default: bool = True, 
         ) -> bool:...
+
+    def info(self, message: str):
+        self.emit(InfoEvent(message=message))
+
     def emit(self, ev: DisplayEventType):
         event = assemble_event(ev)
         self.handle(event)
+
     @abstractmethod
     def handle(self, event: DisplayEvent):...

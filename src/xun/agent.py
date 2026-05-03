@@ -44,7 +44,7 @@ class Agent:
             if persistent_store.exists():
                 assert persistent_store.is_dir(), f"Persistent store path {persistent_store} must be a directory."
                 self.load(persistent_store)
-            self.display.info(f"Using persistent store from {persistent_store}")
+            self.display.emit(InfoEvent(message=f"Using persistent store from {persistent_store}"))
         self.persistent_store = persistent_store
 
         if display:
@@ -178,7 +178,7 @@ def _condense_conversation(agent: Agent):
     """
     Condense the conversation history of the agent by keeping only the last user message and the assistant messages after that. 
     """
-    agent.display.info("Condensing conversation history...")
+    agent.display.emit(InfoEvent(message="Condensing conversation history..."))
 
     keep_messages = agent.conversation.pop_from_last_user_message()
     condense_messages = agent.conversation.messages
@@ -204,7 +204,7 @@ def _condense_conversation(agent: Agent):
     if summary is None:
         agent.display.emit(ErrorEvent(message="Failed to condense conversation history: no summary generated."))
         return
-    agent.display.info(f"Conversation history condensed. Summary:\n{summary}")
+    agent.display.emit(InfoEvent(message=f"Conversation history condensed. Summary:\n{summary}"))
 
     sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
     agent.conversation.set_system_message_content(sys_msg)
