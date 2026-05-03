@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
 
-from .display_abstract import DisplayAbstract, CommandInstruction, ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
+from .display_abstract import (
+    DisplayAbstract, 
+    CommandInstruction, MessageInstruction, 
+    ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
+)
 from .display import input_to_instruction
 from .context import global_context
 from .toolbox import ToolBox
@@ -117,10 +121,13 @@ def interactive_session(agent: Agent, task = ""):
         inst = display.get_instruction()
 
     while True:
-        if isinstance(inst, CommandInstruction):
-            evaluate_command(inst, agent)
-            continue
-        agent.instruct(inst.content).execute()
+        match inst:
+            case CommandInstruction():
+                evaluate_command(inst, agent)
+            case MessageInstruction():
+                agent.instruct(inst.content).execute()
+            case _:
+                display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
         inst = display.get_instruction()
 
 def main():
