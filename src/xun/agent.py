@@ -150,7 +150,7 @@ class Agent:
         return choice.message.content or "[No content]"
 
     def execute(self, max_iterations: int = 64) -> str:
-        with TemporaryDirectory(prefix=f"{self.name}_", delete=True) as temp_dir_path:
+        with TemporaryDirectory(prefix=f"{self.name}_") as temp_dir_path:
             temp_dir = Path(temp_dir_path)
             global_context.lock().tempdirs.add(temp_dir)
             execution_context.set(ExecutionContext(
