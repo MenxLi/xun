@@ -259,15 +259,16 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
         return False
 
     ctx = tool_call_context.get()
-    agent_name = ctx.agent.name if ctx else ""
+    assert ctx is not None, "Tool call context is required for command execution confirmation."
+
     reasons_str = " and ".join(policy.reasons)
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
-    if not global_context.lock().display.get_confirm(
+    if not ctx.display.get_confirm(
         "Allow command?", message,
         title="Command Execution Confirmation",
-        subtitle=agent_name,
+        subtitle=ctx.agent.name if ctx else None,
         default=True,
     ):
         raise RuntimeError(f"Command `{spec.command_line}` was rejected by user confirmation.")

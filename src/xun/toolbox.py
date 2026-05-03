@@ -59,8 +59,13 @@ class ToolBox:
         if agent_getter is None:
             def _agent_getter():
                 from .agent import Agent    # avoid circular import
+                from .context import tool_call_context
+                tool_context = tool_call_context.get()
+                if tool_context is None:
+                    raise RuntimeError("tool_call_context is not set, cannot create sub-agent")
                 agent = Agent(
                     toolbox=ToolBox().with_defaults(),
+                    display=tool_context.display,
                 ).system(get_subagent_prompt())
                 return agent
             agent_getter = _agent_getter

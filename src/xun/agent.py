@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import uuid
 
 from .display_abstract import *
+from .display import Display
 from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
@@ -20,6 +21,7 @@ class Agent:
         toolbox: ToolBox | None = None,
         openai_client: OpenAI | None = None, 
         persistent_store: Path | None = None,
+        display: DisplayAbstract | None = None,
         ):
         self.name = name
         self.app_config = app_config()
@@ -44,10 +46,11 @@ class Agent:
                 self.load(persistent_store)
             self.display.info(f"Using persistent store from {persistent_store}")
         self.persistent_store = persistent_store
-    
-    @property
-    def display(self) -> DisplayAbstract:
-        return global_context.lock().display
+
+        if display:
+            self.display = display
+        else:
+            self.display = Display()
 
     def dump(self, store_dir: Path):
         if not store_dir.exists():

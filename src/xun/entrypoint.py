@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
 
-from .display_abstract import CommandInstruction, ErrorEvent, ShowHelpEvent, ShowHistoryEvent
+from .display_abstract import DisplayAbstract, CommandInstruction, ErrorEvent, ShowHelpEvent, ShowHistoryEvent
 from .display import input_to_instruction
 from .context import global_context
 from .toolbox import ToolBox
@@ -16,7 +16,7 @@ from .prompt import get_system_prompt
 
 
 def evaluate_command(instruction: CommandInstruction, agent: Agent):
-    display = global_context.lock().display
+    display = agent.display
     match instruction.command:
         case "help":
             display.emit(ShowHelpEvent())
@@ -91,6 +91,7 @@ def setup_agent(
     default_tools: bool = True,
     default_system_prompt: bool = True,
     persistent_store: Path | None = None,
+    display: DisplayAbstract | None = None,
     ) -> Agent:
     toolbox = ToolBox()
     if default_tools:
@@ -98,13 +99,18 @@ def setup_agent(
         toolbox.with_defaults().with_subagent_provider()
     if tools:
         toolbox.register_many(tools)
-    agent = Agent(name=name, toolbox=toolbox, persistent_store=persistent_store)
+    agent = Agent(
+        name=name, 
+        toolbox=toolbox, 
+        persistent_store=persistent_store, 
+        display=display
+        )
     if default_system_prompt:
         agent.system(get_system_prompt())
     return agent
 
 def interactive_session(agent: Agent, task = ""):
-    display = global_context.lock().display
+    display = agent.display
     if task:
         inst = input_to_instruction(task)
     else:

@@ -23,11 +23,12 @@ def __path_check_all(*paths: str):
 def __confirm_dangerous_operation(operation: str) -> bool:
     message = f"Going to {operation}."
     tool_context = tool_call_context.get()
-    subtitle = None if not tool_context else f"[dim]{tool_context.agent.name} ({tool_context.tool_name})[/dim]"
-    return global_context.lock().display.get_confirm(
+    assert tool_context is not None, "Tool call context is required for confirming dangerous file system operations."
+
+    return tool_context.display.get_confirm(
         "Proceed?", message,
         title="File System Operation Confirmation",
-        subtitle=subtitle,
+        subtitle=f"{tool_context.agent.name} ({tool_context.tool_name})",
         default=True,
     )
 
