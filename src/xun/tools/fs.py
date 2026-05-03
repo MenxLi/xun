@@ -1,7 +1,6 @@
 from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
-from ..display import confirm_with_note
 from ..context import execution_context, global_context, tool_call_context
 from ..util import fmt_size, fmt_time
 
@@ -25,7 +24,7 @@ def __confirm_dangerous_operation(operation: str) -> bool:
     message = f"Going to {operation}."
     tool_context = tool_call_context.get()
     subtitle = None if not tool_context else f"[dim]{tool_context.agent.name} ({tool_context.tool_name})[/dim]"
-    return confirm_with_note(
+    return global_context.lock().display.get_confirm(
         "Proceed?", message,
         title="File System Operation Confirmation",
         subtitle=subtitle,

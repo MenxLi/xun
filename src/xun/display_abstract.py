@@ -87,5 +87,8 @@ class DisplayAbstract(ABC):
         subtitle: str | None = None,
         default: bool = True, 
         ) -> bool:...
+    def emit(self, ev: DisplayEventType):
+        event = assemble_event(ev)
+        self.handle(event)
     @abstractmethod
-    def emit(self, ev: DisplayEventType):...
+    def handle(self, event: DisplayEvent):...

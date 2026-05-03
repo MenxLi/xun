@@ -7,8 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Callable, TypedDict
 
-from ..display import confirm_with_note, note
-from ..context import tool_call_context
+from ..context import tool_call_context, global_context
 
 CMD_ALLOWLIST = {
     "ls",
@@ -265,8 +264,8 @@ def _confirm_command_execution(spec: CommandSpec, policy: ConfirmationPolicy) ->
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
-    if not confirm_with_note(
-        "Allow command?", message, 
+    if not global_context.lock().display.get_confirm(
+        "Allow command?", message,
         title="Command Execution Confirmation",
         subtitle=agent_name,
         default=True,
@@ -371,6 +370,6 @@ def cmd_exec(command: str, timeout: float = 300) -> CmdExecResult:
 
 def expose_cmd_tools() -> list[Callable]:
     if os.name == "nt":
-        note("The cmd_exec tool is not available on Windows. Skip registering it.")
+        global_context.lock().display.info("The cmd_exec tool is not available on Windows. Skip registering it.")
         return []
     return [cmd_exec]

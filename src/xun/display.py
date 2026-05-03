@@ -72,8 +72,7 @@ class Display(DisplayAbstract):
                 _note(message, title, subtitle)
             return _confirm(prompt, default)
 
-    def emit(self, ev: DisplayEventType):
-        event = assemble_event(ev)
+    def handle(self, event: DisplayEvent):
         match event.event:
             case ShowHelpEvent():
                 self._print(
@@ -192,30 +191,6 @@ class Display(DisplayAbstract):
             
             case _:
                 ...
-
-
-_confirm_lock = threading.Lock()
-
-
-def confirm(prompt: str, default: bool = False) -> bool:
-    with _confirm_lock:
-        return _confirm(prompt, default)
-
-
-def note(message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
-    _note(message, title, subtitle)
-
-
-def confirm_with_note(
-    prompt: str,
-    message: str,
-    title: Optional[str] = "Note",
-    subtitle: str | None = None,
-    default: bool = True,
-    ) -> bool:
-    with Display.lock:
-        _note(message, title, subtitle)
-        return confirm(prompt, default)
 
 def _confirm(prompt: str, default: bool = False) -> bool:
 
