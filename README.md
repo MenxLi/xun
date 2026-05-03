@@ -29,7 +29,9 @@ pip install git+https://github.com/MenxLi/xun.git
 playwright install
 
 # 3. Configure environment variables (see `Configuration` section below)
-# 4. Run the agent
+vim .env
+
+# 4. Run the agent in interactive mode
 xun
 ```
 

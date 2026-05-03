@@ -5,7 +5,8 @@ import shutil
 import signal
 import subprocess
 from pathlib import Path
-from typing import Callable, TypedDict
+from typing import Callable
+from typing_extensions import TypedDict
 
 from ..context import tool_call_context
 

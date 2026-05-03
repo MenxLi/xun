@@ -1,5 +1,6 @@
 from openai.types import chat
-from typing import Any, TypedDict
+from typing import Any
+from typing_extensions import TypedDict
 from pathlib import Path
 import uuid, json, time
 

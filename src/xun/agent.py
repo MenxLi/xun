@@ -40,17 +40,17 @@ class Agent:
 
         self.conversation = Conversation()
 
+        if display:
+            self.display = display
+        else:
+            self.display = Display()
+
         if persistent_store:
             if persistent_store.exists():
                 assert persistent_store.is_dir(), f"Persistent store path {persistent_store} must be a directory."
                 self.load(persistent_store)
             self.display.emit(InfoEvent(message=f"Using persistent store from {persistent_store}"))
         self.persistent_store = persistent_store
-
-        if display:
-            self.display = display
-        else:
-            self.display = Display()
 
     def dump(self, store_dir: Path):
         if not store_dir.exists():
