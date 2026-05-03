@@ -32,11 +32,11 @@ class Locked(Generic[T]):
             self.value = value
 @dataclass
 class GlobalContext:
-    tempdirs: dict[str, Path]
+    tempdirs: set[Path]
     display: Display
 global_context = Locked(
     GlobalContext(
-        tempdirs={}, 
+        tempdirs=set(),
         display=Display(),
         )
     )

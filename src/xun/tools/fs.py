@@ -8,8 +8,8 @@ def __path_check(path: str):
     cwd_abs = Path.cwd().resolve()
     path_abs = Path(path).resolve()
     path_in_cwd = str(path_abs).startswith(str(cwd_abs))
-    temp_dirs = global_context.lock().tempdirs.values()
-    path_in_temp_dir = any(str(path_abs).startswith(str(temp_dir.resolve())) for temp_dir in temp_dirs)
+    temp_dirs = global_context.lock().tempdirs
+    path_in_temp_dir = any(temp_dir.resolve() in path_abs.parents for temp_dir in temp_dirs)
     if not path_in_cwd and not path_in_temp_dir:
         raise ValueError("Only paths within the current working directory, or any agent's temporary directory are allowed to be accessed.")
     return {

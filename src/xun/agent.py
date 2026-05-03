@@ -148,16 +148,17 @@ class Agent:
 
     def execute(self, max_iterations: int = 64) -> str:
         with TemporaryDirectory(prefix=f"{self.name}_", delete=True) as temp_dir_path:
-            global_context.lock().tempdirs[self.name] = Path(temp_dir_path)
+            temp_dir = Path(temp_dir_path)
+            global_context.lock().tempdirs.add(temp_dir)
             execution_context.set(ExecutionContext(
                 agent=self, 
-                tempdir=Path(temp_dir_path),
+                tempdir=temp_dir,
                 ))
             try:
                 return self._execute(max_iterations=max_iterations)
             finally:
                 execution_context.set(None)
-                del global_context.lock().tempdirs[self.name]
+                global_context.lock().tempdirs.remove(temp_dir)
     
     def system(self, content: str):
         self.conversation.set_system_message_content(content)
