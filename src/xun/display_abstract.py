@@ -93,12 +93,9 @@ class DisplayAbstract(ABC):
         default: bool = True, 
         ) -> bool:...
 
-    def info(self, message: str):
-        self.emit(InfoEvent(message=message))
-
     def emit(self, ev: DisplayEventType):
         event = assemble_event(ev)
-        self.handle(event)
+        self.on_event(event)
 
     @abstractmethod
-    def handle(self, event: DisplayEvent):...
+    def on_event(self, event: DisplayEvent):...

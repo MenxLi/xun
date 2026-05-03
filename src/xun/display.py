@@ -71,7 +71,7 @@ class Display(DisplayAbstract):
                 _note(self.console, message, title, subtitle)
             return _confirm(self.console, prompt, default)
 
-    def handle(self, event: DisplayEvent):
+    def on_event(self, event: DisplayEvent):
         match event.event:
             case ShowHelpEvent():
                 self._print(
