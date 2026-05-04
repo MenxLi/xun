@@ -35,12 +35,12 @@ def __confirm_dangerous_operation(operation: str) -> bool:
 def fs_temp_dir() -> str:
     """
     Get the path of the agent's temporary directory.
-    This directory is unique for each execution of the agent and is automatically cleaned up after execution.
+    This directory is unique for each of the agent and is automatically cleaned up on agent's cleanup.
     """
     ctx = execution_context.get()
     if ctx is None:
         raise RuntimeError("No execution context found. This function can only be used within the execution of an agent.")
-    return str(ctx.tempdir)
+    return str(ctx.agent.temp_dir)
 
 def fs_list(path: str, details = False) -> dict[Literal["directories", "files"], list[str]]:
     """
@@ -109,7 +109,7 @@ def fs_move(src: str, dst: str) -> Literal["OK"]:
         raise FileNotFoundError("Source file/directory does not exist.")
     # If the source file is in temp dir, we can be more lenient. 
     # Otherwise, we require confirmation for move operation.
-    if not __confirm_dangerous_operation(f"Move `{src}` to `{dst}`") and not path_loc[0]["path_in_temp_dir"]:
+    if not path_loc[0]["path_in_temp_dir"] and not __confirm_dangerous_operation(f"Move `{src}` to `{dst}`"):
         raise RuntimeError(f"Operation cancelled by user, `{src}` was not moved to `{dst}`.")
     shutil.move(src, dst)
     return "OK"
@@ -164,7 +164,7 @@ def fs_delete(path: str) -> str:
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
 
-    if not __confirm_dangerous_operation(f"Delete `{path}`") and not path_loc["path_in_temp_dir"]:
+    if not path_loc["path_in_temp_dir"] and not __confirm_dangerous_operation(f"Delete `{path}`"):
         raise RuntimeError(f"Operation cancelled by user, `{path}` was not deleted.")
 
     if p.is_file():

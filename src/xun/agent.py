@@ -1,6 +1,6 @@
 from openai import OpenAI
 from typing import Any
-import json
+import json, weakref
 import json_repair
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -51,6 +51,24 @@ class Agent:
                 self.load(persistent_store)
             self.display.emit(InfoEvent(message=f"Using persistent store from {persistent_store}"))
         self.persistent_store = persistent_store
+
+        self._temp_dir = None
+        def maybe_cleanup_temp_dir():
+            if self._temp_dir is not None:
+                self._temp_dir.__exit__(None, None, None)
+                self._temp_dir = None
+        weakref.finalize(self, maybe_cleanup_temp_dir)
+    
+    @property
+    def temp_dir(self) -> Path:
+        if self._temp_dir is None:
+            temp_dir_prefix = f"{self.name.replace(' ', '_').replace('/', '_')}_"
+            self._temp_dir = TemporaryDirectory(prefix=f"{temp_dir_prefix}")
+            dname = Path(self._temp_dir.__enter__())
+            global_context.lock().tempdirs.add(dname)
+            return dname
+        else:
+            return Path(self._temp_dir.name)
 
     def dump(self, store_dir: Path):
         if not store_dir.exists():
@@ -146,10 +164,7 @@ class Agent:
         with TemporaryDirectory(prefix=f"{name_prefix}_") as temp_dir_path:
             temp_dir = Path(temp_dir_path)
             global_context.lock().tempdirs.add(temp_dir)
-            execution_context.set(ExecutionContext(
-                agent=self, 
-                tempdir=temp_dir,
-                ))
+            execution_context.set(ExecutionContext( agent=self, ))
 
             try:
                 for iteration in range(max_iterations):

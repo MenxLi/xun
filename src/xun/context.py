@@ -21,7 +21,6 @@ tool_call_context = contextvars.ContextVar[Optional[ToolCallContext]]("tool_call
 @dataclass
 class ExecutionContext:
     agent: "Agent"
-    tempdir: Path
 
     @property
     def display(self) -> DisplayAbstract:
