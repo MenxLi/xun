@@ -69,14 +69,8 @@ class Agent:
         if self.persistent_store:
             self.dump(self.persistent_store)
     
-    def _execute(self, max_iterations: int = 64) -> str:
-        if max_iterations <= 0:
-            self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
-            return "[Error: Maximum tool call iterations exceeded.]"
-
-        model_call_id = str(uuid.uuid4())
-        self.display.emit(ModelWorkingEvent(model_call_id=model_call_id, remaining_iterations=max_iterations))
-        n_max_retries = 5
+    def _execute(self, call_id: str) -> tuple[bool, str]:
+        n_completion_max_retries = 3
         while True:
             try:
                 resp = self.openai_client.chat.completions.create(
@@ -93,12 +87,12 @@ class Agent:
                 if self.conversation.messages and self.conversation.messages[-1]["role"] == "user":
                     self.conversation.messages.pop()
                 self.display.emit(ErrorEvent(message="Execution interrupted by user."))
-                return "[Error: Execution interrupted by user.]"
+                return False, "[Error: Execution interrupted by user.]"
 
             except Exception as e:
                 self.display.emit(ErrorEvent(message=f"Error during chat completion: {e}"))
-                if n_max_retries > 0 and self.display.get_confirm("Retry?", default=True):
-                    n_max_retries -= 1
+                if n_completion_max_retries > 0 and self.display.get_confirm("Retry?", default=True):
+                    n_completion_max_retries -= 1
                     continue
                 else:
                     raise e
@@ -106,7 +100,7 @@ class Agent:
         choice = extract_tool_calls(resp.choices[0])
 
         if choice.message.content:
-            self.display.emit(ModelMessageEvent(model_call_id=model_call_id, content=choice.message.content))
+            self.display.emit(ModelMessageEvent(model_call_id=call_id, content=choice.message.content))
         self.conversation.add_agent_message(choice.message)
         self._dump()
 
@@ -145,9 +139,8 @@ class Agent:
         
         if __tool_called:
             self._dump()
-            return self._execute(max_iterations=max_iterations - 1)
         
-        return choice.message.content or "[No content]"
+        return __tool_called, choice.message.content or "[No content]"
 
     def execute(self, max_iterations: int = 64) -> str:
         name_prefix = self.name.replace(" ", "_").replace("/", "_")
@@ -158,8 +151,21 @@ class Agent:
                 agent=self, 
                 tempdir=temp_dir,
                 ))
+
             try:
-                return self._execute(max_iterations=max_iterations)
+                for iteration in range(max_iterations):
+                    model_call_id = str(uuid.uuid4())
+                    self.display.emit(ModelWorkingEvent(
+                        model_call_id=model_call_id, 
+                        remaining_iterations=max_iterations - iteration
+                        ))
+                    should_continue, result = self._execute(model_call_id)
+                    if not should_continue:
+                        return result
+
+                self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
+                return "[Error: Maximum tool call iterations exceeded.]"
+
             finally:
                 execution_context.set(None)
                 global_context.lock().tempdirs.remove(temp_dir)
