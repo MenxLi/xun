@@ -1,9 +1,10 @@
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .agent import Agent
+from typing import Callable, TypeVar
+import weakref, threading
 import mcp
 from openai.types import chat
-from typing import Callable, TypeVar
 from fastmcp import Client, FastMCP
 import asyncio
 from .tools import *
@@ -34,6 +35,18 @@ class ToolBox:
         self._mcp: FastMCP = FastMCP()
         self._client = Client(self._mcp)
         self._disabled_tools: set[str] = set()
+
+        def loop_start(loop: asyncio.AbstractEventLoop):
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+        loop = asyncio.new_event_loop()
+        _loop_thread = threading.Thread(target=loop_start, args=(loop,), daemon=True)
+        _loop_thread.start()
+        self._loop = loop
+        def loop_stop(loop: asyncio.AbstractEventLoop):
+            loop.call_soon_threadsafe(loop.stop)
+            _loop_thread.join()
+        weakref.finalize(self, loop_stop, loop)
     
     def with_defaults(self):
         """
@@ -81,7 +94,7 @@ class ToolBox:
             async with self._client:
                 tools = await self._client.list_tools()
                 return [ tool for tool in tools if tool.name not in self._disabled_tools ]
-        return asyncio.run(_list_tools())
+        return asyncio.run_coroutine_threadsafe(_list_tools(), self._loop).result()
     
     def call_tool(self, tool_name: str, arguments: dict):
         async def _call_tool():
@@ -90,7 +103,7 @@ class ToolBox:
                     name=tool_name,
                     arguments=arguments,
                 )
-        return asyncio.run(_call_tool())
+        return asyncio.run_coroutine_threadsafe(_call_tool(), self._loop).result()
 
     def list_tools_json(self):
         tools = self.list_tools()
