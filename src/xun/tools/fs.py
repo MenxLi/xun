@@ -4,7 +4,7 @@ from typing import Optional, Literal, Callable
 from ..context import execution_context, global_context, tool_call_context
 from ..util import fmt_size, fmt_time
 
-def __path_check(path: str):
+def path_check(path: str):
     cwd_abs = Path.cwd().resolve()
     path_abs = Path(path).resolve()
     path_in_cwd = str(path_abs).startswith(str(cwd_abs))
@@ -18,7 +18,7 @@ def __path_check(path: str):
     }
 
 def __path_check_all(*paths: str):
-    return [__path_check(path) for path in paths]
+    return [path_check(path) for path in paths]
 
 def __confirm_dangerous_operation(operation: str) -> bool:
     message = f"Going to {operation}."
@@ -47,7 +47,7 @@ def fs_list(path: str, details = False) -> dict[Literal["directories", "files"],
     List the contents of a directory at the specified path.
     Returns a list of file and directory names in the specified directory.
     """
-    __path_check(path)
+    path_check(path)
     if not details:
         return {
             "directories": [str(p.name) for p in Path(path).iterdir() if p.is_dir()],
@@ -76,7 +76,7 @@ def fs_read_file(
     Read content from a file at the specified path.
     You can specify the start and end line numbers to read a specific portion of the file. (start_line is inclusive, end_line is exclusive)
     """
-    __path_check(path)
+    path_check(path)
     lines = Path(path).read_text().splitlines()
     if start_line >= len(lines):
         return ""
@@ -88,7 +88,7 @@ def fs_write_file(path: str, content: str = "") -> Literal["OK"]:
     If the file does not exist, it will be created.
     If the file already exists, its content will be overwritten.
     """
-    path_loc = __path_check(path)
+    path_loc = path_check(path)
     if Path(path).exists() and not path_loc["path_in_temp_dir"]:
         if not __confirm_dangerous_operation(f"Overwrite existing file `{path}`"):
             raise RuntimeError(f"Operation cancelled by user, file `{path}` was not overwritten.")
@@ -150,7 +150,7 @@ def fs_mkdir(path: str) -> str:
     Create a directory at the specified path.
     If the directory already exists, it does nothing.
     """
-    __path_check(path)
+    path_check(path)
     Path(path).mkdir(exist_ok=True)
     return "OK"
 
@@ -159,7 +159,7 @@ def fs_delete(path: str) -> str:
     Delete a file or directory at the specified path.
     If the path is a directory, it will be deleted recursively.
     """
-    path_loc = __path_check(path)
+    path_loc = path_check(path)
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
@@ -173,6 +173,27 @@ def fs_delete(path: str) -> str:
         shutil.rmtree(p)
     return "OK"
 
+def fs_request_image(src: str):
+    """
+    You can request an image using the `request_image` tool.
+
+    Call this tool whenever:
+    - The request depends on visual details
+    - The input is ambiguous without seeing an image
+    - The task involves inspecting objects, scenes, diagrams, or UI
+
+    The input can be a single local image path or URL.
+    """
+    def is_url(path: str) -> bool:
+        return path.startswith("http://") or path.startswith("https://")
+    if not is_url(src):
+        path_check(src)
+        if not Path(src).exists():
+            raise FileNotFoundError("Source image file does not exist.")
+    ctx = tool_call_context.get()
+    assert ctx is not None, "Tool call context is required for requesting images."
+    return ctx.agent.conversation.add_user_message("", images=[src])
+
 def expose_fs_tools() -> list[Callable]:
     tools = [
         fs_list,
@@ -183,5 +204,6 @@ def expose_fs_tools() -> list[Callable]:
         fs_move,
         fs_copy, 
         fs_delete,
+        fs_request_image,
     ]
     return tools

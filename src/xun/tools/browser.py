@@ -5,6 +5,7 @@ import functools, time
 import html_to_markdown
 from playwright.sync_api import BrowserContext, Page
 from playwright.sync_api import sync_playwright
+from .fs import path_check
 
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
@@ -106,12 +107,26 @@ class Browser:
             raise RuntimeError("Failed to convert HTML to markdown.")
 
         return _slice_content(r.content, start_char, max_chars)
+    
+    def browser_take_screenshot(
+        self,
+        url: str,
+        save_to: str,
+        full_page=False,
+        wait_until: WaitUntil = "domcontentloaded",
+        timeout_ms: int = 15000,
+    ) -> Literal['screenshot_saved']:
+        path_check(save_to)
+        blob = self.take_screenshot(url, full_page=full_page, wait_until=wait_until, timeout_ms=timeout_ms)
+        with open(save_to, "wb") as f:
+            f.write(blob)
+        return "screenshot_saved"
 
 def expose_browser_tools() -> list[Callable]:
     import rich
     try:
         browser = Browser()
-        return [browser.browser_get_page]
+        return [browser.browser_get_page, browser.browser_take_screenshot]
     except Exception as e:
         rich.print(f"[Warning] Failed to initialize Browser tools: {e}. Skip registering browser tools.")
         return []
