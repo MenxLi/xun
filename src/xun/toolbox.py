@@ -103,6 +103,8 @@ class ToolBox:
                     name=tool_name,
                     arguments=arguments,
                 )
+        # should capture context at submission time
+        # see test/test_context_var.py
         return asyncio.run_coroutine_threadsafe(_call_tool(), self._loop).result()
 
     def list_tools_json(self):
