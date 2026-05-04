@@ -8,6 +8,7 @@ from typing import Callable
 
 from .display_abstract import (
     DisplayAbstract, 
+    Instruction,
     CommandInstruction, MessageInstruction, 
     ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
 )
@@ -32,7 +33,7 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
         case "retry":
             records = agent.conversation.pop_from_last_user_message()
             assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
-            msg = records[0]["content"]
+            msg = agent.conversation.content_to_text(records[0].get("content", ""), truncate=True)
             display.emit(InfoEvent(message=f"Cleared to last user message. ({msg[:50] + '...' if len(msg) > 50 else msg})"))
 
         case "revise":
@@ -113,6 +114,19 @@ def setup_agent(
         agent.system(get_system_prompt())
     return agent
 
+
+def _execute_instruction(inst: Instruction, agent: Agent):
+    match inst:
+        case CommandInstruction():
+            evaluate_command(inst, agent)
+        case MessageInstruction():
+            try:
+                agent.instruct(inst.content, images=inst.images).execute()
+            except ValueError as e:
+                agent.display.emit(ErrorEvent(message=str(e)))
+        case _:
+            agent.display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
+
 def interactive_session(agent: Agent, task = ""):
     display = agent.display
     if task:
@@ -121,24 +135,12 @@ def interactive_session(agent: Agent, task = ""):
         inst = display.get_instruction()
 
     while True:
-        match inst:
-            case CommandInstruction():
-                evaluate_command(inst, agent)
-            case MessageInstruction():
-                agent.instruct(inst.content).execute()
-            case _:
-                display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
+        _execute_instruction(inst, agent)
         inst = display.get_instruction()
 
 def non_interactive_session(agent: Agent, instruction: str):
     inst = input_to_instruction(instruction)
-    match inst:
-        case CommandInstruction():
-            evaluate_command(inst, agent)
-        case MessageInstruction():
-            agent.instruct(inst.content).execute()
-        case _:
-            agent.display.emit(ErrorEvent(message=f"Invalid instruction: {inst}"))
+    _execute_instruction(inst, agent)
 
 def main():
     load_dotenv()

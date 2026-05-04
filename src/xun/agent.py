@@ -84,8 +84,7 @@ class Agent:
 
             except KeyboardInterrupt:
                 # remove last message if from user, to allow retry
-                if self.conversation.messages and self.conversation.messages[-1]["role"] == "user":
-                    self.conversation.messages.pop()
+                self.conversation.pop_last_message_if_user()
                 self.display.emit(ErrorEvent(message="Execution interrupted by user."))
                 return False, "[Error: Execution interrupted by user.]"
 
@@ -174,8 +173,8 @@ class Agent:
         self.conversation.set_system_message_content(content)
         return self
     
-    def instruct(self, instruction: str):
-        self.conversation.add_user_instruct(instruction)
+    def instruct(self, instruction: str, images: list[str] | None = None):
+        self.conversation.add_user_message(instruction, images=images)
         return self
     
     def condense_conversation(self):

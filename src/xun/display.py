@@ -32,13 +32,45 @@ REPL_HELP_MSG = """\
 """
 
 
+IMAGE_PREFIX = "image:"
+
+
+def _parse_image_block(image_block: str) -> list[str] | None:
+    images: list[str] = []
+    for token in shlex.split(image_block):
+        if not token.startswith(IMAGE_PREFIX) or len(token) <= len(IMAGE_PREFIX):
+            return None
+        images.append(token[len(IMAGE_PREFIX):])
+    return images or None
+
+
+def _parse_message_input(raw_input: str) -> MessageInstruction:
+    content = raw_input.strip()
+    if not content.startswith("["):
+        return MessageInstruction(content=raw_input)
+
+    image_block_end = content.find("]")
+    if image_block_end < 0:
+        raise ValueError("Invalid image attachment syntax: missing closing ']'.")
+
+    image_block = content[1:image_block_end].strip()
+    images = _parse_image_block(image_block)
+    if images is None:
+        return MessageInstruction(content=raw_input)
+
+    return MessageInstruction(
+        content=content[image_block_end + 1:].strip(),
+        images=images,
+    )
+
+
 def input_to_instruction(raw_input: str) -> Instruction:
     if raw_input.startswith("."):
         raw_command = raw_input[1:].strip()
         command = raw_command.split()[0] if raw_command else ""
         args = shlex.split(raw_command)[1:] if raw_command else []
         return CommandInstruction(command=command, args=args)
-    return MessageInstruction(content=raw_input)
+    return _parse_message_input(raw_input)
 
 
 class Display(DisplayAbstract):

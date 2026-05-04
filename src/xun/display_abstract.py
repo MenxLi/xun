@@ -65,6 +65,7 @@ class DisplayEvent(Generic[DisplayEventT]):
 @dataclass
 class MessageInstruction:
     content: str
+    images: list[str] = field(default_factory=list)
 @dataclass
 class CommandInstruction:
     command: str

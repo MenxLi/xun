@@ -1,8 +1,33 @@
 from openai.types import chat
-from typing import Any
+from typing import Any, cast
 from typing_extensions import TypedDict
 from pathlib import Path
+from urllib.parse import urlparse
+import base64, mimetypes
 import uuid, json, time
+
+
+MAX_HISTORY_CONTENT_LENGTH = 1000
+
+
+def _image_to_url(image: str) -> str:
+    parsed = urlparse(image)
+    if parsed.scheme in {"http", "https", "data"}:
+        return image
+
+    image_path = Path(image).expanduser()
+    if not image_path.exists() or not image_path.is_file():
+        raise ValueError(f"Image file not found: {image}")
+
+    mime_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+    try:
+        image_bytes = image_path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"Failed to read image file {image}: {exc}") from exc
+
+    encoded = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:{mime_type};base64,{encoded}"
+
 
 class Conversation:
     class MessageRecord(TypedDict):
@@ -35,9 +60,33 @@ class Conversation:
             self.messages[0]["content"] = content
         else:
             self.messages.insert(0, {"role": "system", "content": content})
-    
-    def add_user_instruct(self, content: str):
-        self.messages.append({"role": "user", "content": content})
+
+    @staticmethod
+    def content_to_text(content: Any, truncate: bool = False) -> str:
+        if isinstance(content, str):
+            text = content
+        else:
+            text = json.dumps(content, indent=4)
+
+        if truncate and len(text) > MAX_HISTORY_CONTENT_LENGTH:
+            return text[:MAX_HISTORY_CONTENT_LENGTH] + "...(truncated)"
+        return text
+
+    def add_user_message(self, content: str, images: list[str] | None = None):
+        user_content: str | list[dict[str, Any]]
+        if not images:
+            user_content = content
+        else:
+            parts: list[dict[str, Any]] = []
+            if content:
+                parts.append({"type": "text", "text": content})
+            parts.extend({
+                "type": "image_url", 
+                "image_url": {"url": _image_to_url(image)}
+                } for image in images)
+            user_content = parts
+
+        self.messages.append(cast(chat.ChatCompletionUserMessageParam, {"role": "user", "content": user_content}))
     
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage):
         self.messages.append(msg.to_dict())     # type: ignore
@@ -49,6 +98,11 @@ class Conversation:
             "tool_call_id": tool_call_id,
             "content": content,
         })
+
+    def pop_last_message_if_user(self) -> dict[str, Any] | None:
+        if not self.messages or self.messages[-1].get("role") != "user":
+            return None
+        return cast(dict[str, Any], self.messages.pop())
     
     def pop_from_last_user_message(self, inclusive: bool = True) -> list[Any]:
         """
@@ -73,13 +127,9 @@ class Conversation:
         for msg in self.messages:
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            if isinstance(content, dict):
-                content = json.dumps(content, indent=4)
-            if isinstance(content, str) and truncate and len(content) > 1000:
-                content = content[:1000] + "...(truncated)"
             res.append(self.MessageRecord(
                 role=role,
-                content=str(content),
+                content=self.content_to_text(content, truncate=truncate),
             ))
         return res
         
