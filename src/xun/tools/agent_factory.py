@@ -1,5 +1,6 @@
 from typing import Optional, Callable, TYPE_CHECKING, Literal
 import concurrent.futures
+import contextvars
 import json_repair
 if TYPE_CHECKING:
     from ..agent import Agent
@@ -82,10 +83,11 @@ def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers:
         
         task_list = tasks_parse_return
         results: list[Optional[str]] = [None] * len(task_list)
+        agent_run = agent_run_factory(agent_getter)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
-                executor.submit(agent_run_factory(agent_getter), task, name): idx
+                executor.submit(contextvars.copy_context().run, agent_run, task, name): idx
                 for idx, (task, name) in enumerate(zip(task_list, names_list))
             }
             for future in concurrent.futures.as_completed(future_to_index):
