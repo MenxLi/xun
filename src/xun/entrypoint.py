@@ -2,7 +2,6 @@
 import readline     # noqa
 
 import argparse, sys
-from dotenv import load_dotenv
 from pathlib import Path
 from typing import Callable
 
@@ -142,7 +141,6 @@ def non_interactive_session(agent: Agent, instruction: str):
     _execute_instruction(inst, agent)
 
 def main():
-    load_dotenv()
 
     parser = argparse.ArgumentParser(description="Run the agent.")
     parser.add_argument("instruction", type=str, help="The instruction for the agent.", default="", nargs="?")

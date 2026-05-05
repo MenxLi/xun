@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass
 import functools
 import subprocess
+from dotenv import load_dotenv
 from .util import is_in_container
 
 def get_docker_host_ip():
@@ -37,6 +38,8 @@ class AppConfig:
 BRAND = "XUN"
 @functools.lru_cache(maxsize=1)
 def app_config():
+    load_dotenv()
+
     def to_bool(value: str) -> bool:
         return value.lower() in {"true", "1", "yes", "y"}
     provider = ProviderConfig(
