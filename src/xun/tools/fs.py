@@ -145,7 +145,7 @@ def fs_copy(src: str, dst: str) -> Literal["OK"]:
             shutil.copytree(src, dst)
     return "OK"
 
-def fs_mkdir(path: str) -> str:
+def fs_mkdir(path: str) -> Literal["OK"]:
     """
     Create a directory at the specified path.
     If the directory already exists, it does nothing.
@@ -154,7 +154,7 @@ def fs_mkdir(path: str) -> str:
     Path(path).mkdir(exist_ok=True)
     return "OK"
 
-def fs_delete(path: str) -> str:
+def fs_delete(path: str) -> Literal["OK"]:
     """
     Delete a file or directory at the specified path.
     If the path is a directory, it will be deleted recursively.
@@ -173,7 +173,7 @@ def fs_delete(path: str) -> str:
         shutil.rmtree(p)
     return "OK"
 
-def fs_request_image(src: str):
+def fs_request_image(src: str) -> Literal["OK"]:
     """
     You can request an image using the `request_image` tool.
 
@@ -192,7 +192,8 @@ def fs_request_image(src: str):
             raise FileNotFoundError("Source image file does not exist.")
     ctx = tool_call_context.get()
     assert ctx is not None, "Tool call context is required for requesting images."
-    return ctx.agent.conversation.add_user_message("", images=[src])
+    ctx.agent.conversation.add_user_message("", images=[src])
+    return "OK"
 
 def expose_fs_tools() -> list[Callable]:
     tools = [
