@@ -39,6 +39,11 @@ xun
 
 ![Features](https://limengxun-public-1322620498.cos.ap-guangzhou.myqcloud.com/images/260504-xun-3jyR8sMPHP.png)
 
+Image attachments are supported in the format of `[image:path_or_url]`. For example:
+```
+>>> [image:cat.png image:https://example.com/dog.png] compare them.
+```
+
 Input `.help` to see the full list of commands.
 
 <details>

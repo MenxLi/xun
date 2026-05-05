@@ -86,8 +86,16 @@ class ToolBox:
         self.register(agent_run_parallel_factory(agent_getter))
         return self
     
-    def disable(self, tool_name: str):
-        self._disabled_tools.add(tool_name)
+    def disable(self, *tool_names: str) -> "ToolBox":
+        if "*" in tool_names:
+            self._disabled_tools = set(tool.name for tool in self.list_tools())
+        else:
+            self._disabled_tools.update(tool_names)
+        return self
+    
+    def enable(self, *tool_names: str) -> "ToolBox":
+        self._disabled_tools.difference_update(tool_names)
+        return self
     
     def list_tools(self):
         async def _list_tools():
