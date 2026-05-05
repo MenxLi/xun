@@ -9,6 +9,7 @@ from fastmcp import Client, FastMCP
 import asyncio
 from .tools import *
 from .prompt import get_subagent_prompt
+from .error_catch import except_safe, is_except_safe_wrapper
 from ._toolcall_fix import extract_tool_calls_from_text
 
 def tool_to_openai_format(tool: mcp.types.Tool):
@@ -59,7 +60,11 @@ class ToolBox:
         return self
     
     def register(self, f: F) -> F:
-        return self._mcp.tool()(f)
+        if not is_except_safe_wrapper(f):
+            self._mcp.tool()(except_safe(f))
+        else:
+            self._mcp.tool()(f)
+        return f
     
     def register_many(self, funcs: list[Callable]) -> list[Callable]:
         return [ self.register(func) for func in funcs ]

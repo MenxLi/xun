@@ -1,7 +1,6 @@
 
 import os
 from datetime import datetime
-import subprocess
 
 def fmt_size(size: int | float) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:

@@ -2,11 +2,13 @@ from typing import Optional, Callable, TYPE_CHECKING, Literal
 import concurrent.futures
 import contextvars
 import json_repair
+from ..error_catch import except_safe, ErrorInfo
 if TYPE_CHECKING:
     from ..agent import Agent
 
 def agent_run_factory(agent_getter: Callable[[], "Agent"]):
-    def agent_run( task: str, name: Optional[str] = None ) -> str:
+    @except_safe
+    def agent_run( task: str, name: Optional[str] = None ) -> str | ErrorInfo:
         """
         Creates an isolated sub-agent to execute complex, multi-step tasks. 
         The new agent holds appropriate tools and capabilities to complete the assigned task, but starts with a blank context.
@@ -17,7 +19,7 @@ def agent_run_factory(agent_getter: Callable[[], "Agent"]):
         • The task does not require frequent back-and-forth with the parent agent.
 
         Input: A clear, self-contained instruction or tool directive specifying exactly what the new agent should do.
-        Output: Returns the new agent's final output message upon successful completion, or `None` if it exits prematurely or encounters an error.
+        Output: Returns the new agent's final output message upon successful completion, or an error message if the agent encounters any issues during execution.
 
         Notes:
         • The new agent starts with a blank context and cannot access the parent conversation history unless explicitly included in the instruction.
@@ -27,15 +29,12 @@ def agent_run_factory(agent_getter: Callable[[], "Agent"]):
         if name is not None:
             agent.name = name
         agent.instruct(task)
-        try:
-            return agent.execute()
-        except Exception as e:
-            print(f"Error in sub-agent: {e}")
-            return f"[Error in sub-agent: {e}]"
+        return except_safe(agent.execute)()
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers: int = 4):
-    def agent_run_parallel( tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[Optional[str]]:
+    @except_safe
+    def agent_run_parallel( tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[str | ErrorInfo]:
         """
         Same as `agent_run`, but designed to execute multiple tasks in parallel using separate sub-agents for each task. 
         This is useful when you have a batch of independent tasks that can be executed concurrently to save time.
@@ -47,7 +46,7 @@ def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers:
         (Must input a list of strings, if the input is string instead of list, it will try to be decoded as JSON list, and if that fails it will return an error message)
         (the number of names should match the number of tasks if provided; if not provided, sub-agents will be named automatically)
 
-        Output: A list of final output messages from each sub-agent, in the same order as the input tasks. If any sub-agent encounters an error, its corresponding output will contain an error message.
+        Output: A list of final output messages from each sub-agent, in the same order as the input tasks. If any sub-agent encounters an issue during execution, its corresponding output will be an error message instead.
         """
         def parse_list_str(inp) -> tuple[Literal[True], list[str]] | tuple[Literal[False], str]:
             """return (success, result), if success is True, result is the parsed list; if success is False, result is the error message"""
@@ -82,7 +81,7 @@ def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers:
             names_list = [f"agent-{i+1}" for i in range(len(tasks_parse_return))]
         
         task_list = tasks_parse_return
-        results: list[Optional[str]] = [None] * len(task_list)
+        results: list[str | ErrorInfo] = [""] * len(task_list)
         agent_run = agent_run_factory(agent_getter)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -92,11 +91,8 @@ def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers:
             }
             for future in concurrent.futures.as_completed(future_to_index):
                 idx = future_to_index[future]
-                try:
-                    result = future.result()
-                    results[idx] = result
-                except Exception as e:
-                    results[idx] = f"[Error in sub-agent: {e}]"
+                result = except_safe(lambda: future.result())()
+                results[idx] = result
 
         return results
     return agent_run_parallel
