@@ -1,4 +1,4 @@
-import hashlib
+import hashlib, datetime
 from selectors import DefaultSelector, EVENT_READ
 
 # import for arrow key support in input()
@@ -81,6 +81,8 @@ class Display(DisplayAbstract):
 
     def _print(self, *args, **kwargs):
         with self.lock:
+            if isinstance(args[0] if args else None, str):
+                self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
 
     def get_instruction(self) -> Instruction:

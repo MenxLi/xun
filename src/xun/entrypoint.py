@@ -84,7 +84,6 @@ def evaluate_command(instruction: CommandInstruction, agent: Agent):
                 )
 
         case "exit":
-            print("Bye!")
             exit(0)
 
         case _:
