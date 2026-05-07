@@ -39,7 +39,7 @@ class ShowHistoryEvent:
 
 @dataclass 
 class ShowHelpEvent:
-    pass
+    message: str
 
 @dataclass
 class ErrorEvent:

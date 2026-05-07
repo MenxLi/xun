@@ -18,12 +18,26 @@ from .agent import Agent
 from .store import Store
 from .prompt import get_system_prompt
 
+REPL_HELP_MSG = """\
+[bold cyan]Available commands:[/bold cyan]
+[bold yellow].help[/bold yellow] - Show this help message
+[bold yellow].restart[/bold yellow] - Clear conversation history and restart the agent
+[bold yellow].retry[/bold yellow] - Retry the last user message (clear to last user message)
+[bold yellow].revise[/bold yellow] - Re-input the last user message (clear to last user message)
+[bold yellow].tools[/bold yellow] - List registered tools
+[bold yellow].config[/bold yellow] - Show current configuration
+[bold yellow].condense[/bold yellow] - Condense conversation history to reduce token usage
+[bold yellow].dump[/bold yellow] - Dump conversation history to a store
+[bold yellow].load[/bold yellow] - Load conversation history from latest store or specified store
+[bold yellow].history[/bold yellow] - Show conversation history in the terminal
+[bold yellow].exit[/bold yellow] - Exit the program\
+"""
 
 def evaluate_command(instruction: CommandInstruction, agent: Agent):
     display = agent.display
     match instruction.command:
         case "help":
-            display.emit(ShowHelpEvent())
+            display.emit(ShowHelpEvent(message=REPL_HELP_MSG))
 
         case "restart":
             agent.conversation.clear()
