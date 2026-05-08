@@ -160,29 +160,23 @@ class Agent:
         return __tool_called, choice.message.content or "[No content]"
 
     def execute(self, max_iterations: int = 64) -> str:
-        name_prefix = self.name.replace(" ", "_").replace("/", "_")
-        with TemporaryDirectory(prefix=f"{name_prefix}_") as temp_dir_path:
-            temp_dir = Path(temp_dir_path)
-            global_context.lock().tempdirs.add(temp_dir)
-            execution_context.set(ExecutionContext( agent=self, ))
+        execution_context.set(ExecutionContext( agent=self, ))
+        try:
+            for iteration in range(max_iterations):
+                model_call_id = str(uuid.uuid4())
+                self.display.emit(ModelWorkingEvent(
+                    model_call_id=model_call_id, 
+                    remaining_iterations=max_iterations - iteration
+                    ))
+                should_continue, result = self._execute(model_call_id)
+                if not should_continue:
+                    return result
 
-            try:
-                for iteration in range(max_iterations):
-                    model_call_id = str(uuid.uuid4())
-                    self.display.emit(ModelWorkingEvent(
-                        model_call_id=model_call_id, 
-                        remaining_iterations=max_iterations - iteration
-                        ))
-                    should_continue, result = self._execute(model_call_id)
-                    if not should_continue:
-                        return result
+            self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
+            return "[Error: Maximum tool call iterations exceeded.]"
 
-                self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
-                return "[Error: Maximum tool call iterations exceeded.]"
-
-            finally:
-                execution_context.set(None)
-                global_context.lock().tempdirs.remove(temp_dir)
+        finally:
+            execution_context.set(None)
     
     def system(self, content: str):
         self.conversation.set_system_message_content(content)
