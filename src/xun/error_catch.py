@@ -48,6 +48,8 @@ def except_safe(fn: Callable[P, R]) -> Callable[P, Union[R, ErrorInfo]]:
         async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> object:
             try:
                 return await cast(Callable[P, Awaitable[object]], fn)(*args, **kwargs)
+            except KeyboardInterrupt:
+                raise
             except Exception as exc:
                 return _error_info(exc)
 
@@ -58,6 +60,8 @@ def except_safe(fn: Callable[P, R]) -> Callable[P, Union[R, ErrorInfo]]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> Union[R, ErrorInfo]:
         try:
             return cast(Callable[P, R], fn)(*args, **kwargs)
+        except KeyboardInterrupt:
+            raise
         except Exception as exc:
             return _error_info(exc)
 

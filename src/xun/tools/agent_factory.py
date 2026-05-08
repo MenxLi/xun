@@ -28,8 +28,10 @@ def agent_run_factory(agent_getter: Callable[[], "Agent"]):
         agent = agent_getter()
         if name is not None:
             agent.name = name
+        else:
+            agent.name = f"subagent"
         agent.instruct(task)
-        return except_safe(agent.execute)()
+        return agent.execute()
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: Callable[[], "Agent"], max_workers: int = 4):

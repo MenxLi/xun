@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import uuid
 
+from .error_catch import except_safe
 from .display_abstract import *
 from .display import Display
 from .conversation import Conversation
@@ -159,6 +160,7 @@ class Agent:
         
         return __tool_called, choice.message.content or "[No content]"
 
+    @except_safe
     def execute(self, max_iterations: int = 64) -> str:
         execution_context.set(ExecutionContext( agent=self, ))
         try:
@@ -173,7 +175,7 @@ class Agent:
                     return result
 
             self.display.emit(ErrorEvent(message="Maximum tool call iterations exceeded."))
-            return "[Error: Maximum tool call iterations exceeded.]"
+            raise RuntimeError("Maximum tool call iterations exceeded.")
 
         finally:
             execution_context.set(None)
