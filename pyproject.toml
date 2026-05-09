@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 xun = "xun:main"
+xun-box = "xun.sandbox:main"
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

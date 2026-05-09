@@ -33,6 +33,9 @@ vim .env
 
 # 4. Run the agent in interactive mode
 xun
+
+# Run the same CLI inside a temporary Docker container
+xun-box --image python:3.12-slim
 ```
 
 ## Features
@@ -73,3 +76,5 @@ xun uses environment variables, preferably stored in a `.env` file.
 | `XUN_OPENAI_API_KEY` | *(empty)* | API key. |
 | `XUN_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
 | `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
+
+`xun-box` runs `xun` in a temporary Docker container with `--network host`, mounts the current working directory at `/workspace` in the container, and forwards all `XUN_*` environment variables. Set `XUN_DOCKER_IMAGE` to avoid passing `--image` every time.
