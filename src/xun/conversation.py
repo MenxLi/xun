@@ -10,6 +10,17 @@ import uuid, json, time
 MAX_HISTORY_CONTENT_LENGTH = 1000
 
 
+def _remove_empty_tool_calls(message: Any) -> Any:
+    # some provider does not allow empty list for tool_calls
+    if not isinstance(message, dict):
+        return message
+
+    sanitized = dict(message)
+    if sanitized.get("tool_calls") == []:
+        sanitized.pop("tool_calls", None)
+    return sanitized
+
+
 def _image_to_url(image: str) -> str:
     parsed = urlparse(image)
     if parsed.scheme in {"http", "https", "data"}:
@@ -53,7 +64,7 @@ class Conversation:
         with open(file_path, "r") as f:
             data = json.load(f)
             self.conversation_id = data.get("conversation_id", self.conversation_id)
-            self.messages = data.get("messages", [])
+            self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
     
     def set_system_message_content(self, content: str):
         if self.messages and self.messages[0]["role"] == "system":
@@ -89,7 +100,7 @@ class Conversation:
         self.messages.append(cast(chat.ChatCompletionUserMessageParam, {"role": "user", "content": user_content}))
     
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage):
-        self.messages.append(msg.to_dict())     # type: ignore
+        self.messages.append(_remove_empty_tool_calls(msg.to_dict()))     # type: ignore
     
     def add_tool_call(self, tool_call_id: str, content: str):
         """ Add tool call result, the tool call is recorded via assistant message """
