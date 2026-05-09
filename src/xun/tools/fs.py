@@ -1,15 +1,16 @@
 from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
-from ..context import execution_context, global_context, tool_call_context
+from ..context import execution_context, global_context_guard, tool_call_context
 from ..util import fmt_size, fmt_time
 
 def path_check(path: str):
     cwd_abs = Path.cwd().resolve()
     path_abs = Path(path).resolve()
     path_in_cwd = str(path_abs).startswith(str(cwd_abs))
-    temp_dirs = global_context.lock().tempdirs
-    path_in_temp_dir = any(temp_dir.resolve() in path_abs.parents for temp_dir in temp_dirs)
+    with global_context_guard as global_context:
+        temp_dirs = global_context.tempdirs
+        path_in_temp_dir = any(temp_dir.resolve() in path_abs.parents for temp_dir in temp_dirs)
     if not path_in_cwd and not path_in_temp_dir:
         raise ValueError("Only paths within the current working directory, or any agent's temporary directory are allowed to be accessed.")
     return {

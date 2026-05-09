@@ -13,7 +13,7 @@ from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
-from .context import global_context, ToolCallContext, tool_call_context, ExecutionContext, execution_context
+from .context import global_context_guard, ToolCallContext, tool_call_context, ExecutionContext, execution_context
 
 class Agent:
     def __init__(
@@ -62,14 +62,15 @@ class Agent:
     
     @property
     def temp_dir(self) -> Path:
-        if self._temp_dir is None:
-            temp_dir_prefix = f"{self.name.replace(' ', '_').replace('/', '_')}_"
-            self._temp_dir = TemporaryDirectory(prefix=f"{temp_dir_prefix}")
-            dname = Path(self._temp_dir.__enter__())
-            global_context.lock().tempdirs.add(dname)
-            return dname
-        else:
-            return Path(self._temp_dir.name)
+        with global_context_guard as global_context:
+            if self._temp_dir is None:
+                temp_dir_prefix = f"{self.name.replace(' ', '_').replace('/', '_')}_"
+                self._temp_dir = TemporaryDirectory(prefix=f"{temp_dir_prefix}")
+                dname = Path(self._temp_dir.__enter__())
+                global_context.tempdirs.add(dname)
+                return dname
+            else:
+                return Path(self._temp_dir.name)
 
     def dump(self, store_dir: Path):
         if not store_dir.exists():

@@ -12,7 +12,6 @@ from .display_abstract import (
     ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
 )
 from .display import input_to_instruction
-from .context import global_context
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store

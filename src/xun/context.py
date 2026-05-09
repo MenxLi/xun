@@ -29,20 +29,19 @@ class ExecutionContext:
 execution_context = contextvars.ContextVar[Optional[ExecutionContext]]("execution_context", default=None)
 
 T = TypeVar("T")
-class Locked(Generic[T]):
+class Guarded(Generic[T]):
     def __init__(self, value: T):
         self.value = value
         self._lock = Lock()
-    def lock(self) -> T:
-        with self._lock:
-            return self.value
-    def set(self, value: T):
-        with self._lock:
-            self.value = value
+    def __enter__(self):
+        self._lock.acquire()
+        return self.value
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._lock.release()
 @dataclass
 class GlobalContext:
     tempdirs: set[Path]
-global_context = Locked(
+global_context_guard = Guarded(
     GlobalContext(
         tempdirs=set(),
         )
