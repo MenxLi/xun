@@ -2,6 +2,8 @@
 
 An autonomous, mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
 
+**This is my personal experimental project, and is expected to change rapidly.**
+
 <details>
 <summary>Why this name?</summary>
 
@@ -33,9 +35,6 @@ vim .env
 
 # 4. Run the agent in interactive mode
 xun
-
-# Run the same CLI inside a temporary Docker container
-xun-box --image python:3.12-slim
 ```
 
 ## Features
@@ -77,4 +76,22 @@ xun uses environment variables, preferably stored in a `.env` file.
 | `XUN_OPENAI_MODEL` | *(empty)* | Model identifier. If empty, will auto-detect available models from the API. |
 | `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
 
-`xun-box` runs `xun` in a temporary Docker container with `--network host`, mounts the current working directory at `/workspace` in the container, and forwards all `XUN_*` environment variables. Set `XUN_DOCKER_IMAGE` to avoid passing `--image` every time.
+
+## Run with Sandbox
+The `xun-box` command allows you to run `xun` in an isolated Docker container, 
+which provide a layer of security (e.g. from malicious tools or avoid accidental access of host credentials), 
+and also ensures a consistent environment.
+
+An example docker image is provided in `docker/xun.Dockerfile`, which you can build with:
+```sh
+make sandbox-base && make sandbox
+```
+Then you can run `xun` in a container (potentially with auto-approve) with:
+
+```sh
+XUN_AUTO_CONFIRM=true xun-box --image xun:latest
+```
+
+It runs the interactive CLI in a temporary Docker container with `--network host`, 
+mounts the current working directory at `/workspace` in the container, and forwards all `XUN_*` environment variables. 
+Set `XUN_DOCKER_IMAGE` to avoid passing `--image` every time.
