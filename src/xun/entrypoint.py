@@ -11,7 +11,7 @@ from .display_abstract import (
     CommandInstruction, MessageInstruction, 
     ErrorEvent, InfoEvent, ShowHelpEvent, ShowHistoryEvent
 )
-from .display import input_to_instruction
+from .display import Display, input_to_instruction
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
@@ -119,7 +119,7 @@ def setup_agent(
         name=name, 
         toolbox=toolbox, 
         persistent_store=persistent_store, 
-        display=display
+        display=display or Display()
         )
     if default_system_prompt:
         agent.system(get_system_prompt())

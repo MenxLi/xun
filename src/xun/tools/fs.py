@@ -41,7 +41,7 @@ def fs_temp_dir() -> str:
     ctx = execution_context.get()
     if ctx is None:
         raise RuntimeError("No execution context found. This function can only be used within the execution of an agent.")
-    return str(ctx.agent.temp_dir)
+    return str(ctx.agent.tempdir.path)
 
 def fs_list(path: str, details = False) -> dict[Literal["directories", "files"], list[str]]:
     """

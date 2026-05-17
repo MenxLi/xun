@@ -4,6 +4,7 @@ import json, weakref
 import json_repair
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from dataclasses import dataclass, field
 import uuid
 
 from .error_catch import except_safe
@@ -15,62 +16,70 @@ from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .context import global_context_guard, ToolCallContext, tool_call_context, ExecutionContext, execution_context
 
-class Agent:
-    def __init__(
-        self, 
-        name: str = "agent", 
-        toolbox: ToolBox | None = None,
-        openai_client: OpenAI | None = None, 
-        persistent_store: Path | None = None,
-        display: DisplayAbstract | None = None,
-        ):
-        self.name = name
-        self.app_config = app_config()
+def _default_openai_client():
+    config = app_config()
+    return OpenAI(
+        base_url = config.provider.openai_base_url,
+        api_key = config.provider.openai_api_key,
+    )
 
-        if openai_client is None:
-            openai_client = OpenAI(
-                base_url = self.app_config.provider.openai_base_url,
-                api_key = self.app_config.provider.openai_api_key,
-            )
+class AgentTempDir:
+    """
+    An abstraction for temporary directory,
+    if pth is given, no cleanup will be performed. 
+    Otherwise, a temporary directory will be lazily created and automatically cleaned up when the instance is garbage collected.
+    """
+    def __init__(self, pth: Optional[Path] = None):
+        self._dir = pth
+        self._temp_dir: Optional[TemporaryDirectory] = None
+        if self._dir is not None:
+            assert self._dir.exists() and self._dir.is_dir(), f"Path {self._dir} does not exist or is not a directory."
+            with global_context_guard as global_context:
+                global_context.tempdirs.add(self._dir)
         
-        if toolbox is None:
-            toolbox = ToolBox()
-
-        self.toolbox = toolbox
-        self.openai_client = openai_client
-
-        self.conversation = Conversation()
-
-        if display:
-            self.display = display
-        else:
-            self.display = Display()
-
-        if persistent_store:
-            if persistent_store.exists():
-                assert persistent_store.is_dir(), f"Persistent store path {persistent_store} must be a directory."
-                self.load(persistent_store)
-            self.display.emit(InfoEvent(message=f"Using persistent store from {persistent_store}"))
-        self.persistent_store = persistent_store
-
-        self._temp_dir = None
         def maybe_cleanup_temp_dir():
+            if self._dir is not None:
+                with global_context_guard as global_context:
+                    global_context.tempdirs.discard(self._dir)
             if self._temp_dir is not None:
+                with global_context_guard as global_context:
+                    global_context.tempdirs.discard(self.path)
                 self._temp_dir.__exit__(None, None, None)
                 self._temp_dir = None
         weakref.finalize(self, maybe_cleanup_temp_dir)
     
     @property
-    def temp_dir(self) -> Path:
-        with global_context_guard as global_context:
+    def path(self) -> Path:
+        if self._dir is not None:
+            return self._dir
+        else:
             if self._temp_dir is None:
-                temp_dir_prefix = f"{self.name.replace(' ', '_').replace('/', '_')}_"
-                self._temp_dir = TemporaryDirectory(prefix=f"{temp_dir_prefix}")
-                dname = Path(self._temp_dir.__enter__())
-                global_context.tempdirs.add(dname)
-                return dname
-            else:
-                return Path(self._temp_dir.name)
+                self._temp_dir = TemporaryDirectory()
+                with global_context_guard as global_context:
+                    global_context.tempdirs.add(self.path)
+            return Path(self._temp_dir.name)
+
+@dataclass()
+class Agent:
+    name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
+    identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
+    display: DisplayAbstract = field(default_factory=Display)
+    conversation: Conversation = field(default_factory=Conversation)
+    toolbox: ToolBox = field(default_factory=ToolBox)
+    openai_client: OpenAI = field(default_factory=_default_openai_client)
+    tempdir: AgentTempDir = field(default_factory=AgentTempDir)
+    persistent_store: Path | None = None
+
+    def __post_init__(self):
+        if self.persistent_store:
+            if self.persistent_store.exists():
+                assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
+                self.load(self.persistent_store)
+            self.display.emit(InfoEvent(message=f"Using persistent store from {self.persistent_store}"))
+    
+    @property
+    def app_config(self):
+        return app_config()
 
     def dump(self, store_dir: Path):
         if not store_dir.exists():
