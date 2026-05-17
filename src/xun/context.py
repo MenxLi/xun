@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional, TYPE_CHECKING, Generic, TypeVar
 from threading import Lock
 import contextvars
 from .display import DisplayAbstract
 if TYPE_CHECKING:
-    from .agent import Agent
+    from .agent import Agent, AgentTempDir
 
 @dataclass
 class ToolCallContext:
@@ -40,7 +39,7 @@ class Guarded(Generic[T]):
         self._lock.release()
 @dataclass
 class GlobalContext:
-    tempdirs: set[Path]
+    tempdirs: set["AgentTempDir"]
 global_context_guard = Guarded(
     GlobalContext(
         tempdirs=set(),

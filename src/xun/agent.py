@@ -16,13 +16,6 @@ from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
 from .context import global_context_guard, ToolCallContext, tool_call_context, ExecutionContext, execution_context
 
-def _default_openai_client():
-    config = app_config()
-    return OpenAI(
-        base_url = config.provider.openai_base_url,
-        api_key = config.provider.openai_api_key,
-    )
-
 class AgentTempDir:
     """
     An abstraction for temporary directory,
@@ -34,20 +27,18 @@ class AgentTempDir:
         self._temp_dir: Optional[TemporaryDirectory] = None
         if self._dir is not None:
             assert self._dir.exists() and self._dir.is_dir(), f"Path {self._dir} does not exist or is not a directory."
-            with global_context_guard as global_context:
-                global_context.tempdirs.add(self._dir)
         
+        with global_context_guard as global_context:
+            global_context.tempdirs.add(self)
+
         def maybe_cleanup_temp_dir():
-            if self._dir is not None:
-                with global_context_guard as global_context:
-                    global_context.tempdirs.discard(self._dir)
             if self._temp_dir is not None:
-                with global_context_guard as global_context:
-                    global_context.tempdirs.discard(self.path)
                 self._temp_dir.__exit__(None, None, None)
                 self._temp_dir = None
+            with global_context_guard as global_context:
+                global_context.tempdirs.discard(self)
         weakref.finalize(self, maybe_cleanup_temp_dir)
-    
+
     @property
     def path(self) -> Path:
         if self._dir is not None:
@@ -55,9 +46,21 @@ class AgentTempDir:
         else:
             if self._temp_dir is None:
                 self._temp_dir = TemporaryDirectory()
-                with global_context_guard as global_context:
-                    global_context.tempdirs.add(self.path)
             return Path(self._temp_dir.name)
+    
+    @property
+    def exist_path(self) -> Optional[Path]:
+        if self._dir is not None:
+            return self._dir
+        else:
+            return self._temp_dir and Path(self._temp_dir.name)
+
+def _default_openai_client():
+    config = app_config()
+    return OpenAI(
+        base_url = config.provider.openai_base_url,
+        api_key = config.provider.openai_api_key,
+    )
 
 @dataclass()
 class Agent:
