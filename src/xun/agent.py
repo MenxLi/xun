@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from dataclasses import dataclass, field
 import uuid
+from PIL.Image import Image
 
 from .error_catch import except_safe
 from .display_abstract import *
@@ -105,13 +106,16 @@ class Agent:
         n_completion_max_retries = 3
         while True:
             try:
-                resp = self.openai_client.chat.completions.create(
-                    model=self.app_config.provider.openai_model,
-                    tools = self.toolbox.list_tools_json(),     # type: ignore
-                    tool_choice="auto",
-                    messages = self.conversation.messages, 
-                    timeout = 600,
-                )
+                params = {
+                    "model": self.app_config.provider.openai_model,
+                    "messages": self.conversation.messages,
+                    "timeout": 600,
+                }
+                if (tools_json := self.toolbox.list_tools_json()):
+                    params["tools"] = tools_json
+                    params["tool_choice"] = "auto"
+
+                resp = self.openai_client.chat.completions.create(**params)
                 break
 
             except KeyboardInterrupt:
@@ -197,7 +201,7 @@ class Agent:
         self.conversation.set_system_message_content(content)
         return self
     
-    def instruct(self, instruction: str, images: list[str] | None = None):
+    def instruct(self, instruction: str, images: list[str | Image] | None = None):
         self.conversation.add_user_message(instruction, images=images)
         return self
     

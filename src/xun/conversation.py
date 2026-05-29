@@ -5,6 +5,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 import base64, mimetypes
 import uuid, json, time
+from PIL.Image import Image
+from io import BytesIO
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
@@ -21,7 +23,13 @@ def _remove_empty_tool_calls(message: Any) -> Any:
     return sanitized
 
 
-def _image_to_url(image: str) -> str:
+def _image_to_url(image: str | Image) -> str:
+    if isinstance(image, Image):
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        encoded = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return f"data:image/png;base64,{encoded}"
+
     parsed = urlparse(image)
     if parsed.scheme in {"http", "https", "data"}:
         return image
@@ -83,7 +91,7 @@ class Conversation:
             return text[:MAX_HISTORY_CONTENT_LENGTH] + "...(truncated)"
         return text
 
-    def add_user_message(self, content: str, images: list[str] | None = None):
+    def add_user_message(self, content: str, images: list[str | Image] | None = None):
         user_content: str | list[dict[str, Any]]
         if not images:
             user_content = content
