@@ -178,4 +178,7 @@ def main():
             raise ValueError("Instruction is required in non-interactive mode.")
         non_interactive_session(agent, user_input)
 
-__all__ = ["main", "setup_agent", "interactive_session"]
+__all__ = [
+    "main", "setup_agent", "interactive_session", 
+    "Agent", "ToolBox", "DisplayAbstract", "Display"
+    ]

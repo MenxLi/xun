@@ -93,7 +93,7 @@ class Browser:
         timeout_ms: int = 15000,
     ) -> str:
         """
-        Get the rendered HTML content of a web page and return it as markdown.
+        Get the rendered content of a web page and return it as markdown.
         """
         if start_char < 0:
             raise ValueError("start_char must be greater than or equal to 0.")

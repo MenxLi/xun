@@ -85,22 +85,28 @@ class Agent:
     def app_config(self):
         return app_config()
 
-    def dump(self, store_dir: Path):
+    def dump(self, store_dir: Optional[Path] = None):
+        if store_dir is None:
+            if self.persistent_store is None:
+                raise ValueError("Persistent store path is not set. Please provide a store_dir to dump the conversation.")
+            store_dir = self.persistent_store
         if not store_dir.exists():
             store_dir.mkdir(exist_ok=True)
+
         conv_file = store_dir / f"conversation.json"
         self.conversation.dump(conv_file)
     
-    def load(self, store_dir: Path):
+    def load(self, store_dir: Optional[Path] = None):
+        if store_dir is None:
+            if self.persistent_store is None:
+                raise ValueError("Persistent store path is not set. Please provide a store_dir to load the conversation.")
+            store_dir = self.persistent_store
+
         conv_file = store_dir / f"conversation.json"
         if conv_file.exists():
             self.conversation.load(conv_file)
         else:
             self.display.emit(ErrorEvent(message=f"No conversation history found in {conv_file}. Starting with an empty conversation."))
-    
-    def _dump(self):
-        if self.persistent_store:
-            self.dump(self.persistent_store)
     
     def _execute(self, call_id: str) -> tuple[bool, str]:
         n_completion_max_retries = 3
@@ -137,7 +143,7 @@ class Agent:
         if choice.message.content:
             self.display.emit(ModelMessageEvent(model_call_id=call_id, content=choice.message.content))
         self.conversation.add_agent_message(choice.message)
-        self._dump()
+        self.dump()
 
         __tool_called = False
         if choice.message.tool_calls:
@@ -173,7 +179,7 @@ class Agent:
                 __tool_called = True
         
         if __tool_called:
-            self._dump()
+            self.dump()
         
         return __tool_called, choice.message.content or "[No content]"
 

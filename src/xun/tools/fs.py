@@ -177,13 +177,14 @@ def fs_delete(path: str) -> Literal["OK"]:
 def fs_request_image(src: str) -> Literal["OK"]:
     """
     You can request an image using the `request_image` tool.
+    The input can be a single local image path or URL.
+
+    The image will be added to the conversation as a user message with an empty text content.
 
     Call this tool whenever:
     - The request depends on visual details
     - The input is ambiguous without seeing an image
     - The task involves inspecting objects, scenes, diagrams, or UI
-
-    The input can be a single local image path or URL.
     """
     def is_url(path: str) -> bool:
         return path.startswith("http://") or path.startswith("https://")
