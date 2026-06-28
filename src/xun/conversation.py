@@ -1,5 +1,5 @@
 from openai.types import chat
-from typing import Any, cast
+from typing import Any, Sequence, cast
 from typing_extensions import TypedDict
 from pathlib import Path
 from urllib.parse import urlparse
@@ -91,7 +91,7 @@ class Conversation:
             return text[:MAX_HISTORY_CONTENT_LENGTH] + "...(truncated)"
         return text
 
-    def add_user_message(self, content: str, images: list[str | Image] | None = None):
+    def add_user_message(self, content: str, images: Sequence[str | Image] | None = None):
         user_content: str | list[dict[str, Any]]
         if not images:
             user_content = content

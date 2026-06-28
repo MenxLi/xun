@@ -1,5 +1,5 @@
 from openai import OpenAI
-from typing import Any
+from typing import Any, Sequence
 import json, weakref
 import json_repair
 from pathlib import Path
@@ -201,7 +201,7 @@ class Agent:
         self.conversation.set_system_message_content(content)
         return self
     
-    def instruct(self, instruction: str, images: list[str | Image] | None = None):
+    def instruct(self, instruction: str, images: Sequence[str | Image] | None = None):
         self.conversation.add_user_message(instruction, images=images)
         return self
     
