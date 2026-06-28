@@ -1,47 +1,49 @@
 
-from typing import TYPE_CHECKING, Generic, TypeVar, Optional
-from dataclasses import dataclass, field
+from typing import Generic, TypeVar, Optional
 from abc import ABC, abstractmethod
-if TYPE_CHECKING:
-    from .conversation import Conversation
+from pydantic import BaseModel
+from .conversation import Conversation
 
-JsonType = str | int | float | bool | None | dict[str, "JsonType"] | list["JsonType"]
+# https://pydantic.dev/docs/validation/latest/concepts/types/#named-recursive-types
+import sys
+if sys.version_info >= (3, 12):
+    type JsonType = str | int | float | bool | None | dict[str, JsonType] | list[JsonType]
+else:
+    from typing import Union
+    from typing_extensions import TypeAliasType
+    JsonType = TypeAliasType(
+        'JsonType',
+        'Union[dict[str, JsonType], list[JsonType], str, int, float, bool, None]',  
+    )
 
-@dataclass
-class InfoEvent:
+
+class InfoEvent(BaseModel):
     message: str
 
-@dataclass
-class ModelWorkingEvent:
+class ModelWorkingEvent(BaseModel):
     model_call_id: str
     remaining_iterations: Optional[int] = None
 
-@dataclass
-class ModelMessageEvent:
+class ModelMessageEvent(BaseModel):
     model_call_id: str
     content: str
 
-@dataclass
-class ToolCallEvent:
+class ToolCallEvent(BaseModel):
     tool_call_id: str
     tool_name: str
     args: dict[str, JsonType]
 
-@dataclass
-class ToolResultEvent:
+class ToolResultEvent(BaseModel):
     tool_call_id: str
     result: JsonType
 
-@dataclass
-class ShowHistoryEvent:
-    history: list["Conversation.MessageRecord"]
+class ShowHistoryEvent(BaseModel):
+    history: list[Conversation.MessageRecord]
 
-@dataclass 
-class ShowHelpEvent:
+class ShowHelpEvent(BaseModel):
     message: str
 
-@dataclass
-class ErrorEvent:
+class ErrorEvent(BaseModel):
     message: str
 
 DisplayEventType = (
@@ -55,19 +57,17 @@ DisplayEventType = (
     | ErrorEvent
     )
 DisplayEventT = TypeVar( "DisplayEventT", bound=DisplayEventType)
-@dataclass
-class DisplayEvent(Generic[DisplayEventT]):
+
+class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     agent_name: Optional[str]
     event: DisplayEventT
 
-@dataclass
-class MessageInstruction:
+class MessageInstruction(BaseModel):
     content: str
-    images: list[str] = field(default_factory=list)
-@dataclass
-class CommandInstruction:
+    images: list[str] = []
+class CommandInstruction(BaseModel):
     command: str
-    args: list[str] = field(default_factory=list)
+    args: list[str] = []
 Instruction = MessageInstruction | CommandInstruction
 
 def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
