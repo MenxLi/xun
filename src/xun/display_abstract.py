@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Generic, TypeVar, Optional
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 if TYPE_CHECKING:
-    from .context import ExecutionContext, ToolCallContext
     from .conversation import Conversation
 
 JsonType = str | int | float | bool | None | dict[str, "JsonType"] | list["JsonType"]
@@ -58,8 +57,7 @@ DisplayEventType = (
 DisplayEventT = TypeVar( "DisplayEventT", bound=DisplayEventType)
 @dataclass
 class DisplayEvent(Generic[DisplayEventT]):
-    execution_context: Optional["ExecutionContext"]
-    tool_call_context: Optional["ToolCallContext"]
+    agent_name: Optional[str]
     event: DisplayEventT
 
 @dataclass
@@ -73,10 +71,13 @@ class CommandInstruction:
 Instruction = MessageInstruction | CommandInstruction
 
 def assemble_event(event: DisplayEventT) -> DisplayEvent[DisplayEventT]:
-    from .context import execution_context, tool_call_context
+    from .context import execution_context
+    if (ctx := execution_context.get()) is not None:
+        agent_name = ctx.agent.name
+    else:
+        agent_name = None
     return DisplayEvent(
-        execution_context=execution_context.get(),
-        tool_call_context=tool_call_context.get(),
+        agent_name=agent_name,
         event=event,
     )
 
