@@ -88,7 +88,7 @@ class Agent:
     def dump(self, store_dir: Optional[Path] = None):
         if store_dir is None:
             if self.persistent_store is None:
-                raise ValueError("Persistent store path is not set. Please provide a store_dir to dump the conversation.")
+                return
             store_dir = self.persistent_store
         if not store_dir.exists():
             store_dir.mkdir(exist_ok=True)
