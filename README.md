@@ -1,9 +1,10 @@
 # Xun
 
-An autonomous, mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
+A mini LLM agent with tooling for file manipulation, command execution, web search, browser automation, and sub-agent spawning.
 
-**This is my personal experimental project, and is expected to change rapidly.**
+**This is my personal experimental project**
 
+<!-- 
 <details>
 <summary>Why this name?</summary>
 
@@ -19,7 +20,8 @@ Pronounced like *shoon* — short, simple, and easy to type.
 
 Also drawn from the author's given name (Meng-Xun), as a personal touch to this project :)
 
-</details>
+</details> 
+-->
 
 ## Quick Start
 
@@ -77,7 +79,7 @@ xun uses environment variables, preferably stored in a `.env` file.
 | `XUN_AUTO_CONFIRM` | `false` | Auto-approve actions without prompting. |
 
 
-## Run with Sandbox
+## Run with Sandbox (Experimental)
 The `xun-box` command allows you to run `xun` in an isolated Docker container, 
 which provide a layer of security (e.g. from malicious tools or avoid accidental access of host credentials), 
 and also ensures a consistent environment.
