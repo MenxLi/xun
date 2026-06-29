@@ -34,6 +34,8 @@ CMD_ALLOWLIST = {
     "ip",
     "ss",
     "lsof",
+    "lspci", 
+    "lsblk", 
     "dmesg",
     "journalctl",
     "lsb_release",
@@ -43,6 +45,8 @@ CMD_ALLOWLIST = {
     "head",
     "tail",
     "cat",
+
+    "nvidia-smi", 
 }
 
 SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Awaitable, Callable, TypeVar, Union, ParamSpec
+from typing import Any, Awaitable, Callable, TypeVar, Union, ParamSpec
 from typing import get_origin, get_args, cast
 from typing_extensions import TypedDict
 from functools import wraps
@@ -20,7 +20,7 @@ def except_safe(fn: Callable[P, R]) -> Callable[P, Union[R, ErrorInfo]]:
 
     def _with_error_return_annotation(annotation: object) -> object:
         if annotation is inspect.Signature.empty:
-            return ErrorInfo
+            return Any
 
         origin = get_origin(annotation)
         if origin in (Union, types.UnionType) and ErrorInfo in get_args(annotation):
