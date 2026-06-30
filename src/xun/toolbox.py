@@ -49,6 +49,14 @@ class ToolBox:
             _loop_thread.join()
         weakref.finalize(self, loop_stop, loop)
     
+    def clone(self) -> "ToolBox":
+        import copy
+        new_box = ToolBox()
+        new_box._mcp = copy.deepcopy(self._mcp)
+        new_box._client = Client(new_box._mcp)
+        new_box._disabled_tools = copy.deepcopy(self._disabled_tools)
+        return new_box
+    
     def with_defaults(self):
         """
         Register all standard tools provided by the system. 
@@ -81,11 +89,7 @@ class ToolBox:
                 tool_context = tool_call_context.get()
                 if tool_context is None:
                     raise RuntimeError("tool_call_context is not set, cannot create sub-agent")
-                agent = Agent(
-                    toolbox=ToolBox().with_defaults(),
-                    display=tool_context.display,
-                ).system(get_subagent_prompt())
-                return agent
+                return Agent.inherit(tool_context.agent).system(get_subagent_prompt())
             agent_getter = _agent_getter
         self.register(agent_run_factory(agent_getter))
         self.register(agent_run_parallel_factory(agent_getter))

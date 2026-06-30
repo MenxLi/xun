@@ -1,9 +1,8 @@
 from openai import OpenAI
 from typing import Any, Sequence
-import json, weakref
+import json
 import json_repair
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from dataclasses import dataclass, field
 import uuid
 from PIL.Image import Image
@@ -15,46 +14,8 @@ from .conversation import Conversation
 from .config import app_config
 from .prompt import get_condense_prompt
 from .toolbox import ToolBox, extract_tool_calls
-from .context import global_context_guard, ToolCallContext, tool_call_context, ExecutionContext, execution_context
-
-class AgentTempDir:
-    """
-    An abstraction for temporary directory,
-    if pth is given, no cleanup will be performed. 
-    Otherwise, a temporary directory will be lazily created and automatically cleaned up when the instance is garbage collected.
-    """
-    def __init__(self, pth: Optional[Path] = None):
-        self._dir = pth
-        self._temp_dir: Optional[TemporaryDirectory] = None
-        if self._dir is not None:
-            assert self._dir.exists() and self._dir.is_dir(), f"Path {self._dir} does not exist or is not a directory."
-        
-        with global_context_guard as global_context:
-            global_context.tempdirs.add(self)
-
-        def maybe_cleanup_temp_dir():
-            if self._temp_dir is not None:
-                self._temp_dir.__exit__(None, None, None)
-                self._temp_dir = None
-            with global_context_guard as global_context:
-                global_context.tempdirs.discard(self)
-        weakref.finalize(self, maybe_cleanup_temp_dir)
-
-    @property
-    def path(self) -> Path:
-        if self._dir is not None:
-            return self._dir
-        else:
-            if self._temp_dir is None:
-                self._temp_dir = TemporaryDirectory()
-            return Path(self._temp_dir.name)
-    
-    @property
-    def exist_path(self) -> Optional[Path]:
-        if self._dir is not None:
-            return self._dir
-        else:
-            return self._temp_dir and Path(self._temp_dir.name)
+from .tempdir import DeferredTempDirectory
+from .context import ToolCallContext, tool_call_context, ExecutionContext, execution_context
 
 def _default_openai_client():
     config = app_config()
@@ -71,7 +32,7 @@ class Agent:
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
     openai_client: OpenAI = field(default_factory=_default_openai_client)
-    tempdir: AgentTempDir = field(default_factory=AgentTempDir)
+    tempdir: DeferredTempDirectory = field(default_factory=DeferredTempDirectory)
     persistent_store: Path | None = None
 
     def __post_init__(self):
@@ -84,6 +45,30 @@ class Agent:
     @property
     def app_config(self):
         return app_config()
+    
+    @staticmethod
+    def inherit(
+        parent_agent: "Agent", 
+        share_tempdir: bool = True,
+        share_display: bool = True,
+        share_toolbox: bool = True,
+        copy_conversation: bool = False,
+        persistent_store: Optional[Path] = None
+        ) -> "Agent":
+        """
+        Create a new agent that inherits the configuration and state from the parent agent.
+        """
+        new_agent = Agent(
+            name=f"{parent_agent.name}-child-{str(uuid.uuid4())[:8]}",
+            display=parent_agent.display if share_display else Display(),
+            toolbox=parent_agent.toolbox if share_toolbox else ToolBox(),
+            tempdir=parent_agent.tempdir if share_tempdir else DeferredTempDirectory(),
+            openai_client=parent_agent.openai_client,
+            persistent_store=persistent_store,
+        )
+        if copy_conversation:
+            new_agent.conversation.messages = parent_agent.conversation.messages.copy()
+        return new_agent
 
     def dump(self, store_dir: Optional[Path] = None):
         if store_dir is None:

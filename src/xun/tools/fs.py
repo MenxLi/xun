@@ -36,7 +36,8 @@ def __confirm_dangerous_operation(operation: str) -> bool:
 def fs_temp_dir() -> str:
     """
     Get the path of the agent's temporary directory.
-    This directory is unique for each of the agent and is automatically cleaned up on agent's cleanup.
+    This directory is unique for each of the agent. 
+    Will be automatically cleaned up on agent's cleanup.
     """
     ctx = execution_context.get()
     if ctx is None:

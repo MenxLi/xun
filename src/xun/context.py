@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING, Generic, TypeVar
 from threading import Lock
 import contextvars
 from .display import DisplayAbstract
 if TYPE_CHECKING:
-    from .agent import Agent, AgentTempDir
+    from .agent import Agent
+    from .tempdir import DeferredTempDirectory
 
 @dataclass
 class ToolCallContext:
@@ -39,9 +40,6 @@ class Guarded(Generic[T]):
         self._lock.release()
 @dataclass
 class GlobalContext:
-    tempdirs: set["AgentTempDir"]
-global_context_guard = Guarded(
-    GlobalContext(
-        tempdirs=set(),
-        )
-    )
+    tempdirs: set["DeferredTempDirectory"] = field(default_factory=set)
+
+global_context_guard = Guarded(GlobalContext())
