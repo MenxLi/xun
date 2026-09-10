@@ -72,7 +72,8 @@ def system_ask_user_preference(
         title=title,
         subtitle="Agent Preference Query",
         default=default_choice,
-        allow_extra=allow_extra
+        allow_extra=allow_extra, 
+        _skip_auto_confirm=True,
     )
     return {
         "Q": question,

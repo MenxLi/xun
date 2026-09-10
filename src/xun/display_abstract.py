@@ -267,10 +267,11 @@ class AgentDisplayMixin(AgentDisplayProtocol):
         subtitle: Optional[str] = None,
         default: Optional[str] = None,
         allow_extra: bool = False,
+        _skip_auto_confirm: bool = False,
         ) -> str:
         """Ask the user to choose, honoring auto-confirm: return the default
         choice without prompting."""
-        if self.config.auto_confirm:
+        if self.config.auto_confirm and not _skip_auto_confirm:
             if default in choices:
                 choice = default
             elif choices:
