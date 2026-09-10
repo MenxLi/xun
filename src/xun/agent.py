@@ -13,7 +13,7 @@ from threading import Semaphore
 
 from .types import TypeVar, CancelledError
 from .display_abstract import *
-from .cancel import AgentCancelMixin, LabeledEvent
+from .running_state import AgentRunningStateMixin, LabeledEvent
 from .displays.display import Display
 from .conversation import Conversation
 from .config import AgentConfig, load_config
@@ -66,7 +66,7 @@ class T:
     Any = _AgentState
 
 @dataclass
-class Agent(AgentDisplayMixin, AgentCancelMixin, Generic[StateT]):
+class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
 
     # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
     # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`

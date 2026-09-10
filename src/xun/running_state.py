@@ -19,17 +19,17 @@ class LabeledEvent:
     event: Event = field(default_factory=Event)
 
 
-class AgentCancelProtocol(Protocol):
-    """The Agent surface that cancel-facing helpers rely on."""
+class AgentRunningStateProtocol(Protocol):
+    """The Agent surface that running-state helpers rely on."""
     identifier: str
     cancel_event: LabeledEvent
     hooks: "Hooks"
     _running: bool
 
 
-class AgentCancelMixin(AgentCancelProtocol):
-    """Cancel-facing helpers for Agent: running state, cancellation, and the
-    execution-scoped lifecycle around a unit of work."""
+class AgentRunningStateMixin(AgentRunningStateProtocol):
+    """Running-state helpers for Agent: running tracking, cancellation, and the
+    run-scoped lifecycle around a unit of work."""
 
     @property
     def is_running(self) -> bool:
@@ -59,19 +59,19 @@ class AgentCancelMixin(AgentCancelProtocol):
         threads, and clear the event on exit.
 
         On the idle -> running transition (outermost scope only) this fires
-        hooks.exec_scope_start; hooks.exec_scope_end fires exactly when such a
+        hooks.run_start; hooks.run_end fires exactly when such a
         scope exits, for any reason."""
         from .hooks import HookArgs
 
         prev_running = self._running
         self._running = True
-        scope: Optional[HookArgs.ExecScopeArgs] = None
+        scope: Optional[HookArgs.RunArgs] = None
         try:
             self.check_cancel()
             if not prev_running:
                 # only fire at real state transitions
-                scope = HookArgs.ExecScopeArgs(agent=cast("Agent[Agent.T.Init]", self))
-                self.hooks.exec_scope_start.invoke(scope)
+                scope = HookArgs.RunArgs(agent=cast("Agent[Agent.T.Init]", self))
+                self.hooks.run_start.invoke(scope)
             yield
             self.check_cancel()
         except KeyboardInterrupt:
@@ -82,4 +82,4 @@ class AgentCancelMixin(AgentCancelProtocol):
             self._running = prev_running
             self._clear_cancel()
             if scope is not None:
-                self.hooks.exec_scope_end.invoke(scope)
+                self.hooks.run_end.invoke(scope)

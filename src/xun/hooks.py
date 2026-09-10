@@ -35,7 +35,7 @@ class HookRegistry[T]:
 class HookArgs:
 
     @dataclass
-    class ExecScopeArgs:
+    class RunArgs:
         agent: "Agent[Agent.T.Init]"
 
     @dataclass
@@ -79,12 +79,12 @@ class HookArgs:
 
 @dataclass
 class Hooks:
-    exec_scope_start: HookRegistry[HookArgs.ExecScopeArgs] = field(default_factory=HookRegistry)
+    run_start: HookRegistry[HookArgs.RunArgs] = field(default_factory=HookRegistry)
     """Fired when the agent transitions from idle to running (not on nested execution scopes)."""
 
-    exec_scope_end: HookRegistry[HookArgs.ExecScopeArgs] = field(default_factory=HookRegistry)
-    """Fired when a running scope began (i.e. after exec_scope_start), the scope
-    exits for any reason: success, error, or cancellation."""
+    run_end: HookRegistry[HookArgs.RunArgs] = field(default_factory=HookRegistry)
+    """Fired when a run began (i.e. after run_start), the run
+    ends for any reason: success, error, or cancellation."""
 
     before_execution: HookRegistry[HookArgs.BeforeExecutionArgs] = field(default_factory=HookRegistry)
     """Called at the start of an execution loop, before the first model call. Receives the `ExecutionLoopParams`, editable in place."""

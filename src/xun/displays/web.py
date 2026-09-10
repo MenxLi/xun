@@ -258,13 +258,13 @@ class WebDisplay(DisplayAbstract):
 
     def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
         super().bind(agent)
-        # running-state broadcasts come from the agent's exec-scope hooks, so no
+        # running-state broadcasts come from the agent's run hooks, so no
         # tracking set is needed here; /api/running reads agent.is_running
         def broadcast_closure(running: bool) -> None:
             self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": running})
 
-        agent.hooks.exec_scope_start.add(lambda _args: broadcast_closure(True))
-        agent.hooks.exec_scope_end.add(lambda _args: broadcast_closure(False))
+        agent.hooks.run_start.add(lambda _args: broadcast_closure(True))
+        agent.hooks.run_end.add(lambda _args: broadcast_closure(False))
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
@@ -329,7 +329,7 @@ class WebDisplay(DisplayAbstract):
         # the CM keeps _running true across the whole tracked window (including the
         # retry/instruct gaps between entry-point CMs), so cancel() is effective
         # whenever the UI shows running; execution_state broadcasts are emitted by
-        # the exec_scope_start hook registered in bind()
+        # the run_start hook registered in bind()
         try:
             with agent.cancellable_execution():
                 run()

@@ -18,7 +18,7 @@ from xun.conversation import Conversation
 from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
-from xun.cancel import AgentCancelMixin, LabeledEvent
+from xun.running_state import AgentRunningStateMixin, LabeledEvent
 from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.display import NullDisplay
@@ -34,7 +34,7 @@ class _Execution:
         self.called.set()
 
 
-class _Agent(AgentDisplayMixin, AgentCancelMixin):
+class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
     def __init__(self, workdir: Path, identifier: str = "agent-1", name: str = "Xun") -> None:
         self.identifier = identifier
         self.name = name
