@@ -18,6 +18,9 @@ from .types import CancelledError
 from .workspace import Workspace
 from .tools.common import default_tool_commands
 
+from dotenv import load_dotenv
+load_dotenv()
+
 
 IMAGE_PREFIX = "image:"
 
