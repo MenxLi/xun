@@ -62,6 +62,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 RUN pip install --upgrade pip setuptools wheel playwright
 RUN playwright install chromium --with-deps
+RUN pip install httpx[socks] pymupdf matplotlib
 COPY . /xun-src
 WORKDIR /xun-src
 RUN pip install .

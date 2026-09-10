@@ -161,9 +161,23 @@ def default_commands() -> list[Command]:
         else:
             agent.info("Tokens used in conversation: Unknown (not yet calculated)")
 
-    def _restart_handler(agent: "Agent[Agent.T.Init]") -> None:
+    def _clear_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         agent.conversation.clear()
         agent.info("History cleared.")
+        if len(args) > 0 and args[0] == "all":
+            # remove everything from the tempdir as well
+            if agent.workspace.tempdir is not None:
+                if (tmp_dir := agent.workspace.tempdir.exist_path) is not None:
+                    for item in tmp_dir.iterdir():
+                        if item.is_file():
+                            item.unlink()
+                        elif item.is_dir():
+                            import shutil
+                            shutil.rmtree(item)
+                    agent.info("Temporary files cleared.")
+                else:
+                    agent.info("No temporary files to clear.")
+                    
 
     def _revise_handler(agent: "Agent[Agent.T.Init]") -> None:
         records = agent.conversation.pop_from_last_user_message()
@@ -225,7 +239,7 @@ def default_commands() -> list[Command]:
 
     return [
         Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),
-        Command(name="clear", description="Clear conversation history.", handler=_restart_handler),
+        Command(name="clear", description="Clear conversation history. Use 'clear all' to also remove temporary files.", handler=_clear_handler),
         Command(name="continue", description="Continue execution.", handler=_continue_handler),
         Command(name="revise", description="Edit last message.", handler=_revise_handler),
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
