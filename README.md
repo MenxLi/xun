@@ -153,7 +153,7 @@ By default `xunc` starts `xuns --host 0.0.0.0` in the container and publishes po
 - `--exec CMD`: command to run inside the container (e.g. `--exec bash` for a plain shell, `--exec ""` for the image's default CMD)
 - `--port LIST`: ports to publish in bridge mode (default `18960`)
 - `--network host`: host networking (on macOS this is the Docker VM's network namespace, which is **not** reachable from a host browser — prefer the default bridge mode there)
-- `--env PATTERNS`: environment variables to forward, comma-separated wildcards (default `XUN_*`)
+- `--env PATTERNS`: extra environment variables to forward, comma-separated wildcards (`XUN_*` and `_XUN_*` are always forwarded)
 - `--copy`: copy the positional directory into `/workspace` before starting instead of bind mounting it
 - `--image` / `--name`: image (default `xun`) and container name
 

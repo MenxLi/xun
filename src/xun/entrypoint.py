@@ -294,14 +294,14 @@ def main_container():
     parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no mount, the container starts from the image's own /workspace).", default="", nargs="?")
     parser.add_argument("--copy", action="store_true", help="Copy the mount directory into /workspace instead of bind mounting it.")
     parser.add_argument("--image", type=str, help="Docker image to use for the container.", default="xun")
-    parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list.", default=["XUN_*"], nargs="+")
+    parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list. Will always include XUN_*/_XUN_* by default.", default=[], nargs="+")
     parser.add_argument("--name", type=str, help="Name of the container.", default=None)
     parser.add_argument("--network", type=str, choices=["bridge", "host"], default="bridge", help="Docker network mode. bridge (default) publishes --port ports; host shares the host network namespace (on macOS this is the Docker VM's, not reachable from the host browser).")
     parser.add_argument("--port", type=str, help="Ports to publish to the host in bridge mode, can be a comma-separated list.", default=["18960"], nargs="+")
     parser.add_argument("--exec", dest="exec_cmd", type=str, help="Command to run in the container (empty string falls back to the image's default CMD).", default="xuns --host 0.0.0.0")
     args = parser.parse_args()
 
-    env_kw = [e.strip() for ev in args.env for e in ev.split(",")]
+    env_kw = ["XUN_*", "_XUN_*"] + [e.strip() for ev in args.env for e in ev.split(",")]
     ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
 
     mount: str = str(Path(args.mount).resolve()) if args.mount.strip() else ""

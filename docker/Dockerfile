@@ -72,5 +72,7 @@ COPY . /xun-src
 WORKDIR /xun-src
 RUN pip install .
 
+ENV _XUN_WARN_EXTRA_TOOL_REGISTRATION=1
+
 RUN mkdir -p /workspace
 WORKDIR /workspace

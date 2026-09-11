@@ -22,6 +22,14 @@ def get_home_dir() -> Path:
     else:
         return Path.home() / f".{BRAND.lower()}"
 
+def get_internal_env(key: str) -> str | None:
+    return os.environ.get(f"_{BRAND}_{key}")
+def get_internal_env_bool(key: str) -> bool | None:
+    v = get_internal_env(key)
+    if v is None:
+        return None
+    return v.lower() in ("1", "true", "yes")
+
 class ConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

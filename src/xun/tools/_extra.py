@@ -1,12 +1,16 @@
 """ This is an experimental module for my personal vendor tools integration.  """
 
 from typing import Literal, Callable
+import rich
+from ..config import get_internal_env_bool
 
 def _expose_z_search():
     try:
         from zai import ZhipuAiClient
         z_client = ZhipuAiClient()
-    except:
+    except Exception as e:
+        if get_internal_env_bool("WARN_EXTRA_TOOL_REGISTRATION"):
+            rich.print(f"[Warning] Failed to import ZhipuAiClient. Extra tool 'z_search' will not be available: {e}")
         return []
 
     def z_search(query: str, limit: int = 5, content_size: Literal["short", "medium", "long"] = "medium") -> list[dict]:
