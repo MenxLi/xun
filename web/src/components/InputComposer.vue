@@ -140,17 +140,17 @@ function handleKeydown(event: KeyboardEvent) {
       return
     }
   }
-  if (key === 'Tab' || (key === 'Enter' && !event.shiftKey)) {
+  if (key === 'Tab') {
     const command = filteredCommands.value[selectedCommand.value]
     if (command) {
       event.preventDefault()
       chooseCommand(command)
       return
     }
-    if (key === 'Enter') {
-      event.preventDefault()
-      emit('send')
-    }
+  }
+  if (key === 'Enter' && event.shiftKey) {
+    event.preventDefault()
+    emit('send')
   }
 }
 
@@ -162,8 +162,8 @@ function selectImages(event: Event) {
 
 const hint = computed(() => {
   if (props.cancelling) return 'Cancelling execution...'
-  if (filteredCommands.value.length) return '↑↓ navigate · Tab/Enter select · Shift+Enter new line'
-  return 'Enter to send · Shift+Enter new line · Ctrl+↑↓ history'
+  if (filteredCommands.value.length) return '↑↓ navigate · Tab select · Shift+Enter send'
+  return 'Shift+Enter send · Enter new line · Ctrl+↑↓ history'
 })
 
 const isCommand = computed(() => input.value.startsWith('/'))

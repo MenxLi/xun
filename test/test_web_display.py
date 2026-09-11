@@ -543,6 +543,20 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(closed.is_set())
         self.assertEqual([session.path for session in service.list_sessions()], ["/main"])
 
+    def test_service_creates_managed_session_alongside_root_display(self) -> None:
+        @contextmanager
+        def new_session():
+            yield "/sessions/new", WebDisplay(assets_dir=self.root / "missing")
+
+        service = WebDisplayService(token="service-token", session_manager=new_session)
+        service.mount("/", WebDisplay(assets_dir=self.root / "missing"))
+
+        with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+            created = client.post("/api/sessions", json={"name": "New session"})
+
+            self.assertEqual(created.status_code, 201)
+            self.assertEqual(client.get("/sessions/new/api/config").status_code, 200)
+
     def test_session_management_is_disabled_without_manager(self) -> None:
         response = self.client.post("/api/sessions", json={"name": "New session"})
 

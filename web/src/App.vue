@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bot, Check, Files, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
+import { Bot, Check, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
 import { api, appUrl, basePath, configureSessionsApi, formatTokens } from './api'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
@@ -378,10 +378,6 @@ onBeforeUnmount(() => {
           <span v-if="selectedAgentTokens != null" class="token-badge" title="Total tokens used by the active agent's conversation">{{ formatTokens(selectedAgentTokens) }} tokens</span>
         </div>
         <div class="topbar-actions">
-          <button v-if="exposeFiles" class="icon-button" :title="showFiles ? 'Hide workspace' : 'Show workspace'" @click="toggleFiles">
-            <PanelRightClose v-if="showFiles" :size="18" />
-            <Files v-else :size="18" />
-          </button>
           <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? 'Connected' : 'Reconnecting' }}</span>
           <div class="settings-wrap">
             <button class="icon-button" title="Display settings" aria-label="Display settings" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Settings :size="17" /></button>
@@ -395,6 +391,10 @@ onBeforeUnmount(() => {
               <label class="setting-toggle"><span>Render Markdown</span><input v-model="settings.markdown" type="checkbox"></label>
             </div>
           </div>
+          <button v-if="exposeFiles" class="icon-button" :title="showFiles ? 'Hide workspace' : 'Show workspace'" @click="toggleFiles">
+            <PanelRightClose v-if="showFiles" :size="18" />
+            <PanelRightOpen v-else :size="18" />
+          </button>
         </div>
       </header>
 

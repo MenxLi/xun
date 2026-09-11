@@ -270,13 +270,10 @@ class WebDisplayService:
                 raise ValueError(f"A display is already mounted at {mount_path or '/'}")
             if display in self._displays.values():
                 raise ValueError("A WebDisplay can only be mounted once")
-            if not mount_path and self._displays:
-                raise ValueError("The root display must be the only mounted display")
-            if mount_path and "" in self._displays:
-                raise ValueError("Cannot add displays alongside a root display")
             if any(
                 mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
                 for existing in self._displays
+                if mount_path and existing
             ):
                 raise ValueError("Display mount paths cannot overlap")
             if self._loop is not None:
@@ -287,6 +284,10 @@ class WebDisplayService:
             self.app.mount(mount_path or "/", display.build_app(), name=f"session:{mount_path}")
             route = self.app.routes[-1]
             assert isinstance(route, Mount)
+            root_session = self._sessions.get("")
+            if mount_path and root_session is not None:
+                self.app.routes.remove(route)
+                self.app.routes.insert(self.app.routes.index(root_session.route), route)
             self._sessions[mount_path] = _DisplaySession(display, session_name, route)
         return self
 
