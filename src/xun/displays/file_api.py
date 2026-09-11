@@ -15,6 +15,7 @@ from __future__ import annotations
 import mimetypes
 import os
 import re
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -248,10 +249,7 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         if target.is_file() or target.is_symlink():
             target.unlink()
         elif target.is_dir():
-            try:
-                target.rmdir()
-            except OSError as exc:
-                raise HTTPException(409, "Directory is not empty") from exc
+            shutil.rmtree(target)
         else:
             raise HTTPException(404, "Path not found")
         return {"deleted": True}
