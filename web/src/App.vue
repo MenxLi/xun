@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bot, Check, Files, Monitor, Moon, PanelLeftClose, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
-import { api, appUrl, formatTokens } from './api'
+import { Bot, Check, Files, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
+import { api, appUrl, basePath, configureSessionsApi, formatTokens } from './api'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptCard from './components/PromptCard.vue'
+import SessionSidebar from './components/SessionSidebar.vue'
 import StickyScroll from './components/StickyScroll.vue'
-import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage } from './types'
+import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage, SessionInfo } from './types'
 import { useSettingsStore, type Theme } from './stores/settings'
 import { useInputHistoryStore } from './stores/inputHistory'
 
@@ -22,8 +23,12 @@ const commands = ref<CommandInfo[]>([])
 const input = ref('')
 const connected = ref(false)
 const exposeFiles = ref(false)
-const filesOpen = ref(false)
 const settingsOpen = ref(false)
+const sessions = ref<SessionInfo[]>([])
+const canManageSessions = ref(false)
+const sessionBusy = ref(false)
+const sessionError = ref('')
+const narrowLayout = ref(window.innerWidth < 900)
 const pendingPrompts = ref<PendingPrompt[]>([])
 const supportsVision = ref(false)
 const images = ref<Array<{ file: File; url: string }>>([])
@@ -36,11 +41,14 @@ const resolvingPrompts = ref(new Set<string>())
 const stream = ref<InstanceType<typeof StickyScroll> | null>(null)
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
+let sessionRefreshTimer: number | undefined
 let agentDataRequest = 0
-let configLoaded = false
 let syncing = false
 let queuedMessages: ServerMessage[] = []
 
+const currentSessionPath = computed(() => basePath || '/')
+const showSessions = computed(() => settings.sessionsOpen)
+const showFiles = computed(() => exposeFiles.value && settings.filesOpen && (!narrowLayout.value || !showSessions.value))
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
 const selectedAgentCancelling = computed(() => cancellingAgents.value.has(selectedAgentId.value))
@@ -87,14 +95,77 @@ async function loadInitialData() {
     api.config(), api.events(), api.agents(), api.running(), api.prompts(),
   ])
   exposeFiles.value = config.expose_files
-  if (!configLoaded) filesOpen.value = config.expose_files && window.innerWidth >= 900
-  else if (!config.expose_files) filesOpen.value = false
-  configLoaded = true
+  configureSessionsApi(config.sessions_api)
   events.value = eventData
   agents.value = agentData
   runningAgents.value = new Set(runningData)
   pendingPrompts.value = promptData
   ensureAgentSelection()
+  await loadSessions()
+}
+
+async function loadSessions() {
+  try {
+    const listing = await api.sessions()
+    sessions.value = listing.sessions
+    canManageSessions.value = listing.can_manage
+    sessionError.value = ''
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : 'Could not load sessions'
+  }
+}
+
+async function createSession(name: string) {
+  sessionBusy.value = true
+  sessionError.value = ''
+  try {
+    const session = await api.createSession(name)
+    window.location.assign(`${session.path.replace(/\/$/, '')}/`)
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : 'Could not create session'
+    sessionBusy.value = false
+  }
+}
+
+async function removeSession(session: SessionInfo) {
+  sessionBusy.value = true
+  sessionError.value = ''
+  try {
+    await api.removeSession(session.path)
+    const remaining = sessions.value.filter(item => item.path !== session.path)
+    sessions.value = remaining
+    if (session.path === currentSessionPath.value) {
+      const next = remaining[0]?.path || '/'
+      window.location.assign(`${next.replace(/\/$/, '')}/`)
+      return
+    }
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : 'Could not remove session'
+  } finally {
+    sessionBusy.value = false
+  }
+}
+
+function toggleSessions() {
+  if (narrowLayout.value && !showSessions.value) {
+    settings.sessionsOpen = true
+    settings.filesOpen = false
+  } else {
+    settings.sessionsOpen = !settings.sessionsOpen
+  }
+}
+
+function toggleFiles() {
+  if (narrowLayout.value && !showFiles.value) {
+    settings.filesOpen = true
+    settings.sessionsOpen = false
+  } else {
+    settings.filesOpen = !settings.filesOpen
+  }
+}
+
+function updateLayout() {
+  narrowLayout.value = window.innerWidth < 900
 }
 
 function ensureAgentSelection() {
@@ -257,25 +328,41 @@ const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }>
   { value: 'dark', label: 'Dark', icon: Moon },
 ]
 
-onMounted(connect)
+onMounted(() => {
+  connect()
+  sessionRefreshTimer = window.setInterval(loadSessions, 2000)
+  window.addEventListener('resize', updateLayout)
+})
 onBeforeUnmount(() => {
   window.clearTimeout(reconnectTimer)
+  window.clearInterval(sessionRefreshTimer)
+  window.removeEventListener('resize', updateLayout)
   socket?.close()
   clearImages()
 })
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'files-visible': exposeFiles && filesOpen }">
-    <div v-if="exposeFiles && filesOpen" class="mobile-scrim" @click="filesOpen = false" />
-    <FileBrowser v-if="exposeFiles && filesOpen" :agents="agents" :agent-id="selectedAgentId" @close="filesOpen = false" />
+  <div class="app-shell">
+    <div v-if="showSessions" class="mobile-scrim session-scrim" @click="settings.sessionsOpen = false" />
+    <SessionSidebar
+      v-if="showSessions"
+      :sessions="sessions"
+      :current-path="currentSessionPath"
+      :can-manage="canManageSessions"
+      :busy="sessionBusy"
+      :error="sessionError"
+      @close="settings.sessionsOpen = false"
+      @create="createSession"
+      @remove="removeSession"
+    />
 
     <main class="chat-shell">
       <header class="topbar">
         <div class="brand">
-          <button v-if="exposeFiles" class="icon-button file-toggle" :title="filesOpen ? 'Hide files' : 'Show files'" @click="filesOpen = !filesOpen">
-            <PanelLeftClose v-if="filesOpen" :size="18" />
-            <Files v-else :size="18" />
+          <button class="icon-button" :title="showSessions ? 'Hide sessions' : 'Show sessions'" @click="toggleSessions">
+            <PanelLeftClose v-if="showSessions" :size="18" />
+            <PanelLeftOpen v-else :size="18" />
           </button>
         </div>
         <div class="agent-controls">
@@ -291,6 +378,10 @@ onBeforeUnmount(() => {
           <span v-if="selectedAgentTokens != null" class="token-badge" title="Total tokens used by the active agent's conversation">{{ formatTokens(selectedAgentTokens) }} tokens</span>
         </div>
         <div class="topbar-actions">
+          <button v-if="exposeFiles" class="icon-button" :title="showFiles ? 'Hide workspace' : 'Show workspace'" @click="toggleFiles">
+            <PanelRightClose v-if="showFiles" :size="18" />
+            <Files v-else :size="18" />
+          </button>
           <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? 'Connected' : 'Reconnecting' }}</span>
           <div class="settings-wrap">
             <button class="icon-button" title="Display settings" aria-label="Display settings" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Settings :size="17" /></button>
@@ -343,6 +434,9 @@ onBeforeUnmount(() => {
       </footer>
 
     </main>
+
+    <div v-if="showFiles" class="mobile-scrim workspace-scrim" @click="settings.filesOpen = false" />
+    <FileBrowser v-if="showFiles" :agents="agents" :agent-id="selectedAgentId" @close="settings.filesOpen = false" />
 
   </div>
 </template>

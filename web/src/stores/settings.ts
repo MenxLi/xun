@@ -6,6 +6,8 @@ export const useSettingsStore = defineStore('settings', {
   state: () => ({
     theme: 'system' as Theme,
     markdown: true,
+    sessionsOpen: true,
+    filesOpen: true,
     filesWidth: 310,
     previewHeight: 260,
   }),

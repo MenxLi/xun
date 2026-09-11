@@ -9,7 +9,7 @@ import socket
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, AsyncGenerator, Callable, Literal, Optional, TYPE_CHECKING, Union
@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
+from starlette.routing import Mount
 
 from ..config import ASSET_DIR
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
@@ -225,6 +226,7 @@ class WebDisplay(DisplayAbstract):
         self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._sessions_api = "/api/sessions"
         self._executors: dict[str, ThreadPoolExecutor] = {}
         self._executor_lock = threading.Lock()
 
@@ -248,6 +250,15 @@ class WebDisplay(DisplayAbstract):
             self._executors.clear()
         for executor in executors:
             executor.shutdown(wait=False, cancel_futures=True)
+
+    async def _close_clients(self) -> None:
+        clients = tuple(self._clients)
+        self._clients.clear()
+        for client in clients:
+            try:
+                await client.close(code=1001)
+            except Exception:
+                pass
 
     def build_app(self) -> FastAPI:
         app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None, lifespan=self._lifespan)
@@ -405,8 +416,8 @@ class WebDisplay(DisplayAbstract):
             return sorted(agent.identifier for agent in self.agents.values() if agent.is_running)
 
         @router.get("/api/config")
-        async def config() -> dict[str, bool]:
-            return {"expose_files": self.expose_files}
+        async def config() -> dict[str, Any]:
+            return {"expose_files": self.expose_files, "sessions_api": self._sessions_api}
 
         @router.get("/api/commands/{agent_id}")
         async def commands(agent_id: str) -> list[dict[str, str]]:
@@ -435,22 +446,96 @@ class WebDisplay(DisplayAbstract):
 
         return router
 
+SessionStatus = Literal["idle", "running", "waiting"]
+
+
+class SessionInfo(BaseModel):
+    path: str
+    name: str
+    status: SessionStatus
+
+
+class SessionList(BaseModel):
+    sessions: list[SessionInfo]
+    can_manage: bool
+
+
+class SessionCreate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=80)
+
+
+@dataclass
+class _DisplaySession:
+    display: WebDisplay
+    name: str
+    route: Mount
+    context: Optional[ExitStack] = None
+
 
 class WebDisplayService:
     """Mount and serve one or more isolated web displays."""
 
-    def __init__(self, host: str = "localhost", port: int = 18960, token: str = "") -> None:
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 18960,
+        token: str = "",
+        session_manager: Optional[Callable[[], AbstractContextManager[tuple[str, WebDisplay]]]] = None,
+    ) -> None:
         self.host = host
         self.port = port
         self.token = token or secrets.token_urlsafe(24)
         self._displays: dict[str, WebDisplay] = {}
+        self._sessions: dict[str, _DisplaySession] = {}
+        self._session_manager = session_manager
+        self._session_lock = threading.RLock()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Optional[uvicorn.Server] = None
         self._thread: Optional[threading.Thread] = None
         self._socket: Optional[socket.socket] = None
         self._started = threading.Event()
         self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
         self._configure_login()
+        self._configure_sessions()
         self.app.add_middleware(_TokenAuthMiddleware, token=self.token, mounts=self._displays)
+
+    def _configure_sessions(self) -> None:
+        @self.app.get("/api/sessions")
+        async def sessions() -> SessionList:
+            return SessionList(sessions=self.list_sessions(), can_manage=self._session_manager is not None)
+
+        @self.app.get("/api/sessions/{session_path:path}")
+        async def session(session_path: str) -> SessionInfo:
+            mount_path = _normalize_base_path(session_path)
+            with self._session_lock:
+                if mount_path not in self._sessions:
+                    raise HTTPException(404, "Session not found")
+                return self._session_info(mount_path)
+
+        @self.app.post("/api/sessions", status_code=201)
+        async def create_session(request: SessionCreate) -> SessionInfo:
+            manager = self._session_manager
+            if manager is None:
+                raise HTTPException(405, "Session management is disabled")
+            context = ExitStack()
+            try:
+                mount_path, display = context.enter_context(manager())
+                self.mount(mount_path, display, name=request.name)
+                with self._session_lock:
+                    self._sessions[_normalize_base_path(mount_path)].context = context
+            except BaseException:
+                context.close()
+                raise
+            return self._session_info(_normalize_base_path(mount_path))
+
+        @self.app.delete("/api/sessions/{session_path:path}")
+        async def remove_session(session_path: str) -> dict[str, bool]:
+            if self._session_manager is None:
+                raise HTTPException(405, "Session management is disabled")
+            if len(self._sessions) <= 1:
+                raise HTTPException(409, "The last session cannot be removed")
+            self.unmount(session_path)
+            return {"removed": True}
 
     def _configure_login(self) -> None:
         @self.app.get("/login", response_class=HTMLResponse)
@@ -507,41 +592,91 @@ class WebDisplayService:
             status_code=status_code,
         )
 
-    def mount(self, path: str, display: WebDisplay) -> WebDisplayService:
-        if self._started.is_set():
-            raise RuntimeError("Cannot mount displays after the service has started")
+    def mount(self, path: str, display: WebDisplay, *, name: Optional[str] = None) -> WebDisplayService:
         mount_path = _normalize_base_path(path)
-        if mount_path in self._displays:
-            raise ValueError(f"A display is already mounted at {mount_path or '/'}")
-        if display in self._displays.values():
-            raise ValueError("A WebDisplay can only be mounted once")
-        if not mount_path and self._displays:
-            raise ValueError("The root display must be the only mounted display")
-        if mount_path and "" in self._displays:
-            raise ValueError("Cannot add displays alongside a root display")
-        if any(
-            mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
-            for existing in self._displays
-        ):
-            raise ValueError("Display mount paths cannot overlap")
-        self._displays[mount_path] = display
-        self.app.mount(mount_path or "/", display.build_app())
+        session_name = (name or "").strip() or mount_path.rsplit("/", 1)[-1] or "Session"
+        with self._session_lock:
+            if mount_path in self._displays:
+                raise ValueError(f"A display is already mounted at {mount_path or '/'}")
+            if display in self._displays.values():
+                raise ValueError("A WebDisplay can only be mounted once")
+            if not mount_path and self._displays:
+                raise ValueError("The root display must be the only mounted display")
+            if mount_path and "" in self._displays:
+                raise ValueError("Cannot add displays alongside a root display")
+            if any(
+                mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
+                for existing in self._displays
+            ):
+                raise ValueError("Display mount paths cannot overlap")
+            if self._loop is not None:
+                display._attach(self._loop)
+            self._displays[mount_path] = display
+            depth = len([part for part in mount_path.split("/") if part])
+            display._sessions_api = "../" * depth + "api/sessions"
+            self.app.mount(mount_path or "/", display.build_app(), name=f"session:{mount_path}")
+            route = self.app.routes[-1]
+            assert isinstance(route, Mount)
+            self._sessions[mount_path] = _DisplaySession(display, session_name, route)
         return self
+
+    def unmount(self, path: str) -> None:
+        mount_path = _normalize_base_path(path)
+        with self._session_lock:
+            session = self._sessions.pop(mount_path, None)
+            if session is None:
+                raise HTTPException(404, "Session not found")
+            self._displays.pop(mount_path)
+            self.app.routes.remove(session.route)
+            if self._loop is not None:
+                asyncio.run_coroutine_threadsafe(session.display._close_clients(), self._loop)
+                session.display._detach()
+        if session.context is not None:
+            session.context.close()
+
+    def list_sessions(self) -> list[SessionInfo]:
+        with self._session_lock:
+            return [self._session_info(path) for path in self._sessions]
+
+    def _session_info(self, mount_path: str) -> SessionInfo:
+        session = self._sessions[mount_path]
+        agents = session.display.agents.values()
+        if session.display._pending.list():
+            status: SessionStatus = "waiting"
+        elif any(agent.is_running for agent in agents):
+            status = "running"
+        else:
+            status = "idle"
+        return SessionInfo(path=mount_path or "/", name=session.name, status=status)
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
         loop = asyncio.get_running_loop()
-        if any(display._loop is not None for display in self._displays.values()):
-            raise RuntimeError("A mounted WebDisplay is already attached to a running app")
-        for display in self._displays.values():
-            display._attach(loop)
+        with self._session_lock:
+            if any(display._loop is not None for display in self._displays.values()):
+                raise RuntimeError("A mounted WebDisplay is already attached to a running app")
+            for display in self._displays.values():
+                display._attach(loop)
+            self._loop = loop
         self._started.set()
         try:
             yield
         finally:
-            for display in self._displays.values():
-                display._detach()
+            contexts: list[ExitStack] = []
+            with self._session_lock:
+                self._loop = None
+                for display in self._displays.values():
+                    display._detach()
+                for path, session in list(self._sessions.items()):
+                    if session.context is None:
+                        continue
+                    self._sessions.pop(path)
+                    self._displays.pop(path)
+                    self.app.routes.remove(session.route)
+                    contexts.append(session.context)
             self._started.clear()
+            for context in contexts:
+                context.close()
 
     def access_url(self, path: str = "", _map_0000 = False) -> str:
         mount_path = _normalize_base_path(path)

@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        '/api/sessions': { target: backend, headers: proxyHeaders },
         [`${basePath}/api`]: { target: backend, headers: proxyHeaders },
         [`${basePath}/ws`]: { target: backend, headers: proxyHeaders, ws: true },
       },

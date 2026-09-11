@@ -3,6 +3,7 @@ import threading
 import time
 import unittest
 import zipfile
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -118,10 +119,16 @@ class WebDisplayTest(unittest.TestCase):
         service = WebDisplayService(token="test-token").mount("/", display)
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
-            self.assertEqual(client.get("/api/config").json(), {"expose_files": False})
+            self.assertEqual(client.get("/api/config").json(), {
+                "expose_files": False,
+                "sessions_api": "api/sessions",
+            })
             self.assertEqual(client.get("/api/files/agent-1").status_code, 404)
 
-        self.assertEqual(self.client.get("/api/config").json(), {"expose_files": True})
+        self.assertEqual(self.client.get("/api/config").json(), {
+            "expose_files": True,
+            "sessions_api": "api/sessions",
+        })
 
     def test_upload_view_download_and_delete(self) -> None:
         response = self.client.post(
@@ -462,6 +469,85 @@ class WebDisplayTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "cannot overlap"):
             service.mount("/team/research", WebDisplay(assets_dir=self.root / "missing"))
+
+    def test_service_manages_dynamic_sessions_and_reports_status(self) -> None:
+        removed: list[tuple[str, WebDisplay]] = []
+        main_agent = _Agent(self.root, "main-agent", "Main")
+        main_display = WebDisplay(assets_dir=self.root / "missing")
+        main_agent.display = main_display
+        main_display.bind(main_agent)  # type: ignore[arg-type]
+
+        @contextmanager
+        def new_session():
+            display = WebDisplay(assets_dir=self.root / "missing")
+            try:
+                yield "/sessions/new", display
+            finally:
+                removed.append(("/sessions/new", display))
+
+        service = WebDisplayService(token="service-token", session_manager=new_session)
+        service.mount("/sessions/main", main_display, name="Main session")
+
+        with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+            listing = client.get("/api/sessions").json()
+            self.assertTrue(listing["can_manage"])
+            self.assertEqual(listing["sessions"], [{
+                "path": "/sessions/main",
+                "name": "Main session",
+                "status": "idle",
+            }])
+
+            main_agent._running = True
+            self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "running")
+            main_display._pending.set("main-agent", {"prompt": "Continue?", "choices": ["Yes"]})
+            self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "waiting")
+
+            created = client.post("/api/sessions", json={"name": "Research"})
+            self.assertEqual(created.status_code, 201)
+            self.assertEqual(created.json(), {
+                "path": "/sessions/new",
+                "name": "Research",
+                "status": "idle",
+            })
+            config = client.get("/sessions/new/api/config")
+            self.assertEqual(config.status_code, 200)
+            self.assertEqual(config.json()["sessions_api"], "../../api/sessions")
+
+            deleted = client.delete("/api/sessions/sessions/new")
+            self.assertEqual(deleted.json(), {"removed": True})
+            self.assertEqual(client.get("/sessions/new/api/config").status_code, 404)
+            recreated = client.post("/api/sessions", json={"name": "Research again"})
+            self.assertEqual(recreated.status_code, 201)
+            self.assertEqual(client.delete("/api/sessions/sessions/new").status_code, 200)
+            last = client.delete("/api/sessions/sessions/main")
+            self.assertEqual(last.status_code, 409)
+
+        self.assertEqual([path for path, _display in removed], ["/sessions/new", "/sessions/new"])
+
+    def test_service_closes_managed_session_contexts_on_shutdown(self) -> None:
+        closed = threading.Event()
+
+        @contextmanager
+        def new_session():
+            try:
+                yield "/managed", WebDisplay(assets_dir=self.root / "missing")
+            finally:
+                closed.set()
+
+        service = WebDisplayService(token="service-token", session_manager=new_session)
+        service.mount("/main", WebDisplay(assets_dir=self.root / "missing"))
+        with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+            self.assertEqual(client.post("/api/sessions", json={}).status_code, 201)
+            self.assertFalse(closed.is_set())
+
+        self.assertTrue(closed.is_set())
+        self.assertEqual([session.path for session in service.list_sessions()], ["/main"])
+
+    def test_session_management_is_disabled_without_manager(self) -> None:
+        response = self.client.post("/api/sessions", json={"name": "New session"})
+
+        self.assertEqual(response.status_code, 405)
+        self.assertFalse(self.client.get("/api/sessions").json()["can_manage"])
 
 
 if __name__ == "__main__":

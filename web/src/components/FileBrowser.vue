@@ -32,7 +32,7 @@ function archiveName(path: string) {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 function resizeWidth(delta: number) {
-  settings.filesWidth = clamp(settings.filesWidth + delta, 220, 640)
+  settings.filesWidth = clamp(settings.filesWidth - delta, 220, 640)
 }
 
 function resizePreview(delta: number) {

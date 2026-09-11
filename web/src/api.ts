@@ -1,10 +1,20 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, PendingPrompt, WebConfig } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, PendingPrompt, SessionInfo, SessionList, WebConfig } from './types'
 
 const configuredBasePath = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
 export const basePath = (configuredBasePath ?? location.pathname).replace(/\/$/, '')
+let sessionsBaseUrl = '/api/sessions'
 
 export function appUrl(path: string): string {
   return `${basePath}${path}`
+}
+
+export function configureSessionsApi(path: string): void {
+  sessionsBaseUrl = new URL(path, location.href).pathname
+}
+
+function sessionUrl(path = ''): string {
+  const suffix = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
+  return `${sessionsBaseUrl}${suffix ? `/${suffix}` : ''}`
 }
 
 async function fetchOk(url: string, options?: RequestInit): Promise<Response> {
@@ -39,6 +49,13 @@ export function fullEventTime(event: { timestamp: number }): string {
 }
 
 export const api = {
+  sessions: () => request<SessionList>(sessionUrl()),
+  createSession: (name: string) => request<SessionInfo>(sessionUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name || null }),
+  }),
+  removeSession: (path: string) => request<{ removed: boolean }>(sessionUrl(path), { method: 'DELETE' }),
   config: () => request<WebConfig>(appUrl('/api/config')),
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),
   prompts: () => request<PendingPrompt[]>(appUrl('/api/prompts')),
