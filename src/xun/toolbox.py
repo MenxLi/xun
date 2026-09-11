@@ -12,7 +12,7 @@ from .toolcall import Function, ToolCallContext
 
 class ToolBox:
 
-    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "patch", "cmd", "search", "browser", "diagnostic"]
+    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "patch", "cmd", "search", "browser", "diagnostic", "extra"]
     STANDARD_TOOL_FACTORIES: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
         "system": expose_system_tools,
         "fs": expose_fs_tools,
@@ -21,6 +21,7 @@ class ToolBox:
         "search": expose_search_tools,
         "browser": expose_browser_tools,
         "diagnostic": expose_diagnostic_tools,
+        "extra": expose_extra_tools,
     }
     SUBAGENT_DEPTH_FLAG = "__subagent_depth"
     SUBAGENT_MAX_DEPTH = 3

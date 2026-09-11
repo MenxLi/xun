@@ -57,12 +57,17 @@ ENV VIRTUAL_ENV=/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# install xun
+# === install xun ===
 # install deps ahead of time to leverage Docker layer caching
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 RUN pip install --upgrade pip setuptools wheel playwright
 RUN playwright install chromium --with-deps
-RUN pip install httpx[socks] pymupdf matplotlib
+
+# my extra deps
+RUN pip install httpx[socks] 
+RUN pip install zai-sdk
+RUN pip install pymupdf matplotlib
+
 COPY . /xun-src
 WORKDIR /xun-src
 RUN pip install .

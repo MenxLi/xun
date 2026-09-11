@@ -256,7 +256,7 @@ def main_serve():
             frontend_url=args.frontend_url,
             expose_files=True,
         )
-        agents = []
+        agents: list[Agent[Agent.T.Alive]] = []
         for workdir in workdirs:
             workdir = Path(workdir)
             name = f"agent-{hashlib.md5(str(workdir).encode()).hexdigest()[:8]}"
