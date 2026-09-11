@@ -1,7 +1,7 @@
 export type PreviewKind = 'image' | 'text' | 'unsupported'
 
 // Structured text formats previewed as text despite not being text/*;
-// mirrors TEXT_MEDIA_TYPES in src/xun/displays/file_api.py.
+// mirrors TEXT_MEDIA_TYPES in src/xun/displays/web_file.py.
 const TEXT_LIKE = new Set(['application/json', 'application/toml', 'application/xml', 'application/yaml'])
 
 // The single classification point for listing icons and the preview pane.

@@ -1,5 +1,6 @@
 from .display import Display, NullDisplay
-from .web import SessionInfo, WebDisplay, WebDisplayService
+from .web_display import WebDisplay
+from .web_service import SessionInfo, WebDisplayService
 
 __all__ = [
     "Display",

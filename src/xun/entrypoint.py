@@ -8,7 +8,8 @@ from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
 from .displays.display import Display
-from .displays.web import WebDisplay, WebDisplayService
+from .displays.web_display import WebDisplay
+from .displays.web_service import WebDisplayService
 from .toolbox import ToolBox
 from .agent import Agent
 from .store import Store
