@@ -54,12 +54,14 @@ Optionally, run the agent in web mode:
 # - Build the web frontend (if using the web display)
 make build-web
 # - Start the web server at current directory
+xuns .
+# - Use a temporary workspace instead
 xuns
-# - Use a temporary directory as the workspace instead
-xuns ""
+# - Disable creating and removing sessions from the UI
+xuns . --no-manage-sessions
 ```
 
-Each positional argument of `xuns` creates an agent rooted at that directory (default: current directory; an empty string uses a temporary directory that is removed on exit).
+`xuns` accepts at most one workspace directory. Session management is enabled by default. When a directory is supplied, every session uses it; otherwise, each session gets an independent temporary workspace that is removed when the session ends.
 
 ## Usage
 
@@ -108,7 +110,15 @@ Input `/help` to see the full list of commands.
 
 ## Web
 
-`WebDisplay` provides an interactive web interface for the agent. 
+`web_session` starts the same managed web experience available through `xuns`:
+
+```python
+from xun import web_session
+
+web_session(workdir=".", manage_sessions=True)
+```
+
+`WebDisplay` provides lower-level access to the interactive web interface for custom service composition.
 It can be used as a chat-based web application, or as a backend for other applications.
 
 ```python
@@ -143,7 +153,7 @@ Build the image and run the agent in a container with `xunc`:
 ```bash
 make build-docker   # builds the web frontend, then the `xun` image
 
-xunc                # sandbox: no mount, container starts from the image's own /workspace
+xunc                # sandbox: no host mount; xuns creates a temporary workspace in the container
 xunc .              # mount the current directory as /workspace inside the container
 xunc --copy .       # copy the current directory into /workspace (no host bind mount)
 ```

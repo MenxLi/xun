@@ -1,9 +1,10 @@
 # import for arrow key support in input()
 import readline     # noqa
 
-import argparse, shlex, sys, hashlib, tempfile, subprocess
+import argparse, shlex, sys, hashlib, tempfile, subprocess, uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Optional, Literal
+from typing import Callable, Iterator, Optional, Literal
 from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
@@ -142,6 +143,76 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
             agent.error("Execution interrupted by user.")
         inst = get_instruction()
 
+
+@contextmanager
+def _web_display_session(
+    workdir: Path | None,
+    *,
+    mount_path: str,
+    frontend_url: str | None,
+    persistent_store: Path | None,
+) -> Iterator[tuple[str, WebDisplay]]:
+    temporary_workspace = tempfile.TemporaryDirectory(suffix="-workspace") if workdir is None else None
+    session_workdir = Path(temporary_workspace.name) if temporary_workspace else workdir
+    try:
+        display = WebDisplay(frontend_url=frontend_url, expose_files=True)
+        agent = setup_agent(
+            name=f"agent-{hashlib.md5(str(session_workdir).encode()).hexdigest()[:8]}",
+            persistent_store=persistent_store,
+            default_tools=True,
+            default_commands=True,
+            display=display,
+            workdir=session_workdir,
+        )
+        try:
+            yield mount_path, display
+        finally:
+            agent.finalize()
+    finally:
+        if temporary_workspace is not None:
+            temporary_workspace.cleanup()
+
+
+def web_session(
+    workdir: Path | str | None = None,
+    *,
+    host: str = "localhost",
+    port: int = 18960,
+    token: str = "",
+    frontend_url: str | None = None,
+    persistent_store: Path | None = None,
+    manage_sessions: bool = True,
+) -> None:
+    """Run a web service with one initial agent and optional dynamic sessions."""
+    fixed_workdir = Path(workdir) if workdir is not None else None
+
+    def new_session():
+        mount_path = f"/sessions/{uuid.uuid4()}"
+        return _web_display_session(
+            fixed_workdir,
+            mount_path=mount_path,
+            frontend_url=frontend_url,
+            persistent_store=persistent_store,
+        )
+
+    with _web_display_session(
+        fixed_workdir,
+        mount_path="/",
+        frontend_url=frontend_url,
+        persistent_store=persistent_store,
+    ) as (mount_path, display):
+        service = WebDisplayService(
+            host=host,
+            port=port,
+            token=token,
+            session_manager=new_session if manage_sessions else None,
+        ).mount(mount_path, display)
+        try:
+            service.start(blocking=True)
+        finally:
+            service.stop()
+
+
 def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):
     inst = input_to_instruction(instruction)
     _execute_instruction(inst, agent)
@@ -228,12 +299,13 @@ def main():
 
 def main_serve():
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
-    parser.add_argument("workdir", type=str, help="Working directories for the agents (default: current directory; pass an empty string to use a temporary directory).", nargs="*", default=[])
+    parser.add_argument("workdir", type=str, help="Workspace for all sessions (default: a temporary workspace).", nargs="?", default=None)
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
     parser.add_argument("--frontend-url", type=str, default=None, help="Frontend URL for the web interface, for DEV (default: None).")
     parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
+    parser.add_argument("--manage-sessions", action=argparse.BooleanOptionalAction, default=True, help="Allow sessions to be created and removed from the web interface (default: enabled).")
     args = parser.parse_args()
 
     if args.persist:
@@ -242,72 +314,38 @@ def main_serve():
     else:
         persistent_store = None
     
-    temp_dirs: list[tempfile.TemporaryDirectory] = []
-    try:
-        workdirs: list[Path] = []
-        for wd in (args.workdir or ["."]):
-            if wd.strip() == "":
-                temp_dir = tempfile.TemporaryDirectory(prefix="xun-web-", suffix="-workdir")
-                temp_dirs.append(temp_dir)
-                workdirs.append(Path(temp_dir.name))
-            else:
-                workdirs.append(Path(wd))
-
-        display = WebDisplay(
-            frontend_url=args.frontend_url,
-            expose_files=True,
-        )
-        agents: list[Agent[Agent.T.Alive]] = []
-        for workdir in workdirs:
-            workdir = Path(workdir)
-            name = f"agent-{hashlib.md5(str(workdir).encode()).hexdigest()[:8]}"
-            agent = setup_agent(
-                name=name,
-                persistent_store=persistent_store, 
-                default_tools=True, 
-                default_commands=True, 
-                display=display,
-                workdir=Path(workdir),
-            )
-            agents.append(agent)
-        service = WebDisplayService(
-            host=args.host, port=args.port, token=args.token or ""
-            ).mount('/', display)
-
-        try:
-            service.start(blocking=True)
-        except:
-            raise
-        finally:
-            for agent in agents:
-                if Agent.is_initialized(agent):
-                    agent.finalize()
-            service.stop()
-    finally:
-        for temp_dir in temp_dirs:
-            temp_dir.cleanup()
+    web_session(
+        workdir=args.workdir or None,
+        host=args.host,
+        port=args.port,
+        token=args.token or "",
+        frontend_url=args.frontend_url,
+        persistent_store=persistent_store,
+        manage_sessions=args.manage_sessions,
+    )
 
 def main_container():
     import os
     import fnmatch
 
     parser = argparse.ArgumentParser(description="Run the container")
-    parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no mount, the container starts from the image's own /workspace).", default="", nargs="?")
+    parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no host mount).", default="", nargs="?")
     parser.add_argument("--copy", action="store_true", help="Copy the mount directory into /workspace instead of bind mounting it.")
     parser.add_argument("--image", type=str, help="Docker image to use for the container.", default="xun")
     parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list. Will always include XUN_*/_XUN_* by default.", default=[], nargs="+")
     parser.add_argument("--name", type=str, help="Name of the container.", default=None)
     parser.add_argument("--network", type=str, choices=["bridge", "host"], default="bridge", help="Docker network mode. bridge (default) publishes --port ports; host shares the host network namespace (on macOS this is the Docker VM's, not reachable from the host browser).")
     parser.add_argument("--port", type=str, help="Ports to publish to the host in bridge mode, can be a comma-separated list.", default=["18960"], nargs="+")
-    parser.add_argument("--exec", dest="exec_cmd", type=str, help="Command to run in the container (empty string falls back to the image's default CMD).", default="xuns --host 0.0.0.0")
+    parser.add_argument("--exec", dest="exec_cmd", type=str, help="Command to run in the container (default: xuns; empty string falls back to the image's default CMD).", default=None)
     args = parser.parse_args()
 
     env_kw = ["XUN_*", "_XUN_*"] + [e.strip() for ev in args.env for e in ev.split(",")]
     ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
 
-    mount: str = str(Path(args.mount).resolve()) if args.mount.strip() else ""
-    if args.copy and not mount:
+    requested_mount = args.mount.strip()
+    if args.copy and not requested_mount:
         parser.error("--copy requires a mount directory.")
+    mount = str(Path(requested_mount).resolve()) if requested_mount else ""
     envs: dict = {k: v for k, v in os.environ.items() if any(fnmatch.fnmatch(k, pattern) for pattern in env_kw)}
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
     network: Literal['bridge', 'host'] = args.network
@@ -329,8 +367,11 @@ def main_container():
     for key, value in envs.items():
         cmd += ["--env", f"{key}={value}"]
     cmd.append(args.image)
-    if args.exec_cmd.strip():
-        cmd += shlex.split(args.exec_cmd)
+    exec_cmd = args.exec_cmd
+    if exec_cmd is None:
+        exec_cmd = "xuns --host 0.0.0.0" if mount else "xuns '' --host '0.0.0.0'"
+    if exec_cmd.strip():
+        cmd += shlex.split(exec_cmd)
 
     subprocess.run(cmd, check=True)
     try:

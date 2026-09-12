@@ -1,4 +1,4 @@
-from .entrypoint import setup_agent, interactive_session, main, main_serve, main_container
+from .entrypoint import setup_agent, interactive_session, web_session, main, main_serve, main_container
 from .display_abstract import DisplayAbstract
 from .displays import Display, NullDisplay, WebDisplay, WebDisplayService
 from .types import Result, ToolResultType, ErrorInfo, CancelledError
@@ -17,7 +17,7 @@ __all__ = [
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",
     "HookArgs", "Hooks",
-    "setup_agent", "interactive_session", 
+    "setup_agent", "interactive_session", "web_session",
     "main", "main_serve", "main_container",
     "Result", "ToolResultType", "ErrorInfo", "CancelledError",
 ]
