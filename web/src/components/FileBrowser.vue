@@ -8,7 +8,7 @@ import { previewKind } from '../preview'
 import type { AgentInfo, FileEntry } from '../types'
 import { useSettingsStore } from '../stores/settings'
 
-const props = defineProps<{ agents: AgentInfo[]; agentId: string }>()
+const props = defineProps<{ agents: AgentInfo[]; agentId: string; available: boolean | null }>()
 const emit = defineEmits<{ close: [] }>()
 
 const settings = useSettingsStore()
@@ -39,11 +39,16 @@ function resizePreview(delta: number) {
   settings.previewHeight = clamp(settings.previewHeight - delta, 120, window.innerHeight - 220)
 }
 
-watch(() => props.agentId, () => { path.value = ''; previewEntry.value = null; void refresh() })
+watch([() => props.agentId, () => props.available], () => {
+  path.value = ''
+  previewEntry.value = null
+  void refresh()
+}, { immediate: true })
 
 async function refresh() {
-  if (!props.agentId) {
+  if (!props.available || !props.agentId) {
     entries.value = []
+    error.value = ''
     return
   }
   loading.value = true
@@ -69,7 +74,7 @@ function open(entry: FileEntry) {
 }
 
 async function upload(files: FileList | null) {
-  if (!files?.length) return
+  if (!props.available || !props.agentId || !files?.length) return
   uploading.value = true
   error.value = ''
   try {
@@ -84,7 +89,7 @@ async function upload(files: FileList | null) {
 }
 
 function dragEnter(event: DragEvent) {
-  if (!event.dataTransfer?.types.includes('Files')) return
+  if (!props.available || !props.agentId || !event.dataTransfer?.types.includes('Files')) return
   dragDepth += 1
   dragActive.value = true
 }
@@ -117,7 +122,6 @@ function goUp() {
   void refresh()
 }
 
-void refresh()
 </script>
 
 <template>
@@ -132,17 +136,19 @@ void refresh()
     </header>
 
     <div class="file-toolbar">
-      <button class="icon-button" title="Parent folder" :disabled="!path" @click="goUp"><ArrowLeft :size="16" /></button>
+      <button class="icon-button" title="Parent folder" :disabled="!available || !agentId || !path" @click="goUp"><ArrowLeft :size="16" /></button>
       <div class="crumb" :title="path || currentAgent?.workdir">{{ path || '/' }}</div>
-      <button class="icon-button" title="Refresh" @click="refresh"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
-      <a class="icon-button" :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" title="Download this folder as zip"><FolderArchive :size="16" /></a>
-      <button class="icon-button" title="Upload files" :disabled="uploading" @click="fileInput?.click()"><Upload :size="16" :class="{ spinning: uploading }" /></button>
+      <button class="icon-button" title="Refresh" :disabled="!available || !agentId" @click="refresh"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
+      <a v-if="available && agentId" class="icon-button" :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" title="Download this folder as zip"><FolderArchive :size="16" /></a>
+      <button v-else class="icon-button" title="Download this folder as zip" disabled><FolderArchive :size="16" /></button>
+      <button class="icon-button" title="Upload files" :disabled="!available || !agentId || uploading" @click="fileInput?.click()"><Upload :size="16" :class="{ spinning: uploading }" /></button>
       <input ref="fileInput" hidden type="file" multiple @change="upload(($event.target as HTMLInputElement).files)">
     </div>
 
     <div v-if="error" class="file-error">{{ error }}</div>
     <div class="file-list" :aria-busy="loading || uploading">
-      <div v-if="!loading && !entries.length" class="file-empty">This folder is empty.</div>
+      <div v-if="available === false" class="file-empty">File access is disabled.</div>
+      <div v-else-if="available && agentId && !loading && !entries.length" class="file-empty">This folder is empty.</div>
       <div v-for="entry in entries" :key="entry.path" class="file-row" @dblclick="open(entry)">
         <button class="file-name" :title="entry.name" @click="open(entry)">
           <Folder v-if="entry.kind === 'directory'" :size="16" />

@@ -150,7 +150,7 @@ def _web_display_session(
     *,
     mount_path: str,
     persistent_store: Path | None,
-) -> Iterator[tuple[str, WebDisplay]]:
+):
     temporary_workspace = tempfile.TemporaryDirectory(suffix="-workspace") if workdir is None else None
     session_workdir = Path(temporary_workspace.name) if temporary_workspace else workdir
     try:

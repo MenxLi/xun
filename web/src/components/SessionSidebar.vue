@@ -61,7 +61,6 @@ watch(() => props.busy, (busy, wasBusy) => {
 
     <div v-if="error" class="session-error">{{ error }}</div>
     <nav class="session-list" aria-label="Sessions">
-      <span v-if="!sessions.length" class="session-empty">No sessions</span>
       <div
         v-for="session in sessions"
         :key="session.path"

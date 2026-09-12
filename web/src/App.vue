@@ -22,7 +22,7 @@ const selectedOnly = ref(false)
 const commands = ref<CommandInfo[]>([])
 const input = ref('')
 const connected = ref(false)
-const exposeFiles = ref(false)
+const exposeFiles = ref<boolean | null>(null)
 const settingsOpen = ref(false)
 const sessions = ref<SessionInfo[]>([])
 const canManageSessions = ref(false)
@@ -48,7 +48,7 @@ let queuedMessages: ServerMessage[] = []
 
 const currentSessionPath = ref('/')
 const showSessions = computed(() => settings.sessionsOpen)
-const showFiles = computed(() => exposeFiles.value && settings.filesOpen && (!narrowLayout.value || !showSessions.value))
+const showFiles = computed(() => settings.filesOpen && (!narrowLayout.value || !showSessions.value))
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
 const selectedAgentCancelling = computed(() => cancellingAgents.value.has(selectedAgentId.value))
@@ -203,7 +203,7 @@ function resetSessionData() {
   cancellingAgents.value = new Set()
   resolvingPrompts.value = new Set()
   promptErrors.value = new Map()
-  exposeFiles.value = false
+  exposeFiles.value = null
   input.value = ''
   sendError.value = ''
   sending.value = false
@@ -441,7 +441,7 @@ onBeforeUnmount(() => {
         <div class="agent-controls">
           <Bot :size="15" />
           <select v-model="selectedAgentId" aria-label="Active agent" :disabled="!agents.length">
-            <option v-if="!agents.length" value="">No agents</option>
+            <option v-if="!agents.length" value="" />
             <option v-for="agent in agents" :key="agent.identifier" :value="agent.identifier">{{ agent.name }}</option>
           </select>
           <label class="stream-filter" title="Show events from the active agent only">
@@ -464,7 +464,7 @@ onBeforeUnmount(() => {
               <label class="setting-toggle"><span>Render Markdown</span><input v-model="settings.markdown" type="checkbox"></label>
             </div>
           </div>
-          <button v-if="exposeFiles" class="icon-button" :title="showFiles ? 'Hide workspace' : 'Show workspace'" @click="toggleFiles">
+          <button class="icon-button" :title="showFiles ? 'Hide workspace' : 'Show workspace'" @click="toggleFiles">
             <PanelRightClose v-if="showFiles" :size="18" />
             <PanelRightOpen v-else :size="18" />
           </button>
@@ -472,7 +472,6 @@ onBeforeUnmount(() => {
       </header>
 
       <StickyScroll ref="stream" :size="visibleEvents.length + visiblePrompts.length">
-        <div v-if="!visibleEvents.length && !visiblePrompts.length" class="empty-chat"><strong>{{ agents.length ? 'No activity here yet' : 'Waiting for an agent' }}</strong><span>{{ agents.length ? 'Send a message or show all agent activity.' : 'Bound agents will appear automatically.' }}</span></div>
         <EventStream v-if="visibleEvents.length" :events="visibleEvents" :markdown="settings.markdown" />
         <div v-if="visiblePrompts.length" class="prompt-stream">
           <PromptCard
@@ -491,7 +490,7 @@ onBeforeUnmount(() => {
         <InputComposer
           v-model="input"
           :commands="commands"
-          :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : 'Select an agent to start'"
+          :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : ''"
           :disabled="!connected || !selectedAgent"
           :supports-vision="supportsVision"
           :images="images"
@@ -509,7 +508,7 @@ onBeforeUnmount(() => {
     </main>
 
     <div v-if="showFiles" class="mobile-scrim workspace-scrim" @click="settings.filesOpen = false" />
-    <FileBrowser v-if="showFiles" :agents="agents" :agent-id="selectedAgentId" @close="settings.filesOpen = false" />
+    <FileBrowser v-if="showFiles" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" @close="settings.filesOpen = false" />
 
   </div>
 </template>
