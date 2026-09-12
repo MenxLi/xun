@@ -148,7 +148,7 @@ function handleKeydown(event: KeyboardEvent) {
       return
     }
   }
-  if (key === 'Enter' && event.shiftKey) {
+  if (key === 'Enter' && (event.metaKey || event.ctrlKey)) {
     event.preventDefault()
     emit('send')
   }
@@ -162,8 +162,8 @@ function selectImages(event: Event) {
 
 const hint = computed(() => {
   if (props.cancelling) return 'Cancelling execution...'
-  if (filteredCommands.value.length) return '↑↓ navigate · Tab select · Shift+Enter send'
-  return 'Shift+Enter send · Enter new line · Ctrl+↑↓ history'
+  if (filteredCommands.value.length) return '↑↓ navigate · Tab select · Ctrl/⌘+Enter send'
+  return 'Ctrl/⌘+Enter send · Enter new line · Ctrl/⌘+↑↓ history'
 })
 
 const isCommand = computed(() => input.value.startsWith('/'))
