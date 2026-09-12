@@ -13,7 +13,6 @@ from .displays.web_display import WebDisplay
 from .displays.web_service import WebDisplayService
 from .toolbox import ToolBox
 from .agent import Agent
-from .store import Store
 from .prompt import get_system_prompt
 from .command import Command
 from .types import CancelledError
@@ -86,7 +85,6 @@ def setup_agent(
     default_tools: bool = False,
     default_system_prompt: bool = True,
     default_commands: bool = True,
-    persistent_store: Path | None = None,
     display: DisplayAbstract | None = None,
     workdir: Path | str | None = None,
     ) -> "Agent[Agent.T.Init]":
@@ -99,7 +97,6 @@ def setup_agent(
     agent = Agent(
         name=name, 
         toolbox=toolbox, 
-        persistent_store=persistent_store, 
         display=display or Display(),
         workspace=Workspace(workdir=(Path(workdir) if workdir else Path.cwd())),
         )
@@ -149,7 +146,6 @@ def _web_display_session(
     workdir: Path | None,
     *,
     mount_path: str,
-    persistent_store: Path | None,
 ):
     temporary_workspace = tempfile.TemporaryDirectory(suffix="-workspace") if workdir is None else None
     session_workdir = Path(temporary_workspace.name) if temporary_workspace else workdir
@@ -157,7 +153,6 @@ def _web_display_session(
         display = WebDisplay(expose_files=True)
         agent = setup_agent(
             name=f"agent-{hashlib.md5(str(session_workdir).encode()).hexdigest()[:8]}",
-            persistent_store=persistent_store,
             default_tools=True,
             default_commands=True,
             display=display,
@@ -179,7 +174,6 @@ def web_session(
     port: int = 18960,
     token: str = "",
     base_path: str = "",
-    persistent_store: Path | None = None,
     manage_sessions: bool = True,
 ) -> None:
     """Run a web service with one initial agent and optional dynamic sessions."""
@@ -190,13 +184,11 @@ def web_session(
         return _web_display_session(
             fixed_workdir,
             mount_path=mount_path,
-            persistent_store=persistent_store,
         )
 
     with _web_display_session(
         fixed_workdir,
         mount_path="/",
-        persistent_store=persistent_store,
     ) as (mount_path, display):
         service = WebDisplayService(
             host=host,
@@ -260,21 +252,13 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run the agent.")
     parser.add_argument("instruction", type=str, help="The instruction for the agent.", default="", nargs="?")
-    parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
     parser.add_argument("--non-interactive", action="store_true", help="Run in non-interactive mode (default: interactive).")
 
     args = parser.parse_args()
 
     user_input = args.instruction.strip()
 
-    if args.persist:
-        store = Store()
-        persistent_store = store.running_agent_store
-    else:
-        persistent_store = None
-
     agent = setup_agent(
-        persistent_store=persistent_store, 
         default_tools=True, 
         default_commands=True, 
         display=Display()
@@ -302,15 +286,8 @@ def main_serve():
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
     parser.add_argument("--base-path", type=str, default="", help="URL prefix for the web service (default: root).")
-    parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
     parser.add_argument("--manage-sessions", action=argparse.BooleanOptionalAction, default=True, help="Allow sessions to be created and removed from the web interface (default: enabled).")
     args = parser.parse_args()
-
-    if args.persist:
-        store = Store()
-        persistent_store = store.running_agent_store
-    else:
-        persistent_store = None
     
     web_session(
         workdir=args.workdir or None,
@@ -318,7 +295,6 @@ def main_serve():
         port=args.port,
         token=args.token or "",
         base_path=args.base_path,
-        persistent_store=persistent_store,
         manage_sessions=args.manage_sessions,
     )
 

@@ -1,7 +1,12 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from xun.command import CommandRegistry
+from xun.conversation import Conversation
 from xun.display_abstract import ShowToolsEvent
+from xun.store import Store
 from xun.toolbox import ToolBox
 from xun.toolcall import tool_attr
 
@@ -44,6 +49,25 @@ class ToolsCommandTest(unittest.TestCase):
         CommandRegistry().with_defaults().get("tools").invoke(agent)  # type: ignore[arg-type]
 
         self.assertEqual(agent.events, [ShowToolsEvent(tools=[])])
+
+
+class HistoryCommandTest(unittest.TestCase):
+    def test_save_and_load_round_trip(self) -> None:
+        agent = _CapturingAgent(ToolBox())
+        agent.conversation = Conversation()
+        agent.info = lambda _message: None
+        agent.error = lambda _message: None
+        agent.conversation.add_user_message("saved message")
+
+        with TemporaryDirectory() as directory, patch(
+            "xun.store.Store", side_effect=lambda: Store(Path(directory))
+        ):
+            commands = CommandRegistry().with_defaults()
+            commands.get("save").invoke(agent)  # type: ignore[arg-type]
+            agent.conversation.clear()
+            commands.get("load").invoke(agent, "latest")  # type: ignore[arg-type]
+
+        self.assertEqual(agent.conversation.messages[-1]["content"], "saved message")
 
 
 if __name__ == "__main__":

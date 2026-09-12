@@ -234,7 +234,6 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
     agent.conversation.add_agent_message(message)
     for tool_id, tr in tool_results:
         agent.conversation.add_tool_result(tool_id, tr)
-    agent.dump()
 
     agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(
         agent=agent,

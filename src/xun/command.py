@@ -194,15 +194,17 @@ def default_commands() -> list[Command]:
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
 
-    def _dump_handler(agent: "Agent[Agent.T.Init]") -> None:
+    def _save_handler(agent: "Agent[Agent.T.Init]") -> None:
         store = Store()
-        agent.dump(aim_dir := store.next_history_store())
+        aim_dir = store.next_history_store()
+        aim_dir.mkdir()
+        agent.conversation.dump(aim_dir / "conversation.json")
         agent.info(f"Dumped to {aim_dir}")
 
     def _load_handler(agent: "Agent[Agent.T.Init]", idx: list[str]) -> None:
         store = Store()
         if not idx:
-            agent.error("Please provide an index or 'latest/running' to load history.")
+            agent.error("Please provide an index or 'latest' to load history.")
             return
         target = idx[0]
         if target.isdigit():
@@ -210,8 +212,6 @@ def default_commands() -> list[Command]:
             if not aim_dir:
                 agent.error(f"History {target} not found.")
                 return
-        elif target == "running":
-            aim_dir = store.running_agent_store
         elif target == "latest":
             latest_dir = store.latest_history_store()
             if latest_dir is None:
@@ -219,9 +219,13 @@ def default_commands() -> list[Command]:
                 return
             aim_dir = latest_dir
         else:
-            agent.error(f"Invalid index '{target}'. Use a number, 'latest', or 'running'.")
+            agent.error(f"Invalid index '{target}'. Use a number or 'latest'.")
             return
-        agent.load(aim_dir)
+        conv_file = aim_dir / "conversation.json"
+        if not conv_file.exists():
+            agent.error(f"No conversation history found in {conv_file}.")
+            return
+        agent.conversation.load(conv_file)
         agent.info(f"Loaded from {aim_dir}")
 
     def _condense_handler(agent: "Agent[Agent.T.Init]") -> None:
@@ -245,8 +249,8 @@ def default_commands() -> list[Command]:
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", description="Show configuration.", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
-        Command(name="save", description="Save history.", handler=_dump_handler),
-        Command(name="load", description="Load history. (running, latest, [idx])", handler=_load_handler),
+        Command(name="save", description="Save history.", handler=_save_handler),
+        Command(name="load", description="Load history. (latest, [idx])", handler=_load_handler),
         Command(name="compact", description="Condense conversation.", handler=_condense_handler),
         Command(name="yolo", description="Toggle auto-confirm (auto-approve actions without prompting).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),

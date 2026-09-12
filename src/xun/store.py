@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 class Store:
     def __init__(self, root_dir: Path = Path(".xun")):
@@ -14,14 +13,9 @@ class Store:
     def conversation_dir(self) -> Path:
         return self._root_dir / "conversation"
     
-    @property
-    def running_agent_store(self) -> Path:
-        return self._root_dir / "running_agent"
-    
     def _init_structure(self):
         self.root_dir.mkdir(exist_ok=True)
         self.conversation_dir.mkdir(exist_ok=True)
-        self.running_agent_store.mkdir(exist_ok=True)
     
     def latest_history_store(self) -> Path | None:
         """ Find the latest conversation history directory.  """
@@ -31,7 +25,7 @@ class Store:
         history_dirs.sort(reverse=True)
         return history_dirs[0]
     
-    def get_history_store(self, idx: int | str) -> Optional[Path]:
+    def get_history_store(self, idx: int | str) -> Path | None:
         if isinstance(idx, int):
             idx_str = f"{idx:06d}"
         else:

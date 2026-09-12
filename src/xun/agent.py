@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from dataclasses import dataclass, field
-from pathlib import Path
 import json
 import uuid
 import weakref
@@ -20,7 +19,7 @@ from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe
 from .toolbox import ToolBox
-from .workspace import Workspace, DeferredTempDirectory
+from .workspace import Workspace
 from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
@@ -80,7 +79,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
     toolbox: ToolBox = field(default_factory=ToolBox)
     command: CommandRegistry = field(default_factory=CommandRegistry)
     workspace: Workspace = field(default_factory=Workspace)
-    persistent_store: Optional[Path] = None
     cancel_event: LabeledEvent = field(default_factory=lambda: LabeledEvent(label=""))
 
     # below auto inherit
@@ -141,11 +139,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
 
         self.display.bind(self)
         self.display_event(AgentBindEvent())
-        if self.persistent_store:
-            if self.persistent_store.exists():
-                assert self.persistent_store.is_dir(), f"Persistent store path {self.persistent_store} must be a directory."
-                self.load(self.persistent_store)
-            self.info(f"Using persistent store from {self.persistent_store}")
 
         self.workspace.prepare()
 
@@ -176,7 +169,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         copy_toolbox: bool = True,
         copy_command: bool = True,
         copy_conversation: bool = False,
-        persistent_store: Optional[Path] = None, 
         ) -> "Agent[T.Uninit]":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
@@ -185,7 +177,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         new_agent = Agent(
             identifier=(new_id := str(uuid.uuid4())),
             name=f"{parent_agent.name}-child-{new_id[:8]}",
-            persistent_store=persistent_store,
             # auto inherit
             config = parent_agent.config.clone(),
             api_call_semaphore=parent_agent.api_call_semaphore,
@@ -203,29 +194,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         if share_cancel_event:
             new_agent.cancel_event = parent_agent.cancel_event
         return new_agent
-
-    def dump(self, store_dir: Optional[Path] = None):
-        if store_dir is None:
-            if self.persistent_store is None:
-                return
-            store_dir = self.persistent_store
-        if not store_dir.exists():
-            store_dir.mkdir(exist_ok=True)
-
-        conv_file = store_dir / f"conversation.json"
-        self.conversation.dump(conv_file)
-    
-    def load(self, store_dir: Optional[Path] = None):
-        if store_dir is None:
-            if self.persistent_store is None:
-                raise ValueError("Persistent store path is not set. Please provide a store_dir to load the conversation.")
-            store_dir = self.persistent_store
-
-        conv_file = store_dir / f"conversation.json"
-        if conv_file.exists():
-            self.conversation.load(conv_file)
-        else:
-            self.error(f"No conversation history found in {conv_file}. Starting with an empty conversation.")
     
     @overload
     @except_safe
