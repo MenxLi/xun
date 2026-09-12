@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Bot, Check, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
-import { api, appUrl, basePath, configureSessionsApi, formatTokens } from './api'
+import { api, appUrl, chatUrl, configureSession, formatTokens } from './api'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
@@ -46,7 +46,7 @@ let agentDataRequest = 0
 let syncing = false
 let queuedMessages: ServerMessage[] = []
 
-const currentSessionPath = computed(() => basePath || '/')
+const currentSessionPath = ref('/')
 const showSessions = computed(() => settings.sessionsOpen)
 const showFiles = computed(() => exposeFiles.value && settings.filesOpen && (!narrowLayout.value || !showSessions.value))
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
@@ -90,18 +90,19 @@ watch(selectedAgentId, async agentId => {
   }
 })
 
-async function loadInitialData() {
-  const [config, eventData, agentData, runningData, promptData] = await Promise.all([
+async function fetchInitialData() {
+  return Promise.all([
     api.config(), api.events(), api.agents(), api.running(), api.prompts(),
   ])
+}
+
+function applyInitialData([config, eventData, agentData, runningData, promptData]: Awaited<ReturnType<typeof fetchInitialData>>) {
   exposeFiles.value = config.expose_files
-  configureSessionsApi(config.sessions_api)
   events.value = eventData
   agents.value = agentData
   runningAgents.value = new Set(runningData)
   pendingPrompts.value = promptData
   ensureAgentSelection()
-  await loadSessions()
 }
 
 async function loadSessions() {
@@ -110,6 +111,10 @@ async function loadSessions() {
     sessions.value = listing.sessions
     canManageSessions.value = listing.can_manage
     sessionError.value = ''
+    if (socket && !listing.sessions.some(session => session.path === currentSessionPath.value)) {
+      const fallback = listing.sessions[0]
+      if (fallback) switchSession(fallback.path)
+    }
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : 'Could not load sessions'
   }
@@ -120,9 +125,11 @@ async function createSession(name: string) {
   sessionError.value = ''
   try {
     const session = await api.createSession(name)
-    window.location.assign(`${session.path.replace(/\/$/, '')}/`)
+    await loadSessions()
+    switchSession(session.path)
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : 'Could not create session'
+  } finally {
     sessionBusy.value = false
   }
 }
@@ -136,7 +143,7 @@ async function removeSession(session: SessionInfo) {
     sessions.value = remaining
     if (session.path === currentSessionPath.value) {
       const next = remaining[0]?.path || '/'
-      window.location.assign(`${next.replace(/\/$/, '')}/`)
+      switchSession(next)
       return
     }
   } catch (error) {
@@ -186,26 +193,77 @@ function applyAgentEvent(event: DisplayEvent) {
   ensureAgentSelection()
 }
 
+function resetSessionData() {
+  events.value = []
+  agents.value = []
+  selectedAgentId.value = ''
+  commands.value = []
+  pendingPrompts.value = []
+  runningAgents.value = new Set()
+  cancellingAgents.value = new Set()
+  resolvingPrompts.value = new Set()
+  promptErrors.value = new Map()
+  exposeFiles.value = false
+  input.value = ''
+  sendError.value = ''
+  sending.value = false
+  clearImages()
+}
+
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-  socket = new WebSocket(`${protocol}://${location.host}${appUrl('/ws')}`)
-  socket.addEventListener('open', async () => {
+  const nextSocket = new WebSocket(`${protocol}://${location.host}${appUrl('/ws')}`)
+  socket = nextSocket
+  nextSocket.addEventListener('open', async () => {
+    if (socket !== nextSocket) return
     connected.value = true
     syncing = true
-    await loadInitialData().catch(() => undefined)
+    let data: Awaited<ReturnType<typeof fetchInitialData>>
+    try {
+      data = await fetchInitialData()
+    } catch {
+      if (socket === nextSocket) nextSocket.close()
+      return
+    }
+    if (socket !== nextSocket) return
+    applyInitialData(data)
     syncing = false
     queuedMessages.forEach(handleServerMessage)
     queuedMessages = []
   })
-  socket.addEventListener('message', message => {
+  nextSocket.addEventListener('message', message => {
+    if (socket !== nextSocket) return
     const payload = JSON.parse(message.data) as ServerMessage
     if (syncing) queuedMessages.push(payload)
     else handleServerMessage(payload)
   })
-  socket.addEventListener('close', () => {
+  nextSocket.addEventListener('close', () => {
+    if (socket !== nextSocket) return
     connected.value = false
+    syncing = false
+    queuedMessages = []
     reconnectTimer = window.setTimeout(connect, 2500)
   })
+}
+
+function disconnect() {
+  window.clearTimeout(reconnectTimer)
+  const previousSocket = socket
+  socket = null
+  connected.value = false
+  syncing = false
+  queuedMessages = []
+  previousSocket?.close()
+}
+
+function switchSession(path: string, updateHistory = true) {
+  if (path === currentSessionPath.value && socket && socket.readyState < WebSocket.CLOSING) return
+  disconnect()
+  currentSessionPath.value = path
+  configureSession(path)
+  resetSessionData()
+  if (updateHistory) window.history.replaceState(null, '', chatUrl(path))
+  connect()
 }
 
 function handleServerMessage(payload: ServerMessage) {
@@ -261,10 +319,12 @@ function readImage(file: File): Promise<ImageDescriptor> {
 async function submit() {
   const value = input.value.trim()
   if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || sending.value || selectedAgentRunning.value) return
+  const targetSocket = socket
+  const agentId = selectedAgentId.value
   sendError.value = ''
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
-    if (send({ type: 'command', agent_id: selectedAgentId.value, name, arguments: argumentsParts.join(' ') || null })) {
+    if (send({ type: 'command', agent_id: agentId, name, arguments: argumentsParts.join(' ') || null })) {
       inputHistory.add(value)
       stream.value?.anchor()
     }
@@ -272,15 +332,18 @@ async function submit() {
     sending.value = true
     try {
       const messageImages = await Promise.all(images.value.map(image => readImage(image.file)))
-      if (!send({ type: 'message', agent_id: selectedAgentId.value, content: value, images: messageImages })) return
+      if (socket !== targetSocket) return
+      if (!send({ type: 'message', agent_id: agentId, content: value, images: messageImages })) return
       inputHistory.add(value)
       clearImages()
       stream.value?.anchor()
     } catch (error) {
-      sendError.value = error instanceof Error ? error.message : 'Could not upload images'
+      if (socket === targetSocket) {
+        sendError.value = error instanceof Error ? error.message : 'Could not upload images'
+      }
       return
     } finally {
-      sending.value = false
+      if (socket === targetSocket) sending.value = false
     }
   }
   input.value = ''
@@ -307,18 +370,23 @@ function attachImages(files: File[]) {
 }
 
 async function answerPrompt(promptId: string, value: string) {
+  const sessionPath = currentSessionPath.value
   resolvingPrompts.value = new Set(resolvingPrompts.value).add(promptId)
   promptErrors.value.delete(promptId)
   try {
     await api.resolvePrompt(promptId, value)
+    if (currentSessionPath.value !== sessionPath) return
     pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== promptId)
   } catch (error) {
+    if (currentSessionPath.value !== sessionPath) return
     promptErrors.value.set(promptId, error instanceof Error ? error.message : 'Could not submit response')
     promptErrors.value = new Map(promptErrors.value)
   } finally {
-    const resolving = new Set(resolvingPrompts.value)
-    resolving.delete(promptId)
-    resolvingPrompts.value = resolving
+    if (currentSessionPath.value === sessionPath) {
+      const resolving = new Set(resolvingPrompts.value)
+      resolving.delete(promptId)
+      resolvingPrompts.value = resolving
+    }
   }
 }
 
@@ -328,16 +396,20 @@ const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }>
   { value: 'dark', label: 'Dark', icon: Moon },
 ]
 
-onMounted(() => {
-  connect()
+onMounted(async () => {
+  await loadSessions()
+  const requested = new URLSearchParams(location.search).get('session') || '/'
+  const initial = sessions.value.some(session => session.path === requested)
+    ? requested
+    : sessions.value[0]?.path || '/'
+  switchSession(initial)
   sessionRefreshTimer = window.setInterval(loadSessions, 2000)
   window.addEventListener('resize', updateLayout)
 })
 onBeforeUnmount(() => {
-  window.clearTimeout(reconnectTimer)
   window.clearInterval(sessionRefreshTimer)
   window.removeEventListener('resize', updateLayout)
-  socket?.close()
+  disconnect()
   clearImages()
 })
 </script>
@@ -355,6 +427,7 @@ onBeforeUnmount(() => {
       @close="settings.sessionsOpen = false"
       @create="createSession"
       @remove="removeSession"
+      @select="switchSession"
     />
 
     <main class="chat-shell">

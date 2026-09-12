@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 from starlette.websockets import WebSocketDisconnect
@@ -85,11 +86,11 @@ class WebDisplayTest(unittest.TestCase):
         self.tempdir = TemporaryDirectory()
         self.root = Path(self.tempdir.name)
         self.agent = _Agent(self.root)
-        self.display = WebDisplay(assets_dir=self.root / "missing", expose_files=True)
+        self.display = WebDisplay(expose_files=True)
         self.agent.display = self.display
         self.display.bind(self.agent)  # type: ignore[arg-type]
         self.service = WebDisplayService(token="test-token").mount("/", self.display)
-        self.client = TestClient(self.service.app)
+        self.client = TestClient(self.service.app, base_url="http://testserver/session/")
         self.client.__enter__()
         self.client.headers["Authorization"] = "Bearer test-token"
 
@@ -103,9 +104,9 @@ class WebDisplayTest(unittest.TestCase):
         (self.root / "folder").mkdir()
         (self.root / "note.md").write_text("# note", encoding="utf-8")
 
-        agents = self.client.get("/api/agents").json()
-        commands = self.client.get("/api/commands/agent-1").json()
-        listing = self.client.get("/api/files/agent-1").json()
+        agents = self.client.get("api/agents").json()
+        commands = self.client.get("api/commands/agent-1").json()
+        listing = self.client.get("api/files/agent-1").json()
 
         self.assertEqual(agents[0]["identifier"], "agent-1")
         self.assertEqual(Path(agents[0]["workdir"]), self.root.resolve())
@@ -114,32 +115,54 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(listing["entries"][1]["media_type"], "text/markdown")
 
     def test_file_routes_are_opt_in(self) -> None:
-        display = WebDisplay(assets_dir=self.root / "missing")
+        display = WebDisplay()
         display.bind(self.agent)  # type: ignore[arg-type]
         service = WebDisplayService(token="test-token").mount("/", display)
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
-            self.assertEqual(client.get("/api/config").json(), {
+            self.assertEqual(client.get("/session/api/config").json(), {
                 "expose_files": False,
-                "sessions_api": "api/sessions",
             })
-            self.assertEqual(client.get("/api/files/agent-1").status_code, 404)
+            self.assertEqual(client.get("/session/api/files/agent-1").status_code, 404)
 
-        self.assertEqual(self.client.get("/api/config").json(), {
+        self.assertEqual(self.client.get("api/config").json(), {
             "expose_files": True,
-            "sessions_api": "api/sessions",
         })
+
+    def test_service_separates_chat_ui_from_session_apis(self) -> None:
+        assets = self.root / "web"
+        assets.mkdir()
+        (assets / "index.html").write_text("<main>Xun chat</main>", encoding="utf-8")
+        service = WebDisplayService(token="test-token", assets_dir=assets).mount("/", WebDisplay())
+
+        with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
+            self.assertEqual(client.get("/", follow_redirects=False).headers["location"], "./chat/")
+            self.assertIn("Xun chat", client.get("/chat/").text)
+            self.assertEqual(client.get("/session/api/config").status_code, 200)
+            self.assertEqual(client.get("/api/config").status_code, 404)
+
+        with TestClient(service.app) as client:
+            root = client.get("/?token=test-token", follow_redirects=False)
+            self.assertEqual(root.headers["location"], "./chat/?token=test-token")
+            bootstrap = client.get(
+                "/chat/?session=%2F&token=test-token",
+                follow_redirects=False,
+            )
+            self.assertEqual(bootstrap.status_code, 303)
+            self.assertEqual(bootstrap.headers["location"], "./?session=%2F")
+            self.assertIn("Path=/", bootstrap.headers["set-cookie"])
+            self.assertIn("Xun chat", client.get("/chat/").text)
 
     def test_upload_view_download_and_delete(self) -> None:
         response = self.client.post(
-            "/api/files/agent-1/upload",
+            "api/files/agent-1/upload",
             params={"path": ""},
             files=[("files", ("note.txt", b"hello web", "text/plain"))],
         )
         self.assertEqual(response.json(), {"uploaded": ["note.txt"]})
 
         preview = self.client.get(
-            "/api/files/agent-1/content",
+            "api/files/agent-1/content",
             params={"path": "note.txt"},
         )
         self.assertEqual(preview.text, "hello web")
@@ -147,13 +170,13 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(preview.headers["x-content-type-options"], "nosniff")
 
         download = self.client.get(
-            "/api/files/agent-1/download",
+            "api/files/agent-1/download",
             params={"path": "note.txt"},
         )
         self.assertEqual(download.content, b"hello web")
 
         deleted = self.client.delete(
-            "/api/files/agent-1",
+            "api/files/agent-1",
             params={"path": "note.txt"},
         )
         self.assertEqual(deleted.json(), {"deleted": True})
@@ -164,7 +187,7 @@ class WebDisplayTest(unittest.TestCase):
         link = self.root / "link.txt"
         link.symlink_to(target)
         self.client.delete(
-            "/api/files/agent-1",
+            "api/files/agent-1",
             params={"path": "link.txt"},
         )
         self.assertFalse(link.exists())
@@ -177,7 +200,7 @@ class WebDisplayTest(unittest.TestCase):
         (self.root / "blob.bin").write_bytes(b"\x00\x01\x02")
         (self.root / "Makefile").write_text("all:\n\techo hi\n", encoding="utf-8")
 
-        listing = self.client.get("/api/files/agent-1").json()
+        listing = self.client.get("api/files/agent-1").json()
         media_types = {entry["name"]: entry["media_type"] for entry in listing["entries"] if entry["kind"] == "file"}
         self.assertEqual(media_types["pic.png"], "image/png")
         self.assertEqual(media_types["data.json"], "application/json")
@@ -186,21 +209,21 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(media_types["Makefile"], "text/plain")
 
         # images stream inline with sandboxing headers
-        image = self.client.get("/api/files/agent-1/content", params={"path": "pic.png"})
+        image = self.client.get("api/files/agent-1/content", params={"path": "pic.png"})
         self.assertEqual(image.status_code, 200)
         self.assertEqual(image.headers["content-type"], "image/png")
         self.assertEqual(image.content, png)
         self.assertEqual(image.headers["content-security-policy"], "default-src 'none'")
 
         # structured non-text/* formats still preview as text
-        json_preview = self.client.get("/api/files/agent-1/content", params={"path": "data.json"})
+        json_preview = self.client.get("api/files/agent-1/content", params={"path": "data.json"})
         self.assertEqual(json_preview.status_code, 200)
         self.assertEqual(json_preview.text, '{"ok": true}')
 
         # unknown types are refused for preview but still downloadable
-        refused = self.client.get("/api/files/agent-1/content", params={"path": "blob.bin"})
+        refused = self.client.get("api/files/agent-1/content", params={"path": "blob.bin"})
         self.assertEqual(refused.status_code, 415)
-        download = self.client.get("/api/files/agent-1/download", params={"path": "blob.bin"})
+        download = self.client.get("api/files/agent-1/download", params={"path": "blob.bin"})
         self.assertEqual(download.status_code, 200)
 
     def test_download_folder_as_archive(self) -> None:
@@ -212,7 +235,7 @@ class WebDisplayTest(unittest.TestCase):
 
         # folder archive: contains the folder name as root and all nested files
         response = self.client.get(
-            "/api/files/agent-1/archive",
+            "api/files/agent-1/archive",
             params={"path": "assets"},
         )
         self.assertEqual(response.status_code, 200)
@@ -224,7 +247,7 @@ class WebDisplayTest(unittest.TestCase):
 
         # single file archive: zipped as "<name>.zip" containing the file itself
         response = self.client.get(
-            "/api/files/agent-1/archive",
+            "api/files/agent-1/archive",
             params={"path": "assets/readme.txt"},
         )
         self.assertEqual(response.status_code, 200)
@@ -235,20 +258,20 @@ class WebDisplayTest(unittest.TestCase):
 
         # missing path
         missing = self.client.get(
-            "/api/files/agent-1/archive",
+            "api/files/agent-1/archive",
             params={"path": "nope"},
         )
         self.assertEqual(missing.status_code, 404)
 
     def test_rejects_paths_outside_workdir(self) -> None:
         response = self.client.get(
-            "/api/files/agent-1/content",
+            "api/files/agent-1/content",
             params={"path": "../secret.txt"},
         )
         self.assertEqual(response.status_code, 400)
 
         missing = self.client.get(
-            "/api/files/agent-1/content",
+            "api/files/agent-1/content",
             params={"path": "missing.txt"},
         )
         self.assertEqual(missing.status_code, 404)
@@ -262,7 +285,7 @@ class WebDisplayTest(unittest.TestCase):
         command_called = threading.Event()
         second_agent.command.register(Command(name="sample", description="Sample command.", handler=lambda _agent, _args: command_called.set()))
 
-        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+        with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "message", "agent_id": "agent-2", "content": "hello"})
             websocket.send_json({"type": "command", "agent_id": "agent-2", "name": "sample", "arguments": "value"})
 
@@ -276,14 +299,14 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_websocket_dispatches_cancel_immediately(self) -> None:
         self.agent._running = True  # a running agent receives cancellation
-        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+        with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
 
         self.assertTrue(self.agent.cancel_called.wait(1))
 
     def test_idle_cancel_is_ignored(self) -> None:
         # an idle agent's cancel() must be a no-op: it cannot poison the next execution
-        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+        with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
 
         self.assertFalse(self.agent.cancel_called.wait(0.3))
@@ -304,14 +327,14 @@ class WebDisplayTest(unittest.TestCase):
 
         self.agent.command.register(Command(name="slow", description="Blocks until cancelled.", handler=slow_command))
 
-        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+        with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({"type": "command", "agent_id": "agent-1", "name": "slow"})
             # the running badge drives the frontend's stop button
-            self.assertTrue(self._wait_until(lambda: "agent-1" in self.client.get("/api/running").json()))
+            self.assertTrue(self._wait_until(lambda: "agent-1" in self.client.get("api/running").json()))
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
             self.assertTrue(self.agent.cancel_called.wait(1))
 
-        self.assertTrue(self._wait_until(lambda: "agent-1" not in self.client.get("/api/running").json()))
+        self.assertTrue(self._wait_until(lambda: "agent-1" not in self.client.get("api/running").json()))
 
     def test_pending_prompts_are_restored_and_resolved_per_agent(self) -> None:
         second_agent = _Agent(self.root, "agent-2", "Research")
@@ -329,16 +352,16 @@ class WebDisplayTest(unittest.TestCase):
         for thread in waiting:
             thread.start()
 
-        prompts = self.client.get("/api/prompts").json()
+        prompts = self.client.get("api/prompts").json()
         self.assertEqual({prompt["agent_id"] for prompt in prompts}, {"agent-1", "agent-2"})
         for prompt in prompts:
             response = self.client.post(
-                f"/api/prompts/{prompt['id']}",
+                f"api/prompts/{prompt['id']}",
                 json={"type": "choice", "prompt_id": prompt["id"], "value": prompt["agent_id"]},
             )
             self.assertEqual(response.json(), {"resolved": True})
             duplicate = self.client.post(
-                f"/api/prompts/{prompt['id']}",
+                f"api/prompts/{prompt['id']}",
                 json={"type": "choice", "prompt_id": prompt["id"], "value": "duplicate"},
             )
             self.assertEqual(duplicate.status_code, 409)
@@ -346,70 +369,96 @@ class WebDisplayTest(unittest.TestCase):
         for thread in waiting:
             thread.join(1)
         self.assertEqual(results, {"agent-1": "agent-1", "agent-2": "agent-2"})
-        self.assertEqual(self.client.get("/api/prompts").json(), [])
+        self.assertEqual(self.client.get("api/prompts").json(), [])
 
     def test_authentication_base_path_and_capabilities(self) -> None:
-        display = WebDisplay(assets_dir=self.root / "missing")
+        display = WebDisplay()
         display.bind(self.agent)  # type: ignore[arg-type]
         service = WebDisplayService(token="fixed-token").mount("/agents/research", display)
         with TestClient(service.app) as client:
-            self.assertEqual(client.get("/agents/research/api/agents").status_code, 401)
-            page = client.get("/agents/research/", follow_redirects=False)
+            self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 401)
+            page = client.get("/chat/?session=/agents/research", follow_redirects=False)
             self.assertEqual(page.status_code, 303)
-            self.assertEqual(page.headers["location"], "/login?next=%2Fagents%2Fresearch%2F")
+            self.assertEqual(page.headers["location"], "/login?next=%2Fchat%2F%3Fsession%3D%2Fagents%2Fresearch")
             self.assertEqual(client.get("/outside", follow_redirects=False).status_code, 401)
             with self.assertRaises(WebSocketDisconnect):
-                with client.websocket_connect("/agents/research/ws"):
+                with client.websocket_connect("/session/agents/research/ws"):
                     pass
 
             login_page = client.get(page.headers["location"])
             self.assertEqual(login_page.status_code, 200)
             invalid = client.post(
                 "/login",
-                data={"token": "wrong-token", "next": "/agents/research/"},
+                data={"token": "wrong-token", "next": "/chat/?session=/agents/research"},
             )
             self.assertEqual(invalid.status_code, 401)
             self.assertIn("Invalid access token", invalid.text)
 
             authenticated = client.post(
                 "/login",
-                data={"token": "fixed-token", "next": "/agents/research/"},
+                data={"token": "fixed-token", "next": "/chat/?session=/agents/research"},
                 follow_redirects=False,
             )
             self.assertEqual(authenticated.status_code, 303)
-            self.assertEqual(authenticated.headers["location"], "/agents/research/")
+            self.assertEqual(authenticated.headers["location"], "/chat/?session=/agents/research")
             self.assertIn("Path=/", authenticated.headers["set-cookie"])
-            self.assertEqual(client.get("/agents/research/api/agents").status_code, 200)
+            self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 200)
 
             bearer = client.get(
-                "/agents/research/api/capabilities/agent-1",
+                "/session/agents/research/api/capabilities/agent-1",
                 headers={"Authorization": "Bearer fixed-token"},
             )
             self.assertEqual(bearer.json(), {"model": "test-model", "capabilities": ["vision"]})
 
             client.cookies.clear()
             bootstrap = client.get(
-                "/agents/research/?token=fixed-token",
+                "/chat/?session=/agents/research&token=fixed-token",
                 follow_redirects=False,
             )
             self.assertEqual(bootstrap.status_code, 303)
-            self.assertEqual(bootstrap.headers["location"], "./")
+            self.assertEqual(bootstrap.headers["location"], "./?session=%2Fagents%2Fresearch")
             self.assertIn("Path=/", bootstrap.headers["set-cookie"])
-            self.assertEqual(client.get("/agents/research/api/agents").status_code, 200)
-            with client.websocket_connect("/agents/research/ws"):
+            self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 200)
+            with client.websocket_connect("/session/agents/research/ws"):
                 pass
 
-        generated = WebDisplay(assets_dir=self.root / "missing")
+        generated = WebDisplay()
         generated_service = WebDisplayService().mount("/", generated)
         self.assertTrue(generated_service.token)
-        self.assertIn("?token=", generated_service.access_url())
+        self.assertIn("&token=", generated_service.access_url())
+
+    def test_service_base_path_composes_with_outer_mount(self) -> None:
+        service = WebDisplayService(token="fixed-token", base_path="/alpha").mount("/", WebDisplay())
+        parent = FastAPI()
+        parent.mount("/outer", service.app)
+
+        with TestClient(parent) as client:
+            root = client.get("/outer/alpha", follow_redirects=False)
+            self.assertEqual(root.headers["location"], "./chat/")
+            page = client.get("/outer/alpha/chat/?session=/", follow_redirects=False)
+            self.assertEqual(page.status_code, 303)
+            self.assertEqual(
+                page.headers["location"],
+                "/outer/alpha/login?next=%2Falpha%2Fchat%2F%3Fsession%3D%2F",
+            )
+            login = client.post(
+                "/outer/alpha/login",
+                data={"token": "fixed-token", "next": "/alpha/chat/?session=/"},
+                follow_redirects=False,
+            )
+            self.assertEqual(login.headers["location"], "/outer/alpha/chat/?session=/")
+            self.assertIn("Path=/outer/alpha/", login.headers["set-cookie"])
+            self.assertEqual(client.get("/outer/alpha/session/api/config").status_code, 200)
+            self.assertEqual(client.get("/outer/alpha/api/sessions").status_code, 200)
+
+        self.assertIn("/alpha/chat/?session=%2F", service.access_url())
 
     def test_image_message_dispatches_data_url(self) -> None:
         output = BytesIO()
         Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
         image_url = f"data:image/png;base64,{base64.b64encode(output.getvalue()).decode('ascii')}"
 
-        with self.client.websocket_connect("/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+        with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
             websocket.send_json({
                 "type": "message",
                 "agent_id": "agent-1",
@@ -428,7 +477,7 @@ class WebDisplayTest(unittest.TestCase):
         })
 
     def test_server_can_stop_and_restart(self) -> None:
-        display = WebDisplay(assets_dir=self.root / "missing")
+        display = WebDisplay()
         service = WebDisplayService(port=0).mount("/", display)
         self.addCleanup(service.stop)
         service.start()
@@ -441,13 +490,13 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_service_multiplexes_isolated_displays(self) -> None:
         coding_agent = _Agent(self.root, "coding-agent", "Coding")
-        coding_display = WebDisplay(assets_dir=self.root / "missing")
+        coding_display = WebDisplay()
         coding_agent.display = coding_display
         coding_display.bind(coding_agent)  # type: ignore[arg-type]
         second_root = self.root / "second"
         second_root.mkdir()
         second_agent = _Agent(second_root, "agent-2", "Research")
-        second_display = WebDisplay(assets_dir=self.root / "missing")
+        second_display = WebDisplay()
         second_agent.display = second_display
         second_display.bind(second_agent)  # type: ignore[arg-type]
         service = WebDisplayService(token="service-token")
@@ -455,31 +504,31 @@ class WebDisplayTest(unittest.TestCase):
         service.mount("/research", second_display)
 
         with TestClient(service.app) as client:
-            client.get("/coding/?token=service-token", follow_redirects=False)
-            coding = client.get("/coding/api/agents")
-            research = client.get("/research/api/agents")
-            with client.websocket_connect("/research/ws"):
+            client.get("/chat/?token=service-token", follow_redirects=False)
+            coding = client.get("/session/coding/api/agents")
+            research = client.get("/session/research/api/agents")
+            with client.websocket_connect("/session/research/ws"):
                 pass
 
         self.assertEqual([agent["identifier"] for agent in coding.json()], ["coding-agent"])
         self.assertEqual([agent["identifier"] for agent in research.json()], ["agent-2"])
 
     def test_service_rejects_overlapping_mounts(self) -> None:
-        service = WebDisplayService().mount("/team", WebDisplay(assets_dir=self.root / "missing"))
+        service = WebDisplayService().mount("/team", WebDisplay())
 
         with self.assertRaisesRegex(ValueError, "cannot overlap"):
-            service.mount("/team/research", WebDisplay(assets_dir=self.root / "missing"))
+            service.mount("/team/research", WebDisplay())
 
     def test_service_manages_dynamic_sessions_and_reports_status(self) -> None:
         removed: list[tuple[str, WebDisplay]] = []
         main_agent = _Agent(self.root, "main-agent", "Main")
-        main_display = WebDisplay(assets_dir=self.root / "missing")
+        main_display = WebDisplay()
         main_agent.display = main_display
         main_display.bind(main_agent)  # type: ignore[arg-type]
 
         @contextmanager
         def new_session():
-            display = WebDisplay(assets_dir=self.root / "missing")
+            display = WebDisplay()
             try:
                 yield "/sessions/new", display
             finally:
@@ -509,13 +558,13 @@ class WebDisplayTest(unittest.TestCase):
                 "name": "Research",
                 "status": "idle",
             })
-            config = client.get("/sessions/new/api/config")
+            config = client.get("/session/sessions/new/api/config")
             self.assertEqual(config.status_code, 200)
-            self.assertEqual(config.json()["sessions_api"], "../../api/sessions")
+            self.assertEqual(config.json(), {"expose_files": False})
 
             deleted = client.delete("/api/sessions/sessions/new")
             self.assertEqual(deleted.json(), {"removed": True})
-            self.assertEqual(client.get("/sessions/new/api/config").status_code, 404)
+            self.assertEqual(client.get("/session/sessions/new/api/config").status_code, 404)
             recreated = client.post("/api/sessions", json={"name": "Research again"})
             self.assertEqual(recreated.status_code, 201)
             self.assertEqual(client.delete("/api/sessions/sessions/new").status_code, 200)
@@ -530,12 +579,12 @@ class WebDisplayTest(unittest.TestCase):
         @contextmanager
         def new_session():
             try:
-                yield "/managed", WebDisplay(assets_dir=self.root / "missing")
+                yield "/managed", WebDisplay()
             finally:
                 closed.set()
 
         service = WebDisplayService(token="service-token", session_manager=new_session)
-        service.mount("/main", WebDisplay(assets_dir=self.root / "missing"))
+        service.mount("/main", WebDisplay())
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             self.assertEqual(client.post("/api/sessions", json={}).status_code, 201)
             self.assertFalse(closed.is_set())
@@ -546,22 +595,22 @@ class WebDisplayTest(unittest.TestCase):
     def test_service_creates_managed_session_alongside_root_display(self) -> None:
         @contextmanager
         def new_session():
-            yield "/sessions/new", WebDisplay(assets_dir=self.root / "missing")
+            yield "/sessions/new", WebDisplay()
 
         service = WebDisplayService(token="service-token", session_manager=new_session)
-        service.mount("/", WebDisplay(assets_dir=self.root / "missing"))
+        service.mount("/", WebDisplay())
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             created = client.post("/api/sessions", json={"name": "New session"})
 
             self.assertEqual(created.status_code, 201)
-            self.assertEqual(client.get("/sessions/new/api/config").status_code, 200)
+            self.assertEqual(client.get("/session/sessions/new/api/config").status_code, 200)
 
     def test_session_management_is_disabled_without_manager(self) -> None:
-        response = self.client.post("/api/sessions", json={"name": "New session"})
+        response = self.client.post("http://testserver/api/sessions", json={"name": "New session"})
 
         self.assertEqual(response.status_code, 405)
-        self.assertFalse(self.client.get("/api/sessions").json()["can_manage"])
+        self.assertFalse(self.client.get("http://testserver/api/sessions").json()["can_manage"])
 
 
 if __name__ == "__main__":

@@ -87,7 +87,6 @@ export interface FileListing {
 
 export interface WebConfig {
   expose_files: boolean
-  sessions_api: string
 }
 
 export type SessionStatus = 'idle' | 'running' | 'waiting'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { LoaderCircle, MessageSquare, Plus, Trash2, X } from 'lucide-vue-next'
 import type { SessionInfo } from '../types'
 
@@ -14,6 +14,7 @@ const emit = defineEmits<{
   close: []
   create: [name: string]
   remove: [session: SessionInfo]
+  select: [path: string]
 }>()
 
 const creating = ref(false)
@@ -33,6 +34,10 @@ function confirmRemove(session: SessionInfo) {
   if (props.busy || !window.confirm(`Remove ${session.name}?`)) return
   emit('remove', session)
 }
+
+watch(() => props.busy, (busy, wasBusy) => {
+  if (wasBusy && !busy && !props.error) cancelCreate()
+})
 </script>
 
 <template>
@@ -63,13 +68,13 @@ function confirmRemove(session: SessionInfo) {
         class="session-row"
         :class="{ active: session.path === currentPath }"
       >
-        <a :href="`${session.path.replace(/\/$/, '')}/`">
+        <button class="session-select" type="button" @click="emit('select', session.path)">
           <MessageSquare :size="15" />
           <span class="session-copy">
             <strong>{{ session.name }}</strong>
             <small><i class="session-status" :class="session.status" />{{ session.status === 'waiting' ? 'Waiting for input' : session.status }}</small>
           </span>
-        </a>
+        </button>
         <button
           v-if="canManage"
           class="icon-button danger session-remove"

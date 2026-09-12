@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently --kill-others --names backend,vite \"uv run --project .. xuns .. --host 127.0.0.1 --token xun-dev --frontend-url http://127.0.0.1:5173\" \"vite --host 127.0.0.1\"",
+    "dev": "concurrently --kill-others --names backend,vite \"uv run --project .. xuns .. --host 127.0.0.1 --token xun-dev\" \"vite --host 127.0.0.1\"",
     "dev:ui": "vite --host 127.0.0.1",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"

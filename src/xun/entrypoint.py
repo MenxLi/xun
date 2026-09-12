@@ -149,13 +149,12 @@ def _web_display_session(
     workdir: Path | None,
     *,
     mount_path: str,
-    frontend_url: str | None,
     persistent_store: Path | None,
 ) -> Iterator[tuple[str, WebDisplay]]:
     temporary_workspace = tempfile.TemporaryDirectory(suffix="-workspace") if workdir is None else None
     session_workdir = Path(temporary_workspace.name) if temporary_workspace else workdir
     try:
-        display = WebDisplay(frontend_url=frontend_url, expose_files=True)
+        display = WebDisplay(expose_files=True)
         agent = setup_agent(
             name=f"agent-{hashlib.md5(str(session_workdir).encode()).hexdigest()[:8]}",
             persistent_store=persistent_store,
@@ -179,7 +178,7 @@ def web_session(
     host: str = "localhost",
     port: int = 18960,
     token: str = "",
-    frontend_url: str | None = None,
+    base_path: str = "",
     persistent_store: Path | None = None,
     manage_sessions: bool = True,
 ) -> None:
@@ -187,24 +186,23 @@ def web_session(
     fixed_workdir = Path(workdir) if workdir is not None else None
 
     def new_session():
-        mount_path = f"/sessions/{uuid.uuid4()}"
+        mount_path = f"/{uuid.uuid4()}"
         return _web_display_session(
             fixed_workdir,
             mount_path=mount_path,
-            frontend_url=frontend_url,
             persistent_store=persistent_store,
         )
 
     with _web_display_session(
         fixed_workdir,
         mount_path="/",
-        frontend_url=frontend_url,
         persistent_store=persistent_store,
     ) as (mount_path, display):
         service = WebDisplayService(
             host=host,
             port=port,
             token=token,
+            base_path=base_path,
             session_manager=new_session if manage_sessions else None,
         ).mount(mount_path, display)
         try:
@@ -303,7 +301,7 @@ def main_serve():
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
     parser.add_argument("--port", type=int, default=18960, help="Port for the web server (default: 18960).")
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
-    parser.add_argument("--frontend-url", type=str, default=None, help="Frontend URL for the web interface, for DEV (default: None).")
+    parser.add_argument("--base-path", type=str, default="", help="URL prefix for the web service (default: root).")
     parser.add_argument("--persist", action="store_true", help="Whether to track the agent's conversation history in the default store.")
     parser.add_argument("--manage-sessions", action=argparse.BooleanOptionalAction, default=True, help="Allow sessions to be created and removed from the web interface (default: enabled).")
     args = parser.parse_args()
@@ -319,7 +317,7 @@ def main_serve():
         host=args.host,
         port=args.port,
         token=args.token or "",
-        frontend_url=args.frontend_url,
+        base_path=args.base_path,
         persistent_store=persistent_store,
         manage_sessions=args.manage_sessions,
     )

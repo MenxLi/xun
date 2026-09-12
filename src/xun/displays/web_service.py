@@ -9,12 +9,14 @@ import socket
 import threading
 from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Literal, Optional
 from urllib.parse import quote, urlencode, urlsplit
 
 import jinja2
 import uvicorn
 from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
@@ -29,13 +31,16 @@ LOGIN_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
     (ASSET_DIR / "login.template.html").read_text(encoding="utf-8")
 )
 _COOKIE_NAME = "xun_web_token"
+_DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
 
 
 class _TokenAuthMiddleware:
-    def __init__(self, app: Any, token: str, mounts: dict[str, WebDisplay]) -> None:
+    def __init__(self, app: Any, token: str, base_path: str) -> None:
         self.app = app
         self.token = token
-        self.mounts = mounts
+        self.base_path = base_path
+        self.chat_path = f"{base_path}/chat"
+        self.login_path = f"{base_path}/login"
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -44,6 +49,16 @@ class _TokenAuthMiddleware:
 
         connection = HTTPConnection(scope)
         root_path = scope.get("root_path", "").rstrip("/")
+        request_path = connection.url.path
+        if root_path and request_path.startswith(root_path):
+            request_path = request_path[len(root_path):] or "/"
+        mount_path = request_path.rstrip("/")
+        if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and mount_path == self.base_path:
+            query = f"?{connection.url.query}" if connection.url.query else ""
+            response = RedirectResponse(f"./chat/{query}")
+            await response(scope, receive, send)
+            return
+
         bearer = connection.headers.get("authorization", "")
         header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
         cookie_token = connection.cookies.get(_COOKIE_NAME, "")
@@ -51,29 +66,30 @@ class _TokenAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_path = connection.url.path
-        if root_path and request_path.startswith(root_path):
-            request_path = request_path[len(root_path):] or "/"
-        mount_path = request_path.rstrip("/")
-        if request_path == "/login":
+        if request_path == self.login_path:
             await self.app(scope, receive, send)
             return
         query_token = connection.query_params.get("token")
-        if scope["type"] == "http" and mount_path in self.mounts and _tokens_match(query_token or "", self.token):
-            response = RedirectResponse("./", status_code=303)
+        if scope["type"] == "http" and mount_path == self.chat_path and _tokens_match(query_token or "", self.token):
+            query = urlencode([
+                (key, value)
+                for key, value in connection.query_params.multi_items()
+                if key != "token"
+            ])
+            response = RedirectResponse(f"./?{query}" if query else "./", status_code=303)
             response.set_cookie(
                 _COOKIE_NAME,
                 self.token,
                 httponly=True,
                 samesite="strict",
                 secure=connection.url.scheme == "https",
-                path=f"{root_path}/" if root_path else "/",
+                path=f"{root_path}{self.base_path}/" or "/",
             )
             await response(scope, receive, send)
         elif scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
-        elif self._is_display_page_request(scope, connection, request_path):
-            login_path = f"{root_path}/login" if root_path else "/login"
+        elif self._is_display_page_request(scope, request_path):
+            login_path = f"{root_path}{self.login_path}"
             target = request_path
             if connection.url.query:
                 target = f"{target}?{connection.url.query}"
@@ -86,33 +102,23 @@ class _TokenAuthMiddleware:
     def _is_display_page_request(
         self,
         scope: dict[str, Any],
-        connection: HTTPConnection,
         request_path: str,
     ) -> bool:
         if scope.get("method") not in {"GET", "HEAD"}:
             return False
-        for mount_path in self.mounts:
-            if mount_path and request_path != mount_path and not request_path.startswith(f"{mount_path}/"):
-                continue
-            relative_path = request_path[len(mount_path):] if mount_path else request_path
-            if relative_path in {"", "/"}:
-                return True
-            if relative_path == "/api" or relative_path.startswith("/api/") or relative_path == "/ws":
-                return False
-            return "text/html" in connection.headers.get("accept", "")
-        return False
+        return request_path.rstrip("/") == self.chat_path
 
 
 def _tokens_match(value: str, expected: str) -> bool:
     return bool(value) and hmac.compare_digest(value, expected)
 
 
-def _normalize_base_path(value: str) -> str:
+def _normalize_path(value: str, name: str = "path") -> str:
     stripped = value.strip().strip("/")
     if not stripped:
         return ""
-    if any(part in {".", ".."} for part in stripped.split("/")):
-        raise ValueError("base_path cannot contain '.' or '..'")
+    if any(part in {"", ".", ".."} for part in stripped.split("/")):
+        raise ValueError(f"{name} cannot contain empty, '.' or '..' segments")
     return f"/{stripped}"
 
 
@@ -150,12 +156,18 @@ class WebDisplayService:
         host: str = "localhost",
         port: int = 18960,
         token: str = "",
+        base_path: str = "",
+        assets_dir: Path = _DEFAULT_WEB_ASSETS,
         session_manager: Optional[Callable[[], AbstractContextManager[tuple[str, WebDisplay]]]] = None,
     ) -> None:
         self.host = host
         self.port = port
         self.token = token or secrets.token_urlsafe(24)
-        self._displays: dict[str, WebDisplay] = {}
+        self.base_path = _normalize_path(base_path, "base_path")
+        self.chat_path = f"{self.base_path}/chat"
+        self.session_path = f"{self.base_path}/session"
+        self.sessions_api_path = f"{self.base_path}/api/sessions"
+        self.login_path = f"{self.base_path}/login"
         self._sessions: dict[str, _DisplaySession] = {}
         self._session_manager = session_manager
         self._session_lock = threading.RLock()
@@ -167,38 +179,44 @@ class WebDisplayService:
         self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
         self._configure_login()
         self._configure_sessions()
-        self.app.add_middleware(_TokenAuthMiddleware, token=self.token, mounts=self._displays)
+        self._configure_chat(assets_dir)
+        self.app.add_middleware(_TokenAuthMiddleware, token=self.token, base_path=self.base_path)
+
+    def _configure_chat(self, assets_dir: Path) -> None:
+        if assets_dir.is_dir():
+            self.app.mount(self.chat_path, StaticFiles(directory=assets_dir, html=True), name="chat")
 
     def _configure_sessions(self) -> None:
-        @self.app.get("/api/sessions")
+        @self.app.get(self.sessions_api_path)
         async def sessions() -> SessionList:
             return SessionList(sessions=self.list_sessions(), can_manage=self._session_manager is not None)
 
-        @self.app.get("/api/sessions/{session_path:path}")
+        @self.app.get(f"{self.sessions_api_path}/{{session_path:path}}")
         async def session(session_path: str) -> SessionInfo:
-            mount_path = _normalize_base_path(session_path)
+            mount_path = _normalize_path(session_path)
             with self._session_lock:
                 if mount_path not in self._sessions:
                     raise HTTPException(404, "Session not found")
                 return self._session_info(mount_path)
 
-        @self.app.post("/api/sessions", status_code=201)
+        @self.app.post(self.sessions_api_path, status_code=201)
         async def create_session(request: SessionCreate) -> SessionInfo:
             manager = self._session_manager
             if manager is None:
                 raise HTTPException(405, "Session management is disabled")
             context = ExitStack()
             try:
-                mount_path, display = context.enter_context(manager())
+                raw_mount_path, display = context.enter_context(manager())
+                mount_path = _normalize_path(raw_mount_path)
                 self.mount(mount_path, display, name=request.name)
                 with self._session_lock:
-                    self._sessions[_normalize_base_path(mount_path)].context = context
+                    self._sessions[mount_path].context = context
             except BaseException:
                 context.close()
                 raise
-            return self._session_info(_normalize_base_path(mount_path))
+            return self._session_info(mount_path)
 
-        @self.app.delete("/api/sessions/{session_path:path}")
+        @self.app.delete(f"{self.sessions_api_path}/{{session_path:path}}")
         async def remove_session(session_path: str) -> dict[str, bool]:
             if self._session_manager is None:
                 raise HTTPException(405, "Session management is disabled")
@@ -208,11 +226,11 @@ class WebDisplayService:
             return {"removed": True}
 
     def _configure_login(self) -> None:
-        @self.app.get("/login", response_class=HTMLResponse)
+        @self.app.get(self.login_path, response_class=HTMLResponse)
         async def login_page(request: Request, next: str = "/") -> HTMLResponse:
             return self._login_response(request, next)
 
-        @self.app.post("/login")
+        @self.app.post(self.login_path)
         async def login(
             request: Request,
             token: str = Form(...),
@@ -229,7 +247,7 @@ class WebDisplayService:
                 httponly=True,
                 samesite="strict",
                 secure=request.url.scheme == "https",
-                path=f"{root_path}/" if root_path else "/",
+                path=f"{root_path}{self.base_path}/" or "/",
             )
             return response
 
@@ -237,14 +255,12 @@ class WebDisplayService:
         parsed = urlsplit(value)
         if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
             return self._default_path()
-        path = parsed.path.rstrip("/")
-        if not any(not mount or path == mount or path.startswith(f"{mount}/") for mount in self._displays):
+        if parsed.path.rstrip("/") != self.chat_path:
             return self._default_path()
         return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
     def _default_path(self) -> str:
-        mount_path = next(iter(self._displays), "")
-        return f"{mount_path}/" if mount_path else "/"
+        return f"{self.chat_path}/"
 
     def _login_response(
         self,
@@ -256,32 +272,36 @@ class WebDisplayService:
     ) -> HTMLResponse:
         target = self._login_target(next_path)
         root_path = request.scope.get("root_path", "").rstrip("/")
-        action = f"{root_path}/login" if root_path else "/login"
+        action = f"{root_path}{self.login_path}"
         return HTMLResponse(
             LOGIN_TEMPLATE.render(action=action, target=target, error=error),
             status_code=status_code,
         )
 
     def mount(self, path: str, display: WebDisplay, *, name: Optional[str] = None) -> WebDisplayService:
-        mount_path = _normalize_base_path(path)
+        mount_path = _normalize_path(path)
         session_name = (name or "").strip() or mount_path.rsplit("/", 1)[-1] or "Session"
         with self._session_lock:
-            if mount_path in self._displays:
+            if mount_path in self._sessions:
                 raise ValueError(f"A display is already mounted at {mount_path or '/'}")
-            if display in self._displays.values():
+            if any(session.display is display for session in self._sessions.values()):
                 raise ValueError("A WebDisplay can only be mounted once")
             if any(
                 mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
-                for existing in self._displays
+                for existing in self._sessions
                 if mount_path and existing
             ):
                 raise ValueError("Display mount paths cannot overlap")
+            display_app = display.build_app()
             if self._loop is not None:
                 display._attach(self._loop)
-            self._displays[mount_path] = display
-            depth = len([part for part in mount_path.split("/") if part])
-            display._sessions_api = "../" * depth + "api/sessions"
-            self.app.mount(mount_path or "/", display.build_app(), name=f"session:{mount_path}")
+            route_path = f"{self.session_path}{mount_path}"
+            try:
+                self.app.mount(route_path, display_app, name=f"session:{mount_path}")
+            except BaseException:
+                if self._loop is not None:
+                    display._detach()
+                raise
             route = self.app.routes[-1]
             assert isinstance(route, Mount)
             root_session = self._sessions.get("")
@@ -292,12 +312,11 @@ class WebDisplayService:
         return self
 
     def unmount(self, path: str) -> None:
-        mount_path = _normalize_base_path(path)
+        mount_path = _normalize_path(path)
         with self._session_lock:
             session = self._sessions.pop(mount_path, None)
             if session is None:
                 raise HTTPException(404, "Session not found")
-            self._displays.pop(mount_path)
             self.app.routes.remove(session.route)
             if self._loop is not None:
                 asyncio.run_coroutine_threadsafe(session.display._close_clients(), self._loop)
@@ -324,9 +343,10 @@ class WebDisplayService:
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
         loop = asyncio.get_running_loop()
         with self._session_lock:
-            if any(display._loop is not None for display in self._displays.values()):
+            displays = [session.display for session in self._sessions.values()]
+            if any(display._loop is not None for display in displays):
                 raise RuntimeError("A mounted WebDisplay is already attached to a running app")
-            for display in self._displays.values():
+            for display in displays:
                 display._attach(loop)
             self._loop = loop
         self._started.set()
@@ -336,13 +356,12 @@ class WebDisplayService:
             contexts: list[ExitStack] = []
             with self._session_lock:
                 self._loop = None
-                for display in self._displays.values():
-                    display._detach()
-                for path, session in list(self._sessions.items()):
+                for session in self._sessions.values():
+                    session.display._detach()
+                for path, session in tuple(self._sessions.items()):
                     if session.context is None:
                         continue
                     self._sessions.pop(path)
-                    self._displays.pop(path)
                     self.app.routes.remove(session.route)
                     contexts.append(session.context)
             self._started.clear()
@@ -350,15 +369,16 @@ class WebDisplayService:
                 context.close()
 
     def access_url(self, path: str = "", _map_0000: bool = False) -> str:
-        mount_path = _normalize_base_path(path)
-        if mount_path not in self._displays:
+        mount_path = _normalize_path(path)
+        if mount_path not in self._sessions:
             raise ValueError(f"No display mounted at {mount_path or '/'}")
         host = "localhost" if _map_0000 and self.host == "0.0.0.0" else self.host
-        url = f"http://{host}:{self.port}{mount_path}/"
-        return f"{url}?token={quote(self.token)}"
+        session = mount_path or "/"
+        query = urlencode({"session": session, "token": self.token}, quote_via=quote)
+        return f"http://{host}:{self.port}{self.chat_path}/?{query}"
 
     def start(self, *, blocking: bool = False) -> threading.Thread:
-        if not self._displays:
+        if not self._sessions:
             raise RuntimeError("Mount at least one WebDisplay before starting the service")
         if self._thread and self._thread.is_alive():
             return self._thread
@@ -379,7 +399,7 @@ class WebDisplayService:
             self.stop()
             raise RuntimeError("WebDisplayService failed to start")
         print("Agents are available at the following URLs:")
-        for path in self._displays:
+        for path in self._sessions:
             if self.host == "0.0.0.0":
                 print(f"{self.access_url(path)} (aka {self.access_url(path, _map_0000=True)})")
             else:

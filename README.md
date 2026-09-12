@@ -115,7 +115,7 @@ Input `/help` to see the full list of commands.
 ```python
 from xun import web_session
 
-web_session(workdir=".", manage_sessions=True)
+web_session(workdir=".", base_path="/xun", manage_sessions=True)
 ```
 
 `WebDisplay` provides lower-level access to the interactive web interface for custom service composition.
@@ -131,6 +131,8 @@ service.start(blocking=True)
 ```
 
 Open any tokenized URL printed at startup. The service exchanges its query token for one HttpOnly cookie scoped to `/`, so the browser can access every mounted display without logging in again. API clients can use `Authorization: Bearer <token>`.
+
+The shared UI is served once at `<base_path>/chat/`. Display backends are isolated below `<base_path>/session/`: with `base_path="/xun"`, a display mounted logically at `/` is available at `/xun/session/`, while `/research` is available at `/xun/session/research/`. Session management and login are similarly scoped below `/xun/api/sessions` and `/xun/login`. Selecting a session updates the UI's connection without reloading the page.
 
 File browsing, upload, download, and deletion are disabled unless `expose_files=True`. 
 The agent will start in web mode, and you can access it via the printed URL.

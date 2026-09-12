@@ -1,20 +1,28 @@
 import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, PendingPrompt, SessionInfo, SessionList, WebConfig } from './types'
 
-const configuredBasePath = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
-export const basePath = (configuredBasePath ?? location.pathname).replace(/\/$/, '')
-let sessionsBaseUrl = '/api/sessions'
+const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
+const inferredServiceRoot = location.pathname.match(/^(.*)\/chat(?:\/|$)/)?.[1] ?? ''
+const serviceRoot = (configuredServiceRoot ?? inferredServiceRoot).replace(/\/$/, '')
+let displayBaseUrl = `${serviceRoot}/session`
 
 export function appUrl(path: string): string {
-  return `${basePath}${path}`
+  return `${displayBaseUrl}${path}`
 }
 
-export function configureSessionsApi(path: string): void {
-  sessionsBaseUrl = new URL(path, location.href).pathname
+export function configureSession(path: string): void {
+  const suffix = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
+  displayBaseUrl = `${serviceRoot}/session${suffix ? `/${suffix}` : ''}`
 }
 
 function sessionUrl(path = ''): string {
   const suffix = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
-  return `${sessionsBaseUrl}${suffix ? `/${suffix}` : ''}`
+  return `${serviceRoot}/api/sessions${suffix ? `/${suffix}` : ''}`
+}
+
+export function chatUrl(sessionPath: string): string {
+  const url = new URL(`${serviceRoot}/chat/`, location.origin)
+  url.searchParams.set('session', sessionPath)
+  return `${url.pathname}${url.search}`
 }
 
 async function fetchOk(url: string, options?: RequestInit): Promise<Response> {

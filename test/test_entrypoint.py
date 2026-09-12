@@ -88,12 +88,13 @@ class WebSessionTest(unittest.TestCase):
 class EntrypointCliTest(unittest.TestCase):
     def test_xuns_accepts_one_workdir_and_session_management_flag(self) -> None:
         run = Mock()
-        with patch.object(sys, "argv", ["xuns", "/tmp/project", "--no-manage-sessions"]), \
+        with patch.object(sys, "argv", ["xuns", "/tmp/project", "--no-manage-sessions", "--base-path", "/alpha"]), \
                 patch("xun.entrypoint.web_session", run):
             main_serve()
 
         self.assertEqual(run.call_args.kwargs["workdir"], "/tmp/project")
         self.assertFalse(run.call_args.kwargs["manage_sessions"])
+        self.assertEqual(run.call_args.kwargs["base_path"], "/alpha")
 
     def test_xuns_rejects_multiple_workdirs(self) -> None:
         with patch.object(sys, "argv", ["xuns", "/tmp/one", "/tmp/two"]), \

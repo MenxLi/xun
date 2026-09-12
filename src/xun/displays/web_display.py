@@ -9,15 +9,11 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Annotated, Any, AsyncGenerator, Callable, Literal, Optional, TYPE_CHECKING, Union
 
 from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, TypeAdapter
 
-from ..config import ASSET_DIR
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError
 from .web_file import build_file_router
@@ -25,9 +21,6 @@ from ..agent import Agent  # runtime import: needed only for the Agent.is_initia
 
 if TYPE_CHECKING:
     from ..agent import Agent
-
-
-DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
 
 
 class ChatMessage(BaseModel):
@@ -116,20 +109,15 @@ class WebDisplay(DisplayAbstract):
 
     def __init__(
         self,
-        assets_dir: Path = DEFAULT_WEB_ASSETS,
-        frontend_url: Optional[str] = None,
         expose_files: bool = False,
         max_events: int = 2000,
     ) -> None:
         super().__init__()
-        self.assets_dir = assets_dir
-        self.frontend_url = frontend_url
         self.expose_files = expose_files
         self._store = _EventStore(max_events)
         self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._sessions_api = "/api/sessions"
         self._executors: dict[str, ThreadPoolExecutor] = {}
         self._executor_lock = threading.Lock()
 
@@ -166,8 +154,6 @@ class WebDisplay(DisplayAbstract):
     def build_app(self) -> FastAPI:
         app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None, lifespan=self._lifespan)
         app.include_router(self.build_routes())
-        if self.assets_dir.is_dir() and not self.frontend_url:
-            app.mount("/", StaticFiles(directory=self.assets_dir, html=True), name="web")
         return app
 
     def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
@@ -320,7 +306,7 @@ class WebDisplay(DisplayAbstract):
 
         @router.get("/api/config")
         async def config() -> dict[str, Any]:
-            return {"expose_files": self.expose_files, "sessions_api": self._sessions_api}
+            return {"expose_files": self.expose_files}
 
         @router.get("/api/commands/{agent_id}")
         async def commands(agent_id: str) -> list[dict[str, str]]:
@@ -339,13 +325,6 @@ class WebDisplay(DisplayAbstract):
 
         if self.expose_files:
             router.include_router(build_file_router(self._agent))
-
-        if self.frontend_url:
-            frontend_url = self.frontend_url
-
-            @router.get("/")
-            async def frontend_redirect() -> RedirectResponse:
-                return RedirectResponse(frontend_url)
 
         return router
 
