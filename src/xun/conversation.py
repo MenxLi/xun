@@ -3,6 +3,7 @@ from openai.types import chat
 from typing import Any, Callable, Sequence, cast
 from typing_extensions import TypedDict
 from pathlib import Path
+from dataclasses import dataclass, asdict, fields
 import uuid, json, time
 from PIL.Image import Image
 import jinja2
@@ -38,6 +39,20 @@ def _expand_json_content(content: Any) -> Any:
 
     return parsed if isinstance(parsed, (dict, list)) else content
 
+@dataclass
+class CompactionCounter:
+    """Cadence counters for auto-compaction: escalate to a summary after enough
+    cheap tool-call rounds; a summary resets the tool round count."""
+    tool_rounds: int = 0
+    summary_rounds: int = 0
+
+    def to_json(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -> "CompactionCounter":
+        return cls(**{f.name: data[f.name] for f in fields(cls) if f.name in data})
+
 class Conversation:
     class MessageRecord(TypedDict):
         role: str
@@ -52,6 +67,7 @@ class Conversation:
         self.total_tokens: int | None = None     
 
         self._compacted_toolcalls: dict[str, str] = {}
+        self.compaction_counter = CompactionCounter()
     
     def clear(self):
         """ Clear messages, keeping the leading system message if present. """
@@ -61,6 +77,7 @@ class Conversation:
             self.messages.clear()
         self.total_tokens = None
         self._compacted_toolcalls.clear()
+        self.compaction_counter = CompactionCounter()
 
     def to_json(self) -> dict:
         return {
@@ -69,6 +86,7 @@ class Conversation:
             "tokens_used": self.total_tokens,
             "messages": self.messages,
             "compacted_toolcalls": self._compacted_toolcalls,
+            "compaction": self.compaction_counter.to_json(),
         }
     
     def dumps(self) -> str:
@@ -85,6 +103,7 @@ class Conversation:
         self.total_tokens = data.get("tokens_used", None)
         # conversations saved before compaction existed have no originals to restore
         self._compacted_toolcalls = dict(data.get("compacted_toolcalls", {}))
+        self.compaction_counter = CompactionCounter.from_json(data.get("compaction", {}))
     
     def loads(self, data: str):
         obj = json.loads(data)
@@ -224,6 +243,7 @@ class Conversation:
         Condense the tool call history by marking older tool calls as compacted, keeping only the most recent `keep_max` tool calls.
         Returns the number of tool call results newly compacted.
         """
+        self.compaction_counter.tool_rounds += 1
         compacted = 0
         for i in range(len(self.messages) - 1, -1, -1):
             if self.messages[i].get("role") == "tool":
@@ -287,6 +307,9 @@ class Conversation:
         sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
         self.set_system_message_content(sys_msg)  # in-place on the leading system message, or inserted at index 0
         self.messages = self.messages[:1] + keep_messages
+        # the count refers to the pre-compaction history and would re-trigger auto-compaction
+        self.total_tokens = None
+        self.compaction_counter = CompactionCounter(summary_rounds=self.compaction_counter.summary_rounds + 1)
         return True
     
     def to_history(self, truncate = False) -> list[MessageRecord]:

@@ -47,15 +47,21 @@ class ProviderConfig(ConfigModel):
     openai_base_url: str
     openai_api_key: str
 
+class AutoCompactionConfig(ConfigModel):
+    enabled: bool
+    token_threshold: int
+    """Auto-compact the conversation when the last model call used more tokens than this."""
 
 class ModelConfig(ConfigModel):
     name: str
     capabilities: set[ModelCapabilityType]
     temperature: float | None = None
+
     reasoning_field: str | None = None
     """The keyword used to indicate the reasoning field in the model's payload. e.g. `reasoning` or `reasoning_content`. 
     Set `None` to auto-detect based on the model's first occurrence of the reasoning field.
     """
+
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
     """Some may not usable with certain models, e.g. qwen3.8 only support 'low' / 'medium' / 'xhigh' """
 
@@ -73,6 +79,7 @@ class ModelConfig(ConfigModel):
 FALLBACK_ENV = { f"{BRAND}_OPENAI_MODEL": "" }
 class AgentConfig(ConfigModel):
     auto_confirm: bool
+    auto_compact: AutoCompactionConfig
     provider: ProviderConfig
     model: ModelConfig
 
@@ -110,6 +117,10 @@ class AgentConfig(ConfigModel):
 def _default_config_template() -> AgentConfig:
     return AgentConfig(
         auto_confirm=False,
+        auto_compact=AutoCompactionConfig(
+            enabled=True,
+            token_threshold=200_000,
+        ),
         provider=ProviderConfig(
             openai_base_url=r"${XUN_OPENAI_BASE_URL}",
             openai_api_key=r"${XUN_OPENAI_API_KEY}",

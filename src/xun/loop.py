@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import json_repair
 from pydantic import BaseModel
@@ -11,8 +11,34 @@ from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReaso
 from .types import CancelledError, ToolResultType
 from .hooks import HookArgs
 
+if TYPE_CHECKING:
+    from .agent import Agent
+
 # rename for semantics
 ExecutionLoopParams = HookArgs.BeforeExecutionArgs
+
+SUMMARY_ESCALATION_ROUNDS = 2
+"""Auto-compaction does this many cheap tool-call compactions before escalating to a summary."""
+
+def _maybe_auto_compact(agent: "Agent[Agent.T.Init]") -> None:
+    if not (ac := agent.config.auto_compact).enabled:
+        return
+    conv = agent.conversation
+    # `total_tokens` is reset to None by Conversation.compact until the next model
+    # call refreshes it, which prevents re-triggering on stale counts.
+    if conv.total_tokens is None or conv.total_tokens <= ac.token_threshold:
+        return
+
+    agent.info(
+        f"Last call used {conv.total_tokens} tokens, over the auto-compact threshold "
+        f"({ac.token_threshold}); compacting conversation..."
+    )
+
+    # Cheap first: shrinking old tool results costs no API call. Escalate to a
+    # summary once enough cheap rounds pile up, or when little remains to reclaim.
+    reclaimed = conv.compact_toolcall()
+    if conv.compaction_counter.tool_rounds >= SUMMARY_ESCALATION_ROUNDS or reclaimed <= 1:
+        agent.compact_conversation()
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     # cancellation is the caller's contract: Agent.execute wraps this loop in cancellable_execution
@@ -33,6 +59,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         )
     for iteration in range(params.max_iterations):
         agent.check_cancel()
+        _maybe_auto_compact(agent)
         model_call_id = str(uuid.uuid4())
         agent.display_event(ModelWorkingEvent(
             model_call_id=model_call_id,

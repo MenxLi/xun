@@ -15,7 +15,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from xun.agent import T
 from xun.command import Command, CommandRegistry
-from xun.config import AgentConfig, ModelConfig, ProviderConfig
+from xun.config import AgentConfig, AutoCompactionConfig, ModelConfig, ProviderConfig
 from xun.conversation import Conversation
 from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
@@ -54,6 +54,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.images: list[list[str] | None] = []
         self.config = AgentConfig(
             auto_confirm=False,
+            auto_compact=AutoCompactionConfig(enabled=False, token_threshold=200_000),
             provider=ProviderConfig(openai_base_url="http://localhost", openai_api_key="test-key"),
             model=ModelConfig(name="test-model", capabilities={"vision"}),
         )
