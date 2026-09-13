@@ -24,7 +24,7 @@ from .command import CommandRegistry
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
 
-DEFAULT_MAX_ITERATIONS = 128
+DEFAULT_MAX_ITERATIONS = 256
 DEFAULT_API_CALL_LIMIT = 3
 
 _AUTO_CONFIRM_WARNED = False

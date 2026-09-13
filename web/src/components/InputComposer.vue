@@ -26,6 +26,8 @@ const emit = defineEmits<{
 }>()
 
 const history = useInputHistoryStore()
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+const MAX_IMAGES = 8
 let historyIndex: number | null = null
 let preHistoryDraft = ''
 let appliedHistory = false
@@ -140,7 +142,7 @@ function handleKeydown(event: KeyboardEvent) {
       return
     }
   }
-  if (key === 'Tab') {
+  if (key === 'Tab' || (key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey)) {
     const command = filteredCommands.value[selectedCommand.value]
     if (command) {
       event.preventDefault()
@@ -156,13 +158,27 @@ function handleKeydown(event: KeyboardEvent) {
 
 function selectImages(event: Event) {
   const target = event.target as HTMLInputElement
-  emit('attach', Array.from(target.files || []).slice(0, 8 - props.images.length))
+  attachImages(Array.from(target.files || []))
   target.value = ''
+}
+
+function attachImages(files: File[]) {
+  const remaining = MAX_IMAGES - props.images.length
+  if (!props.supportsVision || remaining <= 0) return false
+  const images = files.filter(file => IMAGE_TYPES.has(file.type)).slice(0, remaining)
+  if (!images.length) return false
+  emit('attach', images)
+  return true
+}
+
+function handlePaste(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.files || [])
+  if (attachImages(files)) event.preventDefault()
 }
 
 const hint = computed(() => {
   if (props.cancelling) return 'Cancelling execution...'
-  if (filteredCommands.value.length) return '↑↓ navigate · Tab select · Ctrl/⌘+Enter send'
+  if (filteredCommands.value.length) return '↑↓ navigate · Enter/Tab select · Ctrl/⌘+Enter send'
   return 'Ctrl/⌘+Enter send · Enter new line · Ctrl/⌘+↑↓ history'
 })
 
@@ -200,6 +216,7 @@ const isCommand = computed(() => input.value.startsWith('/'))
         @compositionstart="handleCompositionStart"
         @compositionend="handleCompositionEnd"
         @keydown="handleKeydown"
+        @paste="handlePaste"
       />
       <button v-if="running" class="stop-button" :title="cancelling ? 'Cancelling' : 'Stop'" :disabled="cancelling" @click="emit('stop')"><Square :size="15" fill="currentColor" /></button>
       <button v-else class="send-button" title="Send" :disabled="disabled || sending || (!input.trim() && !images.length)" @click="emit('send')"><Send :size="18" /></button>
