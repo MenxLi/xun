@@ -14,9 +14,10 @@ import rich
 
 class ToolBox:
 
-    STANDARD_TOOL_SET_OPTIONS = Literal["system", "fs", "patch", "cmd", "search", "browser", "diagnostic", "extra"]
+    STANDARD_TOOL_SET_OPTIONS = Literal["system", "framework", "fs", "patch", "cmd", "search", "browser", "diagnostic", "extra"]
     STANDARD_TOOL_FACTORIES: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
         "system": expose_system_tools,
+        "framework": expose_framework_tools,
         "fs": expose_fs_tools,
         "patch": expose_patch_tools,
         "cmd": expose_cmd_tools,

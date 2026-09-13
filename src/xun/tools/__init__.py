@@ -1,6 +1,7 @@
 from .browser import expose_browser_tools
 from .cmd import expose_cmd_tools
 from .diagnostic import expose_diagnostic_tools
+from .framework import expose_framework_tools
 from .fs import expose_fs_tools
 from .patch import expose_patch_tools
 from .search import expose_search_tools
@@ -13,6 +14,7 @@ __all__ = [
     "expose_browser_tools",
     "expose_cmd_tools",
     "expose_diagnostic_tools",
+    "expose_framework_tools",
     "expose_fs_tools",
     "expose_patch_tools",
     "expose_search_tools",
