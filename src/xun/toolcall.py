@@ -48,6 +48,7 @@ def _context_var_name(func: Callable) -> Optional[str]:
 class ToolAttr:
     name: Optional[str]
     required_capabilities: Sequence[ModelCapabilityType]
+    override: bool
 
     def attach_to[F: Callable](self, func: F) -> F:
         """Attach this ToolAttr to a function."""
@@ -61,7 +62,8 @@ class ToolAttr:
 
 def tool_attr(
     name: Optional[str] = None, 
-    required_capabilities: Sequence[ModelCapabilityType] = []
+    required_capabilities: Sequence[ModelCapabilityType] = [], 
+    override: bool = False,
     ):
     """ Attach metadata to a function """
     def _wrapper[F: Callable](fn: F) -> F:
@@ -70,7 +72,8 @@ def tool_attr(
             return fn(*args, **kwargs)
         ToolAttr(
             name=name, 
-            required_capabilities=required_capabilities
+            required_capabilities=required_capabilities, 
+            override=override,
             ).attach_to(wrapped)
         return wrapped  # type: ignore[return-value]
     return _wrapper
@@ -84,6 +87,7 @@ class Function:
     tool_schema: ChatCompletionToolParam
     context_param: Optional[str]
     required_capabilities: set[ModelCapabilityType]
+    override: bool
 
     @staticmethod
     def from_function(func: Callable) -> Function:
@@ -103,6 +107,8 @@ class Function:
         if attr and attr.required_capabilities: 
             required_capabilities = set(attr.required_capabilities)
         else: required_capabilities = set()
+
+        override = attr.override if attr else False
 
         ctx_param_name = _context_var_name(func)
         args_model = _build_args_model_from_function(
@@ -124,7 +130,8 @@ class Function:
             tool_schema=tool_param,
             args_model=args_model,
             context_param=ctx_param_name,
-            required_capabilities=required_capabilities
+            required_capabilities=required_capabilities,
+            override=override
         )
 
     def call(self, args: str | dict[str, Any], context: ToolCallContext):

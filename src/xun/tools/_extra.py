@@ -2,6 +2,7 @@
 
 from typing import Literal, Callable
 import rich
+from ..toolcall import tool_attr
 from ..config import get_internal_env_bool
 
 def _expose_z_search():
@@ -13,6 +14,7 @@ def _expose_z_search():
             rich.print(f"[Warning] Failed to import ZhipuAiClient. Extra tool 'z_search' will not be available: {e}")
         return []
 
+    @tool_attr(name="web_search", override=True)
     def z_search(query: str, limit: int = 5, content_size: Literal["short", "medium", "long"] = "medium") -> list[dict]:
         """
         Web search with ZhipuAI's Web Search tool. 

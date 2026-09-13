@@ -9,6 +9,8 @@ from .prompt import get_subagent_prompt
 from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
 from .toolcall import Function, ToolCallContext
+from .config import get_internal_env_bool
+import rich
 
 class ToolBox:
 
@@ -56,9 +58,19 @@ class ToolBox:
         for f in funcs:
             fn = f if is_except_safe_wrapper(f) else except_safe(f)
             wrapped = Function.from_function(fn)
-            if wrapped.name in self._tools:
-                raise ValueError(f"Conflict tool name: {wrapped.name}. ")
-            self._tools[wrapped.name] = wrapped
+            old = self._tools.get(wrapped.name)
+            if old is None:
+                self._tools[wrapped.name] = wrapped
+                continue
+            if wrapped.override:
+                self._tools[wrapped.name] = wrapped
+                msg = f"Overriding tool '{wrapped.name}'"
+            elif old.override:
+                msg = f"Kept existing override for '{wrapped.name}', skipped incoming"
+            else:
+                raise ValueError(f"Conflict tool name: {wrapped.name}")
+            if get_internal_env_bool('INFO_TOOL_OVERRIDE'):
+                rich.print(f"[blue]Info: {msg}[/blue]")
         return self
 
     def tool[F: Callable](self, func: F) -> F:
