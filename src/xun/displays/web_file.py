@@ -101,8 +101,14 @@ def _media_type(path: Path) -> str:
     if guess:
         return guess
     try:
+        if path.stat().st_size == 0:
+            # puremagic raises PureValueError on empty input; empty files have
+            # nothing to sniff and are best treated as plain text.
+            return "text/plain"
         return puremagic.from_file(str(path), mime=True)
-    except (puremagic.PureError, OSError):
+    except (puremagic.PureError, ValueError, OSError) as exc:
+        # PureValueError subclasses ValueError, not PureError, in puremagic 2.x.
+        print(f"Warning: could not sniff media type for {path}: {exc}. Falling back to application/octet-stream.")
         return "application/octet-stream"
 
 
