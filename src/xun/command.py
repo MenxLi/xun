@@ -228,8 +228,12 @@ def default_commands() -> list[Command]:
         agent.conversation.load(conv_file)
         agent.info(f"Loaded from {aim_dir}")
 
-    def _condense_handler(agent: "Agent[Agent.T.Init]") -> None:
-        agent.condense_conversation()
+    def _condense_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
+        if args[:1] == ['toolcall']:
+            n = agent.conversation.compact_toolcall()
+            agent.info(f"Compacted {n} tool call result(s)." if n else "No tool call results to compact.")
+        else:
+            agent.condense_conversation()
     
     def _yolo_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.config.auto_confirm = not agent.config.auto_confirm
@@ -251,7 +255,7 @@ def default_commands() -> list[Command]:
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
         Command(name="save", description="Save history.", handler=_save_handler),
         Command(name="load", description="Load history. (latest, [idx])", handler=_load_handler),
-        Command(name="compact", description="Condense conversation.", handler=_condense_handler),
+        Command(name="compact", description="Condense conversation. Use 'compact toolcall' to only condense tool call history.", handler=_condense_handler),
         Command(name="yolo", description="Toggle auto-confirm (auto-approve actions without prompting).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
     ]

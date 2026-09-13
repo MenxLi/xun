@@ -80,6 +80,20 @@ def system_ask_user_preference(
         "A": a,
     }
 
+@tool_attr(name="extract_compacted_tool_result")
+def system_extract_compacted_tool_result(
+    ctx: ToolCallContext,
+    toolcall_id: str,
+) -> str:
+    """
+    Retrieve the original content of a compacted tool call by its ID.
+    Use this only for tool result marked as [Compacted, ID: ...]
+    Fails if the ID is unknown or its original content was not kept.
+    """
+    content = ctx.agent.conversation.compacted_toolcall_result(toolcall_id)
+    if content is None:
+        raise ValueError(f"No compacted tool call result found for ID '{toolcall_id}'.")
+    return content
 
 def expose_system_tools() -> list[Callable]:
-    return [system_info, system_time, system_ask_user_preference]
+    return [system_info, system_time, system_ask_user_preference, system_extract_compacted_tool_result]

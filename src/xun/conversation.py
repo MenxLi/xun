@@ -49,6 +49,8 @@ class Conversation:
         # will update after each model call, 
         # but not guaranteed to be accurate if user edits the conversation
         self.total_tokens: int | None = None     
+
+        self._compacted_toolcalls: dict[str, str] = {}
     
     def clear(self):
         """ Clear messages, keeping the leading system message if present. """
@@ -57,6 +59,7 @@ class Conversation:
         else:
             self.messages.clear()
         self.total_tokens = None
+        self._compacted_toolcalls.clear()
 
     def to_json(self) -> dict:
         return {
@@ -64,6 +67,7 @@ class Conversation:
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "tokens_used": self.total_tokens,
             "messages": self.messages,
+            "compacted_toolcalls": self._compacted_toolcalls,
         }
     
     def dumps(self) -> str:
@@ -78,6 +82,8 @@ class Conversation:
         self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
         # "tokens_used" is the on-disk key, kept stable for previously saved conversations
         self.total_tokens = data.get("tokens_used", None)
+        # conversations saved before compaction existed have no originals to restore
+        self._compacted_toolcalls = dict(data.get("compacted_toolcalls", {}))
     
     def loads(self, data: str):
         obj = json.loads(data)
@@ -211,6 +217,36 @@ class Conversation:
                     self.messages = self.messages[:i+1]
                     return old[i+1:]
         return []
+    
+    def compact_toolcall(self, keep_max: int = 16) -> int:
+        """
+        Condense the tool call history by marking older tool calls as compacted, keeping only the most recent `keep_max` tool calls.
+        Returns the number of tool call results newly compacted.
+        """
+        compacted = 0
+        for i in range(len(self.messages) - 1, -1, -1):
+            if self.messages[i].get("role") == "tool":
+                keep_max -= 1
+                msg: chat.chat_completion_tool_message_param.ChatCompletionToolMessageParam = self.messages[i] # type: ignore
+                assert 'tool_call_id' in msg
+                assert 'content' in msg
+                if keep_max < 0:
+                    toolcall_id = msg["tool_call_id"]
+                    old_content = msg["content"]
+                    new_content = f"[Compacted, ID: {toolcall_id}]"
+                    assert isinstance(old_content, str)
+                    if len(old_content) > len(new_content):
+                        self.messages[i]['content'] = new_content
+                        self._compacted_toolcalls[toolcall_id] = old_content
+                        compacted += 1
+        return compacted
+    
+    def compacted_toolcall_result(self, toolcall_id: str) -> str | None:
+        """
+        Retrieve the original content of a compacted tool call by its ID.
+        Returns None if the tool call is not compacted or does not exist.
+        """
+        return self._compacted_toolcalls.get(toolcall_id)
     
     def to_history(self, truncate = False) -> list[MessageRecord]:
         res = []
