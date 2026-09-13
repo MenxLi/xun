@@ -263,7 +263,7 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         def summarize(messages: list[Any]) -> Optional[str]:
             nonlocal attempted
             attempted = True
-            condense_messages_json = json.dumps(messages, indent=4)
+            condense_messages_json = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
             with self.api_call_semaphore:
                 resp = self.openai_client.chat.completions.create(
                     model=self.config.model.name,

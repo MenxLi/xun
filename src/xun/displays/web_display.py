@@ -15,7 +15,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field, TypeAdapter
 
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
-from ..types import CancelledError
+from ..types import CancelledError, Result
 from .web_file import build_file_router
 from ..agent import Agent  # runtime import: needed only for the Agent.is_initialized guard
 
@@ -238,7 +238,13 @@ class WebDisplay(DisplayAbstract):
 
     def _execute_message(self, agent: "Agent[Agent.T.Init]", content: str, images: list[str]) -> None:
         try:
-            self._track(agent, lambda: agent.instruct(content, images=images or None).execute())
+            def run() -> None:
+                result = agent.instruct(content, images=images or None).execute()
+                if isinstance(result, Result) and result.is_err():
+                    error = result.unwrap_err()
+                    agent.error(f"Error executing instruction: {error.error}")
+
+            self._track(agent, run)
         except Exception as exc:
             agent.error(f"Error executing instruction: {exc}")
 

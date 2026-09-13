@@ -24,16 +24,18 @@ from xun.running_state import AgentRunningStateMixin, LabeledEvent
 from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.display import NullDisplay
-from xun.types import CancelledError
+from xun.types import CancelledError, ErrorInfo, Result
 from xun.workspace import Workspace
 
 
 class _Execution:
-    def __init__(self, called: threading.Event) -> None:
+    def __init__(self, called: threading.Event, result: object = None) -> None:
         self.called = called
+        self.result = result
 
-    def execute(self) -> None:
+    def execute(self) -> object:
         self.called.set()
+        return self.result
 
 
 class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
@@ -52,6 +54,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.hooks = Hooks()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
+        self.execution_result: object = None
         self.config = AgentConfig(
             auto_confirm=False,
             auto_compact=AutoCompactionConfig(enabled=False, token_threshold=200_000),
@@ -64,7 +67,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.images.append(images)
         self.conversation.add_user_message(content, images)
         self.display_event(UserMessageEvent.from_inputs(content, images))
-        return _Execution(self.instruction_called)
+        return _Execution(self.instruction_called, self.execution_result)
 
     def execute(self) -> None:
         self.instruction_called.set()
@@ -297,6 +300,21 @@ class WebDisplayTest(unittest.TestCase):
         names = [event.name for event in self.display._store.list()]
         self.assertIn("UserMessageEvent", names)
         self.assertIn("UserCommandEvent", names)
+
+    def test_message_execution_result_error_is_displayed(self) -> None:
+        self.agent.execution_result = Result.Err(ErrorInfo(
+            error="compact failed",
+            details="RuntimeError('compact failed')",
+        ))
+
+        with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+            websocket.send_json({"type": "message", "agent_id": "agent-1", "content": "hello"})
+
+        self.assertTrue(self.agent.instruction_called.wait(1))
+        self.assertTrue(self._wait_until(lambda: any(
+            event.name == "ErrorEvent" and "compact failed" in event.payload.message
+            for event in self.display._store.list()
+        )))
 
     def test_websocket_dispatches_cancel_immediately(self) -> None:
         self.agent._running = True  # a running agent receives cancellation

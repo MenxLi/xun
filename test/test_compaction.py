@@ -148,6 +148,15 @@ class AutoCompactionTest(unittest.TestCase):
         _maybe_auto_compact(agent)
         agent.compact_conversation.assert_not_called()
 
+    def test_summary_failure_is_reported_without_aborting_execution(self) -> None:
+        agent = self._agent(1_000, 9_999_999)
+        agent.conversation.compaction_counter.tool_rounds = SUMMARY_ESCALATION_ROUNDS - 1
+        agent.compact_conversation.side_effect = RuntimeError("summary failed")
+
+        _maybe_auto_compact(agent)
+
+        agent.error.assert_called_once_with("Auto-compaction failed: summary failed")
+
 
 if __name__ == "__main__":
     unittest.main()

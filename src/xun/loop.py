@@ -36,9 +36,16 @@ def _maybe_auto_compact(agent: "Agent[Agent.T.Init]") -> None:
 
     # Cheap first: shrinking old tool results costs no API call. Escalate to a
     # summary once enough cheap rounds pile up, or when little remains to reclaim.
+    agent.info("Auto-compaction of old tool results...")
     reclaimed = conv.compact_toolcall()
     if conv.compaction_counter.tool_rounds >= SUMMARY_ESCALATION_ROUNDS or reclaimed <= 1:
-        agent.compact_conversation()
+        agent.info("Escalating to full conversation compaction...")
+        try:
+            agent.compact_conversation()
+        except CancelledError:
+            raise
+        except Exception as exc:
+            agent.error(f"Auto-compaction failed: {exc}")
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     # cancellation is the caller's contract: Agent.execute wraps this loop in cancellable_execution
