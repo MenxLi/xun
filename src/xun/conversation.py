@@ -1,6 +1,6 @@
 from __future__ import annotations
 from openai.types import chat
-from typing import Any, Sequence, cast
+from typing import Any, Callable, Sequence, cast
 from typing_extensions import TypedDict
 from pathlib import Path
 import uuid, json, time
@@ -15,6 +15,7 @@ from .openai_helper import ChatCompletionMessageWithReasoning
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
+DEFAULT_KEEP_RECENT = 24
 def _remove_empty_tool_calls(message: Any) -> Any:
     # some provider does not allow empty list for tool_calls
     if not isinstance(message, dict):
@@ -247,6 +248,46 @@ class Conversation:
         Returns None if the tool call is not compacted or does not exist.
         """
         return self._compacted_toolcalls.get(toolcall_id)
+
+    def compact(self, summarize: Callable[[list[Any]], str | None], keep_recent: int = DEFAULT_KEEP_RECENT) -> bool:
+        """
+        Replace older messages with a system-message summary from `summarize(messages)`
+        (None to abort), keeping a bounded recent tail.
+
+        Cut at the last user message when its tail fits in `keep_recent`, else keep only
+        the most recent `keep_recent` messages, advancing off `tool` messages so the tail
+        never starts with orphaned tool results.
+
+        Returns False, leaving history untouched, when there is nothing beyond the system
+        message to condense or `summarize` returns None.
+        """
+        msgs = self.messages
+
+        cut: int | None = None
+        for i in range(len(msgs) - 1, -1, -1):
+            if msgs[i].get("role") == "user":
+                if len(msgs) - i <= keep_recent:
+                    cut = i
+                break
+        if cut is None:
+            cut = max(len(msgs) - keep_recent, 0)
+            while cut < len(msgs) and msgs[cut].get("role") == "tool":
+                cut += 1
+
+        condense_messages = msgs[:cut]
+        keep_messages = msgs[cut:]
+
+        if not any(m.get("role") != "system" for m in condense_messages):
+            return False
+
+        summary = summarize(condense_messages)
+        if summary is None:
+            return False
+
+        sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
+        self.set_system_message_content(sys_msg)  # in-place on the leading system message, or inserted at index 0
+        self.messages = self.messages[:1] + keep_messages
+        return True
     
     def to_history(self, truncate = False) -> list[MessageRecord]:
         res = []

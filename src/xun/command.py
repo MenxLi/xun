@@ -233,7 +233,7 @@ def default_commands() -> list[Command]:
             n = agent.conversation.compact_toolcall()
             agent.info(f"Compacted {n} tool call result(s)." if n else "No tool call results to compact.")
         else:
-            agent.condense_conversation()
+            agent.compact_conversation()
     
     def _yolo_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.config.auto_confirm = not agent.config.auto_confirm

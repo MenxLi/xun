@@ -14,7 +14,7 @@ from .types import TypeVar, CancelledError
 from .display_abstract import *
 from .running_state import AgentRunningStateMixin, LabeledEvent
 from .displays.display import Display
-from .conversation import Conversation
+from .conversation import Conversation, DEFAULT_KEEP_RECENT
 from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe
@@ -252,9 +252,39 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         with self.cancellable_execution():
             command.invoke(self, arguments)
     
-    def condense_conversation(self: "Agent[T.Init]"):
-        _condense_conversation(self)
-    
+    def compact_conversation(self: "Agent[T.Init]", keep_recent: int = DEFAULT_KEEP_RECENT):
+        """
+        Condense conversation history via `Conversation.compact`, 
+        supplying the summarizer and logging.
+        """
+        self.info("Condensing conversation history...")
+        attempted = False
+
+        def summarize(messages: list[Any]) -> Optional[str]:
+            nonlocal attempted
+            attempted = True
+            condense_messages_json = json.dumps(messages, indent=4)
+            with self.api_call_semaphore:
+                resp = self.openai_client.chat.completions.create(
+                    model=self.config.model.name,
+                    messages = [
+                        {
+                            "role": "user",
+                            "content": get_condense_prompt(condense_messages_json),
+                        },
+                    ],
+                    timeout = 300,
+                )
+            summary = resp.choices[0].message.content
+            if summary is None:
+                self.error("Failed to condense conversation history: no summary generated.")
+                return None
+            self.info(f"Conversation history condensed. Summary:\n{summary}")
+            return summary
+
+        if not self.conversation.compact(summarize, keep_recent=keep_recent) and not attempted:
+            self.info("Nothing to condense in conversation history.")
+
     def __enter__(self: "Agent[T.Uninit]") -> "Agent[T.Init]":
         # any state: entering an already-initialized agent (e.g. a configured one returned
         # by a sub-agent getter) is fine because initialize() is runtime-idempotent.
@@ -287,40 +317,3 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         if (agent := agent_ref()) is not None and Agent.is_initialized(agent):
             agent.finalize()
 
-def _condense_conversation(agent: "Agent[Agent.T.Init]"):
-    """
-    Condense the conversation history of the agent by keeping only the last user message and the assistant messages after that. 
-    """
-    agent.info("Condensing conversation history...")
-
-    keep_messages = agent.conversation.pop_from_last_user_message()
-    condense_messages = agent.conversation.messages
-    
-    if not condense_messages:
-        # revert
-        agent.conversation.messages = condense_messages + keep_messages
-        return
-    
-    client = agent.openai_client
-    condense_messages_json = json.dumps(condense_messages, indent=4)
-    with agent.api_call_semaphore:
-        resp = client.chat.completions.create(
-            model=agent.config.model.name,
-            messages = [
-                {
-                    "role": "user",
-                    "content": get_condense_prompt(condense_messages_json),
-                },
-            ],
-            timeout = 300,
-        )
-    summary = resp.choices[0].message.content
-    if summary is None:
-        agent.error("Failed to condense conversation history: no summary generated.")
-        return
-    agent.info(f"Conversation history condensed. Summary:\n{summary}")
-
-    sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
-    agent.conversation.set_system_message_content(sys_msg)
-    agent.conversation.messages += keep_messages
-    return
