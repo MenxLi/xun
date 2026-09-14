@@ -50,7 +50,7 @@ Output:
 """
 
 CONDENSE_PROMPT = """\
-You are a conversation memory manager. Condense the chat history below into a compact, structured summary that preserves all critical context for seamless continuation.
+Condense the conversation above into a compact, structured summary that preserves all critical context for seamless continuation.
 Your output will be used as a system message to inform the assistant of the conversation history, so it should be concise yet comprehensive enough for the assistant to understand the context and continue the conversation without losing important information.
 
 RULES:
@@ -70,9 +70,6 @@ SCHEMA (in markdown format):
 - pending_tasks: list of pending tasks
 - open_questions: list of open questions
 - tone_context: brief note on communication style or constraints (e.g., "formal", "prefers bullet points", "avoid technical jargon")
-
-CHAT HISTORY:
-{chat_history}
 """
 
 def get_system_prompt() -> str:
@@ -83,6 +80,6 @@ def get_subagent_prompt() -> str:
     """Get the system prompt for the worker agents."""
     return SUBAGENT_PROMPT
 
-def get_condense_prompt(chat_history: str) -> str:
-    """Build the condense prompt with the given chat history."""
-    return CONDENSE_PROMPT.format(chat_history=chat_history)
+def get_condense_prompt() -> str:
+    """Return the instruction appended to a copied conversation for compaction."""
+    return CONDENSE_PROMPT

@@ -4,10 +4,13 @@ import weakref
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
+from unittest.mock import MagicMock, patch
 
 from xun import Agent, NullDisplay
+from xun.conversation import Conversation
 from xun.display_abstract import ConfirmEvent, DisplayAbstract, DisplayEvent, InfoEvent
-from xun.types import CancelledError
+from xun.prompt import get_condense_prompt
+from xun.types import CancelledError, Result
 from xun.workspace import Workspace
 
 
@@ -124,6 +127,40 @@ class AgentLifecycleTest(unittest.TestCase):
         self.assertTrue(agent.cancel_event.event.is_set())
         with self.assertRaises(CancelledError):
             agent.check_cancel()
+
+    def test_compact_uses_native_history_in_isolated_agent(self) -> None:
+        agent = self._new_agent().initialize()
+        image = "data:image/png;base64,aW1hZ2U="
+        agent.conversation.messages = [
+            {"role": "system", "content": "system rules"},
+            {"role": "user", "content": [
+                {"type": "text", "text": "inspect this"},
+                {"type": "image_url", "image_url": {"url": image}},
+            ]},
+            {"role": "assistant", "content": "observed"},
+            {"role": "user", "content": "continue"},
+        ]  # type: ignore[assignment]
+        compactor = MagicMock()
+        compactor.conversation = Conversation()
+        compactor.__enter__.return_value = compactor
+        compactor.instruct.return_value = compactor
+        compactor.execute.return_value = Result.Ok("SUMMARY")
+
+        with patch.object(Agent, "inherit", return_value=compactor) as inherit:
+            agent.compact_conversation()
+
+        inherit.assert_called_once_with(
+            agent,
+            share_display=False,
+            copy_toolbox=False,
+            copy_command=False,
+        )
+        self.assertIsInstance(compactor.display, NullDisplay)
+        self.assertFalse(compactor.config.auto_compact.enabled)
+        self.assertEqual(compactor.conversation.messages[1]["content"][1]["image_url"]["url"], image)  # type: ignore[index]
+        compactor.instruct.assert_called_once_with(get_condense_prompt(), _emit_event=False)
+        compactor.execute.assert_called_once_with(max_iterations=1)
+        self.assertIn("SUMMARY", str(agent.conversation.messages[0].get("content", "")))
 
     def test_auto_confirm_emits_confirmation_event(self) -> None:
         display = _RecordingDisplay()

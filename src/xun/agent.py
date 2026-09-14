@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from dataclasses import dataclass, field
-import json
 import uuid
 import weakref
 
@@ -13,7 +12,7 @@ from threading import Semaphore
 from .types import TypeVar, CancelledError
 from .display_abstract import *
 from .running_state import AgentRunningStateMixin, LabeledEvent
-from .displays.display import Display
+from .displays.display import Display, NullDisplay
 from .conversation import Conversation, DEFAULT_KEEP_RECENT
 from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
@@ -263,22 +262,23 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         def summarize(messages: list[Any]) -> Optional[str]:
             nonlocal attempted
             attempted = True
-            condense_messages_json = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
-            with self.api_call_semaphore:
-                resp = self.openai_client.chat.completions.create(
-                    model=self.config.model.name,
-                    messages = [
-                        {
-                            "role": "user",
-                            "content": get_condense_prompt(condense_messages_json),
-                        },
-                    ],
-                    timeout = 300,
-                )
-            summary = resp.choices[0].message.content
-            if summary is None:
-                self.error("Failed to condense conversation history: no summary generated.")
+            compactor = Agent.inherit(
+                self,
+                share_display=False,
+                copy_toolbox=False,
+                copy_command=False,
+            )
+            compactor.display = NullDisplay()
+            compactor.config.auto_compact.enabled = False
+            compactor.conversation.messages = messages.copy()
+
+            with compactor as ready:
+                result = ready.instruct(get_condense_prompt(), _emit_event=False).execute(max_iterations=1)
+            if result.is_err():
+                error = result.unwrap_err()
+                self.error(f"Failed to condense conversation history: {error.error}")
                 return None
+            summary = result.unwrap()
             self.info(f"Conversation history condensed. Summary:\n{summary}")
             return summary
 
