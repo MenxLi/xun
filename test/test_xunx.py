@@ -57,6 +57,7 @@ class DockerManagerTest(unittest.TestCase):
             image="custom-xun",
             port_range=range(20000, 20002),
             instance="instance-id",
+            env_patterns=["XUN_*", "_XUN_*"],
             client=client,
         )
         with patch.dict("os.environ", {"XUN_OPENAI_API_KEY": "secret", "XUN_HOME": "/host"}, clear=True), \

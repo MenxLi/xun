@@ -100,12 +100,14 @@ class DockerManager:
         port_range: range,
         instance: str,
         excluded_ports: set[int] | None = None,
+        env_patterns: list[str] | None = None,
         client: DockerClient | None = None,
     ) -> None:
         self.image = image
         self.port_range = port_range
         self.instance = instance
         self.used_ports = set(excluded_ports or ())
+        self.env_patterns = list(env_patterns or ())
         self.client = client or docker.from_env()
 
     @property
@@ -143,7 +145,7 @@ class DockerManager:
                 name=f"xunx-{self.instance[:8]}-{user.name}",
                 auto_remove=True,
                 ports={f"{port}/tcp": ("127.0.0.1", port)},
-                environment=matching_environment(["XUN_*", "_XUN_*"], exclude={"XUN_HOME"}),
+                environment=matching_environment(self.env_patterns, exclude={"XUN_HOME"}),
                 labels={"xunx.managed": "true", "xunx.instance": self.instance},
             )
             container.start()

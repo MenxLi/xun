@@ -49,6 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=18960)
     serve.add_argument("--port-range", type=_parse_port_range, default=range(17960, 18959), metavar="START-END")
     serve.add_argument("--image", default="xun")
+    serve.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list. Will always include XUN_*/_XUN_* by default.", default=[], nargs="+")
     serve.add_argument("--interval", type=float, default=2.0, help=argparse.SUPPRESS)
     return parser
 
@@ -63,11 +64,13 @@ def main() -> None:
         if args.command == "serve":
             if args.interval <= 0:
                 parser.error("--interval must be greater than zero")
+            env_patterns = ["XUN_*", "_XUN_*"] + [e.strip() for ev in args.env for e in ev.split(",") if e.strip()]
             containers = DockerManager(
                 image=args.image,
                 port_range=args.port_range,
                 instance=instance_id(store.path),
                 excluded_ports={args.port},
+                env_patterns=env_patterns,
             )
             supervisor = Supervisor(store, containers, args.interval)
             web.run_app(Multiplexer(supervisor).app(), host=args.host, port=args.port)
