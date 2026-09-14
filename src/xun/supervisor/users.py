@@ -3,8 +3,10 @@ from __future__ import annotations
 import re
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from ..config import get_home_dir
 
@@ -35,8 +37,14 @@ class UserStore:
                 ")"
             )
 
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.path, timeout=5)
+    @contextmanager
+    def _connect(self):
+        connection = sqlite3.connect(self.path, timeout=5)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def add(self, name: str) -> User:
         if not _USERNAME_PATTERN.fullmatch(name):

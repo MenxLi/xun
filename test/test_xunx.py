@@ -3,7 +3,7 @@ import asyncio
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from aiohttp import WSMsgType, web
 from aiohttp.test_utils import TestClient, TestServer
@@ -14,6 +14,17 @@ from xun.supervisor.users import User, UserStore
 
 
 class UserStoreTest(unittest.TestCase):
+    def test_closes_database_connections(self) -> None:
+        store = UserStore.__new__(UserStore)
+        store.path = Path("xunx.db")
+        connection = MagicMock()
+
+        with patch("xun.supervisor.users.sqlite3.connect", return_value=connection):
+            with store._connect() as opened:
+                self.assertIs(opened, connection)
+
+        connection.close.assert_called_once_with()
+
     def test_add_list_and_delete_users(self) -> None:
         with TemporaryDirectory() as directory:
             store = UserStore(Path(directory) / "xunx.db")
