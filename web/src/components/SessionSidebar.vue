@@ -67,8 +67,8 @@ watch(() => props.busy, (busy, wasBusy) => {
         class="session-row"
         :class="{ active: session.path === currentPath }"
       >
-        <button class="session-select" type="button" @click="emit('select', session.path)">
-          <MessageSquare :size="15" />
+        <button class="session-select" type="button" :aria-current="session.path === currentPath ? 'page' : undefined" @click="emit('select', session.path)">
+          <MessageSquare :size="14" />
           <span class="session-copy">
             <strong>{{ session.name }}</strong>
             <small><i class="session-status" :class="session.status" />{{ session.status === 'waiting' ? 'Waiting for input' : session.status }}</small>

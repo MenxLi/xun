@@ -22,19 +22,24 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .session-header-actions { display: flex; align-items: center; }
 .session-create { margin: 10px 8px 4px; display: flex; align-items: center; gap: 2px; }
 .session-create input { min-width: 0; height: 34px; flex: 1; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--input); color: var(--ink); font-size: 11px; }
-.session-list { min-height: 0; flex: 1; padding: 7px; overflow-y: auto; }
-.session-row { min-height: 48px; margin-bottom: 2px; display: flex; align-items: center; border-radius: 5px; color: var(--muted); }
-.session-row:hover, .session-row.active { background: var(--hover); }
-.session-row.active { color: var(--accent-dark); box-shadow: inset 2px 0 var(--accent); }
-.session-select { min-width: 0; min-height: 48px; padding: 7px 7px 7px 9px; border: 0; background: none; flex: 1; display: flex; align-items: center; gap: 9px; color: inherit; text-align: left; cursor: pointer; }
-.session-select > svg { flex: none; }
-.session-copy { min-width: 0; display: grid; gap: 4px; }
+.session-list { min-height: 0; flex: 1; padding: 8px 0; overflow-y: auto; }
+.session-row { position: relative; min-height: 52px; display: flex; align-items: center; border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); color: var(--muted); }
+.session-row:first-child { border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.session-row::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: transparent; }
+.session-row:hover { background: color-mix(in srgb, var(--hover) 68%, transparent); }
+.session-row.active { color: var(--accent-dark); background: color-mix(in srgb, var(--paper) 78%, var(--accent-soft)); }
+.session-row.active::before { background: var(--accent); }
+.session-select { min-width: 0; min-height: 51px; padding: 8px 7px 8px 14px; border: 0; background: none; flex: 1; display: flex; align-items: center; gap: 10px; color: inherit; text-align: left; cursor: pointer; }
+.session-select > svg { flex: none; opacity: .7; }
+.session-row.active .session-select > svg { color: var(--accent); opacity: 1; }
+.session-copy { min-width: 0; display: grid; gap: 3px; }
 .session-copy strong { overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.session-copy small { display: flex; align-items: center; gap: 5px; color: var(--muted); font: 9px/1 'Fira Code', monospace; text-transform: capitalize; }
-.session-status { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--muted); }
+.session-row.active .session-copy strong { color: var(--accent-dark); }
+.session-copy small { display: flex; align-items: center; gap: 6px; color: var(--muted); font: 9px/1.2 'Fira Code', monospace; text-transform: capitalize; }
+.session-status { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--muted); }
 .session-status.running { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
 .session-status.waiting { background: var(--warm); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warm) 14%, transparent); }
-.session-remove { width: 27px; height: 27px; margin-right: 4px; flex: none; opacity: 0; }
+.session-remove { width: 27px; height: 27px; margin-right: 8px; flex: none; opacity: 0; }
 .session-row:hover .session-remove, .session-remove:focus-visible { opacity: 1; }
 .session-error { margin: 7px 8px 0; padding: 7px 8px; border-left: 2px solid var(--danger); color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 10px; }
 .topbar { height: 62px; flex: none; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(12px); z-index: 5; }
