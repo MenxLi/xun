@@ -1,4 +1,5 @@
 import base64
+import shlex
 import threading
 import time
 import unittest
@@ -82,7 +83,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.display_event(UserCommandEvent(name=name, arguments=arguments))
         command = self.command.get(name)
         if command is not None:
-            command.invoke(self, arguments)  # type: ignore[arg-type]
+            command.invoke(self, shlex.split(arguments or ""))  # type: ignore[arg-type]
 
 
 class WebDisplayTest(unittest.TestCase):

@@ -15,7 +15,7 @@ from .toolbox import ToolBox
 from .agent import Agent
 from .prompt import get_system_prompt
 from .command import Command
-from .types import CancelledError
+from .types import CancelledError, Result
 from .workspace import Workspace
 from .tools.common import default_tool_commands
 
@@ -113,7 +113,9 @@ def setup_agent(
 def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
     match inst:
         case CommandInstruction():
-            agent.execute_command(inst.command, inst.args)
+            result = agent.execute_command(inst.command, inst.args)
+            if result.is_err():
+                agent.error(f"Error executing command: {result.unwrap_err().error}")
             if inst.command == "retry":
                 agent.execute()
 

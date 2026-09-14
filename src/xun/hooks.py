@@ -6,6 +6,7 @@ from .error_catch import except_safe
 if TYPE_CHECKING:
     from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
     from .agent import Agent
+    from .command import Command
     from .toolbox import ToolResultType
 
 type HookProtocol[T] = Callable[[T], Any]
@@ -46,16 +47,21 @@ class HookArgs:
         context_value: Any = None
 
     @dataclass
+    class CommandArgs:
+        agent: "Agent[Agent.T.Init]"
+        command: "Command"
+        arguments: list[str]
+        """parsed argument list, editable in place (edits by before_command hooks take effect)"""
+
+    @dataclass
     class BeforeToolCallArgs:
         agent: "Agent[Agent.T.Init]"
-
         tool_calls: list[ChatCompletionMessageFunctionToolCall]
         """list of tool calls that will be executed, editable"""
 
     @dataclass
     class AfterToolCallArgs:
         agent: "Agent[Agent.T.Init]"
-
         tool_results: list[tuple[str, ToolResultType]]
         """(tool_id, tool_result) pairs, editable"""
 
@@ -88,6 +94,11 @@ class Hooks:
 
     before_execution: HookRegistry[HookArgs.BeforeExecutionArgs] = field(default_factory=HookRegistry)
     """Called at the start of an execution loop, before the first model call. Receives the `ExecutionLoopParams`, editable in place."""
+
+    before_command: HookRegistry[HookArgs.CommandArgs] = field(default_factory=HookRegistry)
+    """Called after a command is resolved (unknown commands do not fire this hook) and before it is executed. `arguments` is editable in place."""
+    after_command: HookRegistry[HookArgs.CommandArgs] = field(default_factory=HookRegistry)
+    """Called after a command has executed, for any outcome: success or handled error."""
 
     before_tool_call: HookRegistry[HookArgs.BeforeToolCallArgs] = field(default_factory=HookRegistry)
     after_tool_call: HookRegistry[HookArgs.AfterToolCallArgs] = field(default_factory=HookRegistry)

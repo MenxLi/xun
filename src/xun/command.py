@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Callable, Any
 import inspect
-import shlex
 from .types import CancelledError
 if TYPE_CHECKING:
     from .agent import Agent
@@ -75,11 +74,7 @@ class Command:
         else:
             agent.info(self.description)
 
-    def invoke(self, agent: "Agent[Agent.T.Init]", arguments: Optional[str] = None) -> None:
-        args = shlex.split(arguments) if arguments else []
-        self._invoke_args(agent, args)
-
-    def _invoke_args(self, agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
+    def invoke(self, agent: "Agent[Agent.T.Init]", args: list[str] = []) -> None:
         if args in (["-h"], ["--help"]):
             self.show_help(agent)
             return
@@ -99,7 +94,7 @@ class Command:
         subcommand = registry.get(args[0])
         if subcommand is None:
             raise ValueError(f"Unknown subcommand: {args[0]}")
-        subcommand._invoke_args(agent, args[1:])
+        subcommand.invoke(agent, args[1:])
 
 class CommandRegistry:
     def __init__(self):

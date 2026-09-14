@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from dataclasses import dataclass, field
+import shlex
 import uuid
 import weakref
 
@@ -241,15 +242,21 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
             self.display_event(UserMessageEvent.from_inputs(instruction, images=images))
         return self
     
+    @except_safe
     def execute_command(self: "Agent[T.Init]", command_name: str, arguments: Optional[str] = None):
         command = self.command.get(command_name)
         self.display_event(UserCommandEvent(name=command_name, arguments=arguments))
         if command is None:
-            self.error(f"Unknown command: {command_name}")
-            return
-        # commands may run the model (continue/retry/compact), so they are running work too
+            raise ValueError(f"Unknown command: {command_name}")
+        hook_args = HookArgs.CommandArgs(
+            agent=self,
+            command=command,
+            arguments=shlex.split(arguments or "")
+        )
+        self.hooks.before_command.invoke(hook_args)
         with self.cancellable_execution():
-            command.invoke(self, arguments)
+            command.invoke(self, hook_args.arguments)
+        self.hooks.after_command.invoke(hook_args)
     
     def compact_conversation(self: "Agent[T.Init]", keep_recent: int = DEFAULT_KEEP_RECENT):
         """

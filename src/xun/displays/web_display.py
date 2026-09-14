@@ -250,7 +250,10 @@ class WebDisplay(DisplayAbstract):
 
     def _execute_command(self, agent: "Agent[Agent.T.Init]", name: str, arguments: Optional[str]) -> None:
         def run() -> None:
-            agent.execute_command(name, arguments)
+            result = agent.execute_command(name, arguments)
+            if isinstance(result, Result) and result.is_err():
+                error = result.unwrap_err()
+                agent.error(f"Error executing command: {error.error}")
             if name == "retry":
                 agent.execute()
 
