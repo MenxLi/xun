@@ -18,8 +18,11 @@ import docker
 from docker.client import DockerClient
 from docker.errors import NotFound
 from docker.models.containers import Container as DockerContainer
+from rich.console import Console
 
 from .users import User
+
+_console = Console(stderr=True)
 
 
 class _AttachStream(Protocol):
@@ -132,8 +135,26 @@ class DockerManager:
         self.used_ports.add(port)
         return port
 
+    def _stream_logs(self, container: DockerContainer, name: str) -> None:
+        def forward() -> None:
+            buffer = b""
+            try:
+                for chunk in container.logs(follow=True, stream=True):
+                    buffer += chunk
+                    while b"\n" in buffer:
+                        line, buffer = buffer.split(b"\n", 1)
+                        _console.print(f"[cyan]{name}[/cyan] [dim]|[/dim] {line.decode(errors='replace')}")
+            except Exception:
+                pass
+            finally:
+                if buffer:
+                    _console.print(f"[cyan]{name}[/cyan] [dim]|[/dim] {buffer.decode(errors='replace')}")
+
+        threading.Thread(target=forward, daemon=True).start()
+
     def start(self, user: User) -> ManagedContainer:
         port = self._allocate_port()
+        name = f"xunx-{self.instance[:8]}-{user.name}"
         container: DockerContainer | None = None
         try:
             container = self.client.containers.create(
@@ -142,13 +163,14 @@ class DockerManager:
                     "xuns", "", "--host", "0.0.0.0", "--port", str(port),
                     "--token", user.token, "--base-path", user.base_path,
                 ],
-                name=f"xunx-{self.instance[:8]}-{user.name}",
+                name=name,
                 auto_remove=True,
                 ports={f"{port}/tcp": ("127.0.0.1", port)},
                 environment=matching_environment(self.env_patterns, exclude={"XUN_HOME"}),
                 labels={"xunx.managed": "true", "xunx.instance": self.instance},
             )
             container.start()
+            self._stream_logs(container, name)
             if not isinstance(container.id, str):
                 raise RuntimeError("Docker SDK returned a container without an ID")
             return ManagedContainer(id=container.id, port=port, token=user.token)
