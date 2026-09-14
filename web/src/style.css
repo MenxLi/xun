@@ -223,6 +223,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .command-menu button:hover, .command-menu button.selected { background: var(--accent-soft); }
 .command-menu code { color: var(--accent-dark); font-size: 11px; }
 .command-menu span { color: var(--muted); font-size: 10px; }
+.command-menu button.file-option { grid-template-columns: 18px minmax(0, 1fr) auto; }
+.command-menu .file-option svg { color: var(--muted); }
+.command-menu .file-option code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.command-menu .file-option span { text-transform: capitalize; }
 .file-browser { position: relative; width: 310px; height: 100%; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); z-index: 20; }
 .resize-handle { flex: none; border: 0; background: transparent; touch-action: none; }
 .resize-handle:hover, .resize-handle:focus-visible { background: color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -244,8 +248,14 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-name svg { flex: none; color: var(--muted); }
 .file-name span { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .file-actions { flex: none; display: none; align-items: center; }
-.file-row:hover .file-actions { display: flex; }
+.file-row:hover .file-actions, .file-actions.open { display: flex; }
 .file-actions .icon-button { width: 26px; height: 26px; }
+.file-menu-wrap { position: relative; flex: none; }
+.file-menu { position: fixed; width: 176px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); box-shadow: 0 12px 30px var(--shadow); z-index: 50; }
+.file-menu button, .file-menu a { width: 100%; height: 32px; padding: 0 8px; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 4px; color: var(--ink); background: transparent; font-size: 10px; text-align: left; text-decoration: none; cursor: pointer; }
+.file-menu button:hover:not(:disabled), .file-menu a:hover { background: var(--hover); }
+.file-menu button:disabled { opacity: .4; cursor: default; }
+.file-menu .danger { color: var(--danger); }
 .file-empty, .file-error { padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
 .file-error { padding: 8px 10px; color: var(--danger); background: #f8e9e7; }
 .file-preview { flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--paper); }

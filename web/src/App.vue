@@ -89,7 +89,6 @@ watch(selectedAgentId, async agentId => {
     if (requestId === agentDataRequest) commands.value = []
   }
 })
-
 async function fetchInitialData() {
   return Promise.all([
     api.config(), api.events(), api.agents(), api.running(), api.prompts(),
@@ -490,6 +489,8 @@ onBeforeUnmount(() => {
         <InputComposer
           v-model="input"
           :commands="commands"
+          :agent-id="selectedAgentId"
+          :files-available="exposeFiles === true"
           :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : ''"
           :disabled="!connected || !selectedAgent"
           :supports-vision="supportsVision"

@@ -111,12 +111,15 @@ class WebDisplayTest(unittest.TestCase):
         agents = self.client.get("api/agents").json()
         commands = self.client.get("api/commands/agent-1").json()
         listing = self.client.get("api/files/agent-1").json()
+        lightweight = self.client.get("api/files/agent-1", params={"details": "false"}).json()
 
         self.assertEqual(agents[0]["identifier"], "agent-1")
         self.assertEqual(Path(agents[0]["workdir"]), self.root.resolve())
         self.assertEqual([command["name"] for command in commands], ["help", "sample"])
         self.assertEqual([entry["name"] for entry in listing["entries"]], ["folder", "note.md"])
         self.assertEqual(listing["entries"][1]["media_type"], "text/markdown")
+        self.assertIsNone(lightweight["entries"][1]["size"])
+        self.assertIsNone(lightweight["entries"][1]["media_type"])
 
     def test_file_routes_are_opt_in(self) -> None:
         display = WebDisplay()
@@ -196,6 +199,72 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertFalse(link.exists())
         self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+
+    def test_create_directory_and_move_file(self) -> None:
+        created = self.client.post(
+            "api/files/agent-1",
+            json={"action": "create-directory", "path": "notes"},
+        )
+        self.assertEqual(created.status_code, 200)
+        self.assertEqual(created.json(), {"path": "notes"})
+        self.assertTrue((self.root / "notes").is_dir())
+
+        source = self.root / "draft.txt"
+        source.write_text("draft", encoding="utf-8")
+        moved = self.client.post(
+            "api/files/agent-1",
+            json={"action": "move", "path": "draft.txt", "destination": "notes/final.txt"},
+        )
+        self.assertEqual(moved.status_code, 200)
+        self.assertEqual(moved.json(), {"path": "notes/final.txt"})
+        self.assertFalse(source.exists())
+        self.assertEqual((self.root / "notes" / "final.txt").read_text(encoding="utf-8"), "draft")
+
+        listing = self.client.get(
+            "api/files/agent-1",
+            params={"path": "notes"},
+        ).json()
+        self.assertEqual([entry["path"] for entry in listing["entries"]], ["notes/final.txt"])
+
+    def test_file_mutations_reject_conflicts_and_invalid_moves(self) -> None:
+        (self.root / "existing").mkdir()
+        duplicate = self.client.post(
+            "api/files/agent-1",
+            json={"action": "create-directory", "path": "existing"},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+        invalid = self.client.post(
+            "api/files/agent-1",
+            json={"action": "move", "path": "existing", "destination": "existing/child"},
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertTrue((self.root / "existing").is_dir())
+
+    def test_file_mutations_reject_symlinked_parent_escape(self) -> None:
+        with TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir)
+            secret = outside / "secret.txt"
+            secret.write_text("keep", encoding="utf-8")
+            (self.root / "escape").symlink_to(outside, target_is_directory=True)
+            source = self.root / "source.txt"
+            source.write_text("keep", encoding="utf-8")
+
+            moved = self.client.post(
+                "api/files/agent-1",
+                json={"action": "move", "path": "source.txt", "destination": "escape/moved.txt"},
+            )
+            deleted = self.client.delete(
+                "api/files/agent-1",
+                params={"path": "escape/secret.txt"},
+            )
+            listing = self.client.get("api/files/agent-1").json()
+
+            self.assertEqual(moved.status_code, 400)
+            self.assertEqual(deleted.status_code, 400)
+            self.assertTrue(source.is_file())
+            self.assertEqual(secret.read_text(encoding="utf-8"), "keep")
+            self.assertNotIn("escape", [entry["name"] for entry in listing["entries"]])
 
     def test_content_preview_dispatches_on_media_type(self) -> None:
         png = bytes.fromhex("89504e470d0a1a0a")  # minimal bytes; content is streamed, not parsed

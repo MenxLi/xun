@@ -79,8 +79,8 @@ export const api = {
   running: () => request<string[]>(appUrl('/api/running')),
   commands: (agentId: string) => request<CommandInfo[]>(appUrl(`/api/commands/${encodeURIComponent(agentId)}`)),
   capabilities: (agentId: string) => request<ModelCapabilities>(appUrl(`/api/capabilities/${encodeURIComponent(agentId)}`)),
-  files: (agentId: string, path = '') =>
-    request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`)),
+  files: (agentId: string, path = '', details = true) =>
+    request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path, details: String(details) })}`)),
   contentUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/content?${query({ path })}`),
   textContent: (agentId: string, path: string) =>
@@ -97,6 +97,18 @@ export const api = {
       { method: 'POST', body },
     )
   },
+  createDirectory: (agentId: string, path: string) =>
+    request<{ path: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create-directory', path }),
+    }),
+  move: (agentId: string, path: string, destination: string) =>
+    request<{ path: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'move', path, destination }),
+    }),
   remove: (agentId: string, path: string) =>
     request<{ deleted: boolean }>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`), { method: 'DELETE' }),
 }

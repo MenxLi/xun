@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, Image, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, FolderPlus, Image, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import { api } from '../api'
@@ -19,15 +19,58 @@ const previewEntry = ref<FileEntry | null>(null)
 const loading = ref(false)
 const uploading = ref(false)
 const dragActive = ref(false)
+const activeMenu = ref<'toolbar' | 'entry' | null>(null)
+const activeEntry = ref<FileEntry | null>(null)
+const menuPosition = ref({ top: '0px', left: '0px' })
 const error = ref('')
 const fileInput = ref<HTMLInputElement>()
 let dragDepth = 0
+let listingRequest = 0
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
 function archiveName(path: string) {
   return `${path.split('/').pop() || 'workspace'}.zip`
 }
+
+function childPath(name: string) {
+  return path.value ? `${path.value}/${name}` : name
+}
+
+function toggleMenu(kind: 'toolbar' | 'entry', event: MouseEvent, entry?: FileEntry) {
+  if (activeMenu.value === kind && (kind === 'toolbar' || activeEntry.value?.path === entry?.path)) {
+    closeMenu()
+    return
+  }
+  const button = event.currentTarget as HTMLElement
+  const rect = button.getBoundingClientRect()
+  const margin = 6
+  const width = 176
+  const height = 106
+  const top = rect.bottom + 4 + height <= window.innerHeight - margin
+    ? rect.bottom + 4
+    : rect.top - height - 4
+  menuPosition.value = {
+    top: `${Math.max(margin, Math.min(top, window.innerHeight - height - margin))}px`,
+    left: `${Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin))}px`,
+  }
+  activeMenu.value = kind
+  activeEntry.value = entry ?? null
+}
+
+function closeMenu() {
+  activeMenu.value = null
+  activeEntry.value = null
+}
+
+onMounted(() => {
+  window.addEventListener('resize', closeMenu)
+  document.addEventListener('click', closeMenu)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', closeMenu)
+  document.removeEventListener('click', closeMenu)
+})
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -40,12 +83,14 @@ function resizePreview(delta: number) {
 }
 
 watch([() => props.agentId, () => props.available], () => {
+  closeMenu()
   path.value = ''
   previewEntry.value = null
   void refresh()
 }, { immediate: true })
 
 async function refresh() {
+  const request = ++listingRequest
   if (!props.available || !props.agentId) {
     entries.value = []
     error.value = ''
@@ -54,11 +99,12 @@ async function refresh() {
   loading.value = true
   error.value = ''
   try {
-    entries.value = (await api.files(props.agentId, path.value)).entries
+    const listing = await api.files(props.agentId, path.value)
+    if (request === listingRequest) entries.value = listing.entries
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not load files'
+    if (request === listingRequest) error.value = reason instanceof Error ? reason.message : 'Could not load files'
   } finally {
-    loading.value = false
+    if (request === listingRequest) loading.value = false
   }
 }
 
@@ -116,6 +162,32 @@ async function remove(entry: FileEntry) {
   }
 }
 
+
+async function createDirectory() {
+  closeMenu()
+  const name = window.prompt('New folder name')?.trim()
+  if (!name) return
+  try {
+    await api.createDirectory(props.agentId, childPath(name))
+    await refresh()
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : 'Could not create folder'
+  }
+}
+
+async function move(entry: FileEntry) {
+  closeMenu()
+  const destination = window.prompt('New workspace-relative path', entry.path)?.trim()
+  if (!destination || destination === entry.path) return
+  try {
+    await api.move(props.agentId, entry.path, destination)
+    if (previewEntry.value?.path === entry.path) previewEntry.value = null
+    await refresh()
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : 'Could not move file'
+  }
+}
+
 function goUp() {
   path.value = parentPath.value
   previewEntry.value = null
@@ -125,7 +197,7 @@ function goUp() {
 </script>
 
 <template>
-  <aside class="file-browser" :class="{ 'drag-active': dragActive }" :style="{ width: `${settings.filesWidth}px` }" @dragenter.prevent="dragEnter" @dragover.prevent @dragleave.prevent="dragLeave" @drop.prevent="dropFiles">
+  <aside class="file-browser" :class="{ 'drag-active': dragActive }" :style="{ width: `${settings.filesWidth}px` }" @click="activeMenu = null" @keydown.esc="activeMenu = null" @dragenter.prevent="dragEnter" @dragover.prevent @dragleave.prevent="dragLeave" @drop.prevent="dropFiles">
     <ResizeHandle orientation="horizontal" @drag="resizeWidth" @reset="settings.filesWidth = 310" />
     <header class="file-header">
       <div>
@@ -139,14 +211,14 @@ function goUp() {
       <button class="icon-button" title="Parent folder" :disabled="!available || !agentId || !path" @click="goUp"><ArrowLeft :size="16" /></button>
       <div class="crumb" :title="path || currentAgent?.workdir">{{ path || '/' }}</div>
       <button class="icon-button" title="Refresh" :disabled="!available || !agentId" @click="refresh"><RefreshCw :size="16" :class="{ spinning: loading }" /></button>
-      <a v-if="available && agentId" class="icon-button" :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" title="Download this folder as zip"><FolderArchive :size="16" /></a>
-      <button v-else class="icon-button" title="Download this folder as zip" disabled><FolderArchive :size="16" /></button>
-      <button class="icon-button" title="Upload files" :disabled="!available || !agentId || uploading" @click="fileInput?.click()"><Upload :size="16" :class="{ spinning: uploading }" /></button>
+      <div class="file-menu-wrap" @click.stop>
+        <button class="icon-button" title="File actions" :disabled="!available || !agentId" :aria-expanded="activeMenu === 'toolbar'" @click="toggleMenu('toolbar', $event)"><MoreHorizontal :size="17" /></button>
+      </div>
       <input ref="fileInput" hidden type="file" multiple @change="upload(($event.target as HTMLInputElement).files)">
     </div>
 
     <div v-if="error" class="file-error">{{ error }}</div>
-    <div class="file-list" :aria-busy="loading || uploading">
+    <div class="file-list" :aria-busy="loading || uploading" @scroll="closeMenu">
       <div v-if="available === false" class="file-empty">File access is disabled.</div>
       <div v-else-if="available && agentId && !loading && !entries.length" class="file-empty">This folder is empty.</div>
       <div v-for="entry in entries" :key="entry.path" class="file-row" @dblclick="open(entry)">
@@ -157,13 +229,27 @@ function goUp() {
           <File v-else :size="16" />
           <span>{{ entry.name }}</span>
         </button>
-        <div class="file-actions">
-          <a v-if="entry.kind === 'file'" class="icon-button" :href="api.downloadUrl(agentId, entry.path)" :download="entry.name" title="Download"><Download :size="14" /></a>
-          <a v-else class="icon-button" :href="api.archiveUrl(agentId, entry.path)" :download="archiveName(entry.path)" title="Download folder as zip"><FolderArchive :size="14" /></a>
-          <button class="icon-button danger" title="Delete" @click="remove(entry)"><Trash2 :size="14" /></button>
+        <div class="file-menu-wrap file-actions" :class="{ open: activeMenu === 'entry' && activeEntry?.path === entry.path }" @click.stop>
+          <button class="icon-button" title="File actions" :aria-expanded="activeMenu === 'entry' && activeEntry?.path === entry.path" @click="toggleMenu('entry', $event, entry)"><MoreHorizontal :size="15" /></button>
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="activeMenu" class="file-menu" :style="menuPosition" @click.stop>
+        <template v-if="activeMenu === 'toolbar'">
+          <button @click="createDirectory"><FolderPlus :size="14" /><span>New folder</span></button>
+          <button :disabled="uploading" @click="fileInput?.click(); closeMenu()"><Upload :size="14" /><span>Upload files</span></button>
+          <a :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" @click="closeMenu"><FolderArchive :size="14" /><span>Download folder</span></a>
+        </template>
+        <template v-else-if="activeEntry">
+          <button @click="move(activeEntry)"><Pencil :size="14" /><span>Rename or move</span></button>
+          <a v-if="activeEntry.kind === 'file'" :href="api.downloadUrl(agentId, activeEntry.path)" :download="activeEntry.name" @click="closeMenu"><Download :size="14" /><span>Download</span></a>
+          <a v-else :href="api.archiveUrl(agentId, activeEntry.path)" :download="archiveName(activeEntry.path)" @click="closeMenu"><FolderArchive :size="14" /><span>Download folder</span></a>
+          <button class="danger" @click="remove(activeEntry); closeMenu()"><Trash2 :size="14" /><span>Delete</span></button>
+        </template>
+      </div>
+    </Teleport>
 
     <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" :style="{ height: `${settings.previewHeight}px` }" @resize="resizePreview" @close="previewEntry = null" />
 

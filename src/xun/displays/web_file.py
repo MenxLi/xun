@@ -19,11 +19,12 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Literal
 
 import puremagic
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
@@ -33,6 +34,12 @@ if TYPE_CHECKING:
 
 AgentGetter = Callable[[str], "Agent[Agent.T.Any]"]
 """Resolves an agent identifier to an Agent, raising HTTPException(404) when unknown."""
+
+
+class FileMutation(BaseModel):
+    action: Literal["create-directory", "move"]
+    path: str
+    destination: str | None = None
 
 # Media types the stdlib table misses, guesses wrong, or reports as
 # non-previewable for plain-text source/config files.
@@ -93,6 +100,16 @@ def resolve_path(agent: "Agent[Agent.T.Any]", relative_path: str, *, follow_syml
         if target != root and root not in target.parents:
             raise HTTPException(400, "Path escapes the agent workdir")
     return target
+
+
+def resolve_entry_path(agent: "Agent[Agent.T.Any]", relative_path: str) -> Path:
+    """Resolve and validate parent directories without following the final symlink."""
+    root = agent.workspace.workdir.expanduser().resolve()
+    target = resolve_path(agent, relative_path, follow_symlinks=False)
+    if target == root:
+        return target
+    parent = resolve_path(agent, target.parent.relative_to(root).as_posix())
+    return parent / target.name
 
 
 def _media_type(path: Path) -> str:
@@ -167,20 +184,21 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/files/{agent_id}")
-    async def list_files(agent_id: str, path: str = "") -> dict:
+    async def list_files(agent_id: str, path: str = "", details: bool = True) -> dict:
         agent = agent_getter(agent_id)
         target = resolve_path(agent, path)
         if not target.is_dir():
             raise HTTPException(404, "Directory not found")
         entries = []
-        for item in sorted(target.iterdir(), key=lambda value: (not value.is_dir(), value.name.lower())):
-            stat = item.stat()
+        items = (item for item in target.iterdir() if not item.is_symlink())
+        for item in sorted(items, key=lambda value: (not value.is_dir(), value.name.lower())):
+            is_directory = item.is_dir()
             entries.append({
                 "name": item.name,
                 "path": item.relative_to(agent.workspace.workdir.resolve()).as_posix(),
-                "kind": "directory" if item.is_dir() else "file",
-                "size": stat.st_size if item.is_file() else None,
-                "media_type": _media_type(item) if item.is_file() else None,
+                "kind": "directory" if is_directory else "file",
+                "size": item.stat().st_size if details and not is_directory else None,
+                "media_type": _media_type(item) if details and not is_directory else None,
             })
         return {"path": path, "entries": entries}
 
@@ -246,10 +264,48 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
             uploaded.append(name)
         return {"uploaded": uploaded}
 
+    @router.post("/api/files/{agent_id}")
+    async def mutate_file(agent_id: str, mutation: FileMutation) -> dict[str, str]:
+        agent = agent_getter(agent_id)
+        target = resolve_entry_path(agent, mutation.path)
+        root = agent.workspace.workdir.resolve()
+        if target == root:
+            raise HTTPException(400, "Cannot modify the workdir")
+
+        if mutation.action == "create-directory":
+            if target.exists() or target.is_symlink():
+                raise HTTPException(409, "Path already exists")
+            if not target.parent.is_dir():
+                raise HTTPException(404, "Parent directory not found")
+            target.mkdir()
+            return {"path": target.relative_to(root).as_posix()}
+
+        if mutation.action == "move":
+            if not target.exists() and not target.is_symlink():
+                raise HTTPException(404, "Path not found")
+            if mutation.destination is None:
+                raise HTTPException(422, "Destination is required")
+            destination = resolve_entry_path(agent, mutation.destination)
+            if destination == root:
+                raise HTTPException(400, "Cannot replace the workdir")
+            if destination.exists() or destination.is_symlink():
+                raise HTTPException(409, "Destination already exists")
+            if not destination.parent.is_dir():
+                raise HTTPException(404, "Destination directory not found")
+            if target.is_dir() and target in destination.parents:
+                raise HTTPException(400, "Cannot move a directory into itself")
+            try:
+                target.rename(destination)
+            except OSError as exc:
+                raise HTTPException(400, "Could not move path") from exc
+            return {"path": destination.relative_to(root).as_posix()}
+
+        raise HTTPException(422, "Unknown file action")
+
     @router.delete("/api/files/{agent_id}")
     async def delete_file(agent_id: str, path: str) -> dict[str, bool]:
         agent = agent_getter(agent_id)
-        target = resolve_path(agent, path, follow_symlinks=False)
+        target = resolve_entry_path(agent, path)
         if target == agent.workspace.workdir.resolve():
             raise HTTPException(400, "Cannot delete the workdir")
         if target.is_file() or target.is_symlink():
