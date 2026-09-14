@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError, Result
 from .web_file import build_file_router
+from ..hooks import HookArgs
 from ..agent import Agent  # runtime import: needed only for the Agent.is_initialized guard
 
 if TYPE_CHECKING:
@@ -64,6 +65,13 @@ class _EventStore:
     def list(self) -> list[DisplayEvent]:
         with self._lock:
             return list(self._events)
+
+    def clear(self, agent_id: str) -> None:
+        with self._lock:
+            self._events = deque(
+                (event for event in self._events if event.agent.identifier != agent_id), 
+                maxlen=self._events.maxlen
+                )
 
 
 @dataclass
@@ -166,6 +174,16 @@ class WebDisplay(DisplayAbstract):
         agent.hooks.run_start.add(lambda _args: broadcast_closure(True))
         agent.hooks.run_end.add(lambda _args: broadcast_closure(False))
 
+
+        def after_command(args: HookArgs.CommandArgs) -> None:
+            if args.command.name == "clear":
+                self._store.clear(agent.identifier)
+            elif args.command.name == "retry":
+                args.agent.execute()
+            else:
+                pass
+        agent.hooks.after_command.add(after_command)
+
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
         self._store.append(event)
@@ -254,8 +272,6 @@ class WebDisplay(DisplayAbstract):
             if isinstance(result, Result) and result.is_err():
                 error = result.unwrap_err()
                 agent.error(f"Error executing command: {error.error}")
-            if name == "retry":
-                agent.execute()
 
         self._track(agent, run)
 
