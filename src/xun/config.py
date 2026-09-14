@@ -119,7 +119,7 @@ def _default_config_template() -> AgentConfig:
         auto_confirm=False,
         auto_compact=AutoCompactionConfig(
             enabled=True,
-            token_threshold=200_000,
+            token_threshold=192_000,
         ),
         provider=ProviderConfig(
             openai_base_url=r"${XUN_OPENAI_BASE_URL}",

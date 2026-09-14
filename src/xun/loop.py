@@ -29,16 +29,20 @@ def _maybe_auto_compact(agent: "Agent[Agent.T.Init]") -> None:
     if conv.total_tokens is None or conv.total_tokens <= ac.token_threshold:
         return
 
-    agent.info(
-        f"Last call used {conv.total_tokens} tokens, over the auto-compact threshold "
-        f"({ac.token_threshold}); compacting conversation..."
-    )
-
-    # Cheap first: shrinking old tool results costs no API call. Escalate to a
-    # summary once enough cheap rounds pile up, or when little remains to reclaim.
+    # Cheap first: shrinking old tool results costs no API call. Escalate to a summary 
+    # once enough cheap rounds pile up, or when the reclaim did not sufficiently reduce the estimated token count.
     agent.info("Auto-compaction of old tool results...")
     reclaimed = conv.compact_toolcall()
-    if conv.compaction_counter.tool_rounds >= SUMMARY_ESCALATION_ROUNDS or reclaimed <= 1:
+    estimated_token_after_reclaim = int(conv.total_tokens * (1 - reclaimed.reclaimed_fraction))
+    agent.info(
+        f"Last call used {conv.total_tokens} tokens, over the auto-compact threshold "
+        f"({ac.token_threshold}); compacted {reclaimed.reclaimed_count} tool calls, estimated tokens after reclaim: {estimated_token_after_reclaim:.0f}"
+    )
+
+    if (
+        conv.compaction_counter.tool_rounds >= SUMMARY_ESCALATION_ROUNDS or 
+        estimated_token_after_reclaim > ac.token_threshold * 0.95
+        ):
         agent.info("Escalating to full conversation compaction...")
         try:
             agent.compact_conversation()

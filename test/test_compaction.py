@@ -39,7 +39,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
         self.assertTrue(conversation.compact(lambda messages: "BIG"))
-        self.assertLessEqual(len(conversation.messages), 25)  # system + DEFAULT_KEEP_RECENT
+        self.assertLessEqual(len(conversation.messages), 26)  # system + carried user + DEFAULT_KEEP_RECENT
         # the kept tail never opens with an orphaned tool result
         self.assertNotEqual(conversation.messages[1]["role"], "tool")
         # every tool result in the tail keeps its owning assistant message
@@ -47,6 +47,15 @@ class ConversationCompactTest(unittest.TestCase):
         for index, message in enumerate(tail):
             if message["role"] == "tool":
                 self.assertTrue(tail[index - 1].get("tool_calls"))
+
+    def test_compact_keeps_a_user_message_for_deep_tool_chains(self) -> None:
+        # a single user instruction under a long tool chain: the last user message is
+        # too deep to be the cut point, but providers reject bodies without a user
+        # query, so it must survive into the kept tail
+        conversation = _conversation_with_tool_chain(tool_rounds=40)
+
+        self.assertTrue(conversation.compact(lambda messages: "BIG"))
+        self.assertIn("user", [m["role"] for m in conversation.messages])
 
     def test_nothing_to_condense_leaves_history_untouched(self) -> None:
         conversation = Conversation()
@@ -123,11 +132,19 @@ class AutoCompactionTest(unittest.TestCase):
         _maybe_auto_compact(agent)
         agent.compact_conversation.assert_not_called()
 
-    def test_first_round_uses_only_cheap_compaction(self) -> None:
-        agent = self._agent(1_000, 9_999_999)
+    def test_no_escalation_when_cheap_pass_brings_estimate_under_threshold(self) -> None:
+        # the tool chain's reclaim fraction is large enough that the estimated token
+        # count falls below the threshold: the cheap pass alone suffices
+        agent = self._agent(100_000, 105_000)
         _maybe_auto_compact(agent)
         self.assertEqual(agent.conversation.compaction_counter.tool_rounds, 1)
         agent.compact_conversation.assert_not_called()
+
+    def test_escalates_when_reclaim_leaves_estimate_over_threshold(self) -> None:
+        # huge stale count vs. tiny threshold: even a big reclaim cannot get under it
+        agent = self._agent(1_000, 9_999_999)
+        _maybe_auto_compact(agent)
+        agent.compact_conversation.assert_called()
 
     def test_escalates_after_enough_cheap_rounds(self) -> None:
         agent = self._agent(1_000, 9_999_999)

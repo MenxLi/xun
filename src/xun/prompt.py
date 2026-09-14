@@ -72,6 +72,18 @@ SCHEMA (in markdown format):
 - tone_context: brief note on communication style or constraints (e.g., "formal", "prefers bullet points", "avoid technical jargon")
 """
 
+COMPACTED_SYSTEM_PROMPT = """\
+You are an assistant having a conversation with a user. Earlier conversation history has been compacted into the summary below:
+
+{summary}
+
+---
+Context management notes:
+- The most recent user message is always preserved verbatim and is authoritative for the current task. Messages around it may change: earlier turns are replaced by the summary above, and older tool results after it may be trimmed. 
+- Older tool results may appear as [Compacted, ID: ...] placeholders. When such content is still needed, call `extract_compacted_tool_result` with that ID or re-run the tool / re-read the file. Never rely on memory of compacted output.
+- This conversation will be compacted again when the context limit is reached. Persist important state to files rather than keeping it only in the context window.
+"""
+
 def get_system_prompt() -> str:
     """Get the system prompt for the main agent."""
     return SYSTEM_PROMPT
@@ -83,3 +95,7 @@ def get_subagent_prompt() -> str:
 def get_condense_prompt() -> str:
     """Return the instruction appended to a copied conversation for compaction."""
     return CONDENSE_PROMPT
+
+def get_compacted_system_prompt(summary: str) -> str:
+    """Build the system message replacing history after a summary compaction."""
+    return COMPACTED_SYSTEM_PROMPT.format(summary=summary)

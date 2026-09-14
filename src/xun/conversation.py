@@ -10,6 +10,7 @@ import jinja2
 import markdown
 from markupsafe import Markup, escape
 from .config import ASSET_DIR
+from .prompt import get_compacted_system_prompt
 from .toolbox import ToolResultType
 from .util import image_to_url
 from .openai_helper import ChatCompletionMessageWithReasoning
@@ -238,13 +239,40 @@ class Conversation:
                     return old[i+1:]
         return []
     
-    def compact_toolcall(self, keep_max: int = 16) -> int:
+    @classmethod
+    def _estimate_message_length(cls, message: dict | list[dict]) -> int:
+        """Rough text-length proxy for a message's token contribution. """
+        length_kw = ['content', 'text', 'reasoning', 'reasoning_content']
+        total_length = 0
+        if isinstance(message, list):
+            return sum(cls._estimate_message_length(item) for item in message if isinstance(item, dict))
+        for k in message:
+            if isinstance(message[k], str) and k in length_kw:
+                total_length += len(message[k])
+            elif isinstance(message[k], dict):
+                total_length += cls._estimate_message_length(message[k])
+            elif isinstance(message[k], list):
+                total_length += sum(cls._estimate_message_length(item) for item in message[k] if isinstance(item, dict))
+            else:
+                pass
+        return total_length
+    
+    def compact_toolcall(self, keep_max: int = 16):
         """
         Condense the tool call history by marking older tool calls as compacted, keeping only the most recent `keep_max` tool calls.
-        Returns the number of tool call results newly compacted.
+        Returns a ToolCallCompactReturn: the number of tool call results newly compacted,
+        and the fraction of estimated (text-only) message length that was reclaimed.
         """
         self.compaction_counter.tool_rounds += 1
-        compacted = 0
+        n_compacted = 0
+        @dataclass
+        class ToolCallCompactReturn:
+            reclaimed_count: int
+            reclaimed_fraction: float
+        def message_length() -> int:
+            return self._estimate_message_length(self.messages) # type: ignore
+
+        message_length_before: int = message_length()
         for i in range(len(self.messages) - 1, -1, -1):
             if self.messages[i].get("role") == "tool":
                 keep_max -= 1
@@ -254,13 +282,17 @@ class Conversation:
                 if keep_max < 0:
                     toolcall_id = msg["tool_call_id"]
                     old_content = msg["content"]
-                    new_content = f"[Compacted, ID: {toolcall_id}]"
+                    new_content = f"[Compacted, ID: {toolcall_id}. If this content is still needed, call extract_compacted_tool_result with this ID or re-run the tool.]"
                     assert isinstance(old_content, str)
                     if len(old_content) > len(new_content):
                         self.messages[i]['content'] = new_content
                         self._compacted_toolcalls[toolcall_id] = old_content
-                        compacted += 1
-        return compacted
+                        n_compacted += 1
+        message_length_after: int = message_length()
+        return ToolCallCompactReturn(
+            reclaimed_count=n_compacted,
+            reclaimed_fraction=((message_length_before - message_length_after) / message_length_before) if message_length_before > 0 else 0.0,
+        )
     
     def compacted_toolcall_result(self, toolcall_id: str) -> str | None:
         """
@@ -276,7 +308,9 @@ class Conversation:
 
         Cut at the last user message when its tail fits in `keep_recent`, else keep only
         the most recent `keep_recent` messages, advancing off `tool` messages so the tail
-        never starts with orphaned tool results.
+        never starts with orphaned tool results. When that cut skips past the last user
+        message, the user request is re-kept at the head of the tail: some providers
+        reject request bodies without any user message, and it preserves the task verbatim.
 
         Returns False, leaving history untouched, when there is nothing beyond the system
         message to condense or `summarize` returns None.
@@ -284,8 +318,10 @@ class Conversation:
         msgs = self.messages
 
         cut: int | None = None
+        last_user_idx: int | None = None
         for i in range(len(msgs) - 1, -1, -1):
             if msgs[i].get("role") == "user":
+                last_user_idx = i
                 if len(msgs) - i <= keep_recent:
                     cut = i
                 break
@@ -296,6 +332,8 @@ class Conversation:
 
         condense_messages = msgs[:cut]
         keep_messages = msgs[cut:]
+        if last_user_idx is not None and last_user_idx < cut:
+            keep_messages = [msgs[last_user_idx]] + keep_messages
 
         if not any(m.get("role") != "system" for m in condense_messages):
             return False
@@ -304,8 +342,7 @@ class Conversation:
         if summary is None:
             return False
 
-        sys_msg = f"You are an assistant having a conversation with a user. Here is the summary of the conversation history so far:\n{summary}"
-        self.set_system_message_content(sys_msg)  # in-place on the leading system message, or inserted at index 0
+        self.set_system_message_content(get_compacted_system_prompt(summary))  # in-place on the leading system message, or inserted at index 0
         self.messages = self.messages[:1] + keep_messages
         # the count refers to the pre-compaction history and would re-trigger auto-compaction
         self.total_tokens = None

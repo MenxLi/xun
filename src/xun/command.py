@@ -230,8 +230,11 @@ def default_commands() -> list[Command]:
 
     def _condense_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         if args[:1] == ['toolcall']:
-            n = agent.conversation.compact_toolcall()
-            agent.info(f"Compacted {n} tool call result(s)." if n else "No tool call results to compact.")
+            reclaimed = agent.conversation.compact_toolcall()
+            if reclaimed.reclaimed_count:
+                agent.info(f"Compacted {reclaimed.reclaimed_count} tool call result(s), reclaimed {reclaimed.reclaimed_fraction:.1%} of estimated message length.")
+            else:
+                agent.info("No tool call results to compact.")
         else:
             agent.compact_conversation()
     
