@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from contextlib import asynccontextmanager, suppress
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
+from rich.console import Console
 
 from .runtime import ContainerManager, ManagedContainer
 from .users import UserStore
+
+_console = Console(stderr=True)
 
 
 class Supervisor:
@@ -32,7 +34,7 @@ class Supervisor:
                 try:
                     self.active[name] = await asyncio.to_thread(self.backend.start, user)
                 except Exception as error:
-                    print(f"Failed to start container for {name}: {error}", file=sys.stderr)
+                    _console.print(f"[red]Failed to start container for {name}: {error}[/red]")
 
     async def run(self) -> None:
         while True:
@@ -43,7 +45,7 @@ class Supervisor:
                 await reconciliation
                 raise
             except Exception as error:
-                print(f"Failed to reconcile containers: {error}", file=sys.stderr)
+                _console.print(f"[red]Failed to reconcile containers: {error}[/red]")
             await asyncio.sleep(self.interval)
 
     async def stop(self) -> None:
@@ -51,7 +53,7 @@ class Supervisor:
             try:
                 await asyncio.to_thread(self.backend.stop, container)
             except Exception as error:
-                print(f"Failed to stop container {container.id}: {error}", file=sys.stderr)
+                _console.print(f"[red]Failed to stop container {container.id}: {error}[/red]")
         self.active.clear()
 
     @asynccontextmanager

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 
 from aiohttp import web
+from rich.console import Console
+from rich.table import Table
 
 from .runtime import DockerManager, instance_id
 from .service import Multiplexer, Supervisor
@@ -18,6 +20,16 @@ def _parse_port_range(value: str) -> range:
     if not (1 <= start <= end <= 65535):
         raise argparse.ArgumentTypeError("ports must satisfy 1 <= START <= END <= 65535")
     return range(start, end + 1)
+
+
+def _user_table(users: list) -> Table:
+    table = Table(title="Users")
+    table.add_column("USER", style="cyan", no_wrap=True)
+    table.add_column("TOKEN", style="magenta")
+    table.add_column("BASE PATH", style="green")
+    for user in users:
+        table.add_row(user.name, user.token, str(user.base_path))
+    return table
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -45,6 +57,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
     store = UserStore()
+    console = Console()
 
     try:
         if args.command == "serve":
@@ -60,13 +73,18 @@ def main() -> None:
             web.run_app(Multiplexer(supervisor).app(), host=args.host, port=args.port)
         elif args.command == "user-add":
             user = store.add(args.username)
-            print(f"{user.name}\t{user.token}\t{user.base_path}")
+            console.print(f"[green]Added user[/green] [cyan]{user.name}[/cyan]")
+            console.print(_user_table([user]))
         elif args.command == "user-del":
             if not store.delete(args.username):
                 parser.error(f"user does not exist: {args.username}")
+            else:
+                console.print(f"[green]Deleted user[/green] [cyan]{args.username}[/cyan]")
         elif args.command == "user-list":
-            print("USER\tTOKEN\tBASE PATH")
-            for user in store.list():
-                print(f"{user.name}\t{user.token}\t{user.base_path}")
+            users = store.list()
+            if not users:
+                console.print("[dim]No users.[/dim]")
+            else:
+                console.print(_user_table(users))
     except ValueError as error:
         parser.error(str(error))
