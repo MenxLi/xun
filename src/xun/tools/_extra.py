@@ -15,12 +15,16 @@ def _expose_z_search():
         return []
 
     @tool_attr(name="web_search", override=True)
-    def z_search(query: str, limit: int = 5, content_size: Literal["short", "medium", "long"] = "medium") -> list[dict]:
+    def z_search(query: str, limit: int = 5, content_size: Literal["short", "medium"] = "short") -> list[dict]:
         """
         Web search with ZhipuAI's Web Search tool. 
         Prefer this tools for web search tasks, get more accurate and comprehensive search results.
+
+        Only "short" and "medium" content sizes are supported to keep the context manageable.
+        For details on any result, visit the link provided in the "link" field.
         """
         # https://docs.bigmodel.cn/cn/guide/tools/web-search
+        # content size can be long... but that will be too much for context
 
         response = z_client.web_search.web_search(
             search_engine="search_pro",
