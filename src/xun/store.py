@@ -1,8 +1,9 @@
 from pathlib import Path
+from .config import get_home_dir
 
 class Store:
-    def __init__(self, root_dir: Path = Path(".xun")):
-        self._root_dir = root_dir
+    def __init__(self, root_dir: Path | None = None):
+        self._root_dir = root_dir or get_home_dir()
         self._init_structure()
     
     @property

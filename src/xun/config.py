@@ -20,7 +20,7 @@ def get_home_dir() -> Path:
     if home_dir:
         return Path(home_dir)
     else:
-        return Path.home() / f".{BRAND.lower()}"
+        return Path.cwd() / f".{BRAND.lower()}"
 
 def get_internal_env(key: str) -> str | None:
     return os.environ.get(f"_{BRAND}_{key}")

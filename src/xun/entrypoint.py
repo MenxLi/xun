@@ -1,10 +1,12 @@
 # import for arrow key support in input()
 import readline     # noqa
 
-import argparse, shlex, sys, hashlib, tempfile, subprocess, uuid
-from contextlib import contextmanager
+import argparse, shlex, sys, hashlib, tempfile, uuid
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Callable, Iterator, Optional, Literal
+from typing import Callable, Iterator, Optional
+import docker
+from docker.errors import NotFound
 from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
@@ -18,6 +20,7 @@ from .command import Command
 from .types import CancelledError, Result
 from .workspace import Workspace
 from .tools.common import default_tool_commands
+from .supervisor.runtime import copy_directory, matching_environment, start_attached
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -301,9 +304,6 @@ def main_serve():
     )
 
 def main_container():
-    import os
-    import fnmatch
-
     parser = argparse.ArgumentParser(description="Run the container")
     parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no host mount).", default="", nargs="?")
     parser.add_argument("--copy", action="store_true", help="Copy the mount directory into /workspace instead of bind mounting it.")
@@ -322,38 +322,34 @@ def main_container():
     if args.copy and not requested_mount:
         parser.error("--copy requires a mount directory.")
     mount = str(Path(requested_mount).resolve()) if requested_mount else ""
-    envs: dict = {k: v for k, v in os.environ.items() if any(fnmatch.fnmatch(k, pattern) for pattern in env_kw)}
+    envs = matching_environment(env_kw)
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
-    network: Literal['bridge', 'host'] = args.network
-
-    cmd = [
-        "docker", "create",
-        "--rm",
-        "-it",
-        "--name", name,
-        "--network", network,
-    ]
-    if mount:
-        if not args.copy:
-            cmd += ["--volume", f"{mount}:/workspace"]
-        cmd += ["--workdir", "/workspace"]
-    if network == "bridge":
-        for port in ports:
-            cmd += ["--publish", f"{port}:{port}"]
-    for key, value in envs.items():
-        cmd += ["--env", f"{key}={value}"]
-    cmd.append(args.image)
     exec_cmd = args.exec_cmd
     if exec_cmd is None:
         exec_cmd = "xuns --host 0.0.0.0" if mount else "xuns '' --host '0.0.0.0'"
-    if exec_cmd.strip():
-        cmd += shlex.split(exec_cmd)
-
-    subprocess.run(cmd, check=True)
+    client = docker.from_env()
+    container = None
     try:
+        container = client.containers.create(
+            image=args.image,
+            name=name,
+            command=shlex.split(exec_cmd) if exec_cmd.strip() else None,
+            auto_remove=True,
+            stdin_open=True,
+            tty=True,
+            network_mode=args.network,
+            volumes={mount: {"bind": "/workspace", "mode": "rw"}} if mount and not args.copy else None,
+            working_dir="/workspace" if mount else None,
+            ports={f"{port}/tcp": int(port) for port in ports} if args.network == "bridge" else None,
+            environment=envs,
+        )
         if args.copy:
-            subprocess.run(["docker", "cp", f"{mount}/.", f"{name}:/workspace"], check=True)
-        subprocess.run(["docker", "start", "--attach", "--interactive", name], check=True)
+            copy_directory(mount, container, "/workspace")
+        start_attached(container, interactive=True)
     except BaseException:
-        subprocess.run(["docker", "rm", "--force", name], check=False)
+        if container is not None:
+            with suppress(NotFound):
+                container.remove(force=True)
         raise
+    finally:
+        client.close()

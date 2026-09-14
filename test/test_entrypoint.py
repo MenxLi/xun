@@ -103,29 +103,47 @@ class EntrypointCliTest(unittest.TestCase):
                 main_serve()
 
     def test_xunc_without_workdir_uses_container_temporary_workspace(self) -> None:
-        commands: list[list[str]] = []
-
-        def run(command, **_kwargs):
-            commands.append(command)
-
-        with patch.object(sys, "argv", ["xunc"]), patch("xun.entrypoint.subprocess.run", side_effect=run):
+        client = Mock()
+        container = Mock(id="container-id")
+        client.containers.create.return_value = container
+        with patch.object(sys, "argv", ["xunc"]), \
+                patch("xun.entrypoint.docker.from_env", return_value=client), \
+                patch("xun.entrypoint.start_attached") as start_attached:
             main_container()
 
-        create = commands[0]
-        self.assertNotIn("--volume", create)
-        self.assertEqual(create[-4:], ["xuns", "", "--host", "0.0.0.0"])
+        options = client.containers.create.call_args.kwargs
+        self.assertIsNone(options["volumes"])
+        self.assertEqual(options["command"], ["xuns", "", "--host", "0.0.0.0"])
+        start_attached.assert_called_once_with(container, interactive=True)
+        client.close.assert_called_once_with()
+
+    def test_xunc_closes_client_when_container_creation_fails(self) -> None:
+        client = Mock()
+        client.containers.create.side_effect = RuntimeError("create")
+        with patch.object(sys, "argv", ["xunc"]), \
+                patch("xun.entrypoint.docker.from_env", return_value=client):
+            with self.assertRaisesRegex(RuntimeError, "create"):
+                main_container()
+
+        client.close.assert_called_once_with()
 
     def test_xunc_with_workdir_mounts_workspace(self) -> None:
-        commands: list[list[str]] = []
+        client = Mock()
+        container = Mock(id="container-id")
+        client.containers.create.return_value = container
 
         with TemporaryDirectory() as directory, \
                 patch.object(sys, "argv", ["xunc", directory]), \
-                patch("xun.entrypoint.subprocess.run", side_effect=lambda command, **_kwargs: commands.append(command)):
+                patch("xun.entrypoint.docker.from_env", return_value=client), \
+                patch("xun.entrypoint.start_attached"):
             main_container()
 
-        create = commands[0]
-        self.assertIn(f"{Path(directory).resolve()}:/workspace", create)
-        self.assertEqual(create[-3:], ["xuns", "--host", "0.0.0.0"])
+        options = client.containers.create.call_args.kwargs
+        self.assertEqual(
+            options["volumes"],
+            {str(Path(directory).resolve()): {"bind": "/workspace", "mode": "rw"}},
+        )
+        self.assertEqual(options["command"], ["xuns", "--host", "0.0.0.0"])
 
 
 if __name__ == "__main__":

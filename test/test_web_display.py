@@ -144,20 +144,20 @@ class WebDisplayTest(unittest.TestCase):
         service = WebDisplayService(token="test-token", assets_dir=assets).mount("/", WebDisplay())
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
-            self.assertEqual(client.get("/", follow_redirects=False).headers["location"], "./chat/")
+            self.assertEqual(client.get("/", follow_redirects=False).headers["location"], "/chat/")
             self.assertIn("Xun chat", client.get("/chat/").text)
             self.assertEqual(client.get("/session/api/config").status_code, 200)
             self.assertEqual(client.get("/api/config").status_code, 404)
 
         with TestClient(service.app) as client:
             root = client.get("/?token=test-token", follow_redirects=False)
-            self.assertEqual(root.headers["location"], "./chat/?token=test-token")
+            self.assertEqual(root.headers["location"], "/chat/?token=test-token")
             bootstrap = client.get(
                 "/chat/?session=%2F&token=test-token",
                 follow_redirects=False,
             )
             self.assertEqual(bootstrap.status_code, 303)
-            self.assertEqual(bootstrap.headers["location"], "./?session=%2F")
+            self.assertEqual(bootstrap.headers["location"], "/chat/?session=%2F")
             self.assertIn("Path=/", bootstrap.headers["set-cookie"])
             self.assertIn("Xun chat", client.get("/chat/").text)
 
@@ -485,7 +485,7 @@ class WebDisplayTest(unittest.TestCase):
 
             authenticated = client.post(
                 "/login",
-                data={"token": "fixed-token", "next": "/chat/?session=/agents/research"},
+                data={"token": " fixed-token\n", "next": "/chat/?session=/agents/research"},
                 follow_redirects=False,
             )
             self.assertEqual(authenticated.status_code, 303)
@@ -505,7 +505,7 @@ class WebDisplayTest(unittest.TestCase):
                 follow_redirects=False,
             )
             self.assertEqual(bootstrap.status_code, 303)
-            self.assertEqual(bootstrap.headers["location"], "./?session=%2Fagents%2Fresearch")
+            self.assertEqual(bootstrap.headers["location"], "/chat/?session=%2Fagents%2Fresearch")
             self.assertIn("Path=/", bootstrap.headers["set-cookie"])
             self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 200)
             with client.websocket_connect("/session/agents/research/ws"):
@@ -523,7 +523,7 @@ class WebDisplayTest(unittest.TestCase):
 
         with TestClient(parent) as client:
             root = client.get("/outer/alpha", follow_redirects=False)
-            self.assertEqual(root.headers["location"], "./chat/")
+            self.assertEqual(root.headers["location"], "/outer/alpha/chat/")
             page = client.get("/outer/alpha/chat/?session=/", follow_redirects=False)
             self.assertEqual(page.status_code, 303)
             self.assertEqual(

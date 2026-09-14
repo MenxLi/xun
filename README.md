@@ -169,6 +169,25 @@ By default `xunc` starts `xuns --host 0.0.0.0` in the container and publishes po
 - `--copy`: copy the positional directory into `/workspace` before starting instead of bind mounting it
 - `--image` / `--name`: image (default `xun`) and container name
 
+### Multiplexed server
+
+`xunx` runs one temporary container per registered user and proxies each user path through one public server. Build the `xun` image first, then manage users and start the server:
+
+```bash
+make build-docker
+xunx user-add alice
+xunx user-list
+xunx serve --host 0.0.0.0 --port 18960 --port-range 20000-20100
+```
+
+Open `http://localhost:18960/alice?token=TOKEN`, using the token printed by `user-add` or `user-list`. User records are stored in `$XUN_HOME/x/xunx.db` (default `~/.xun/x/xunx.db`). The daemon notices user additions and deletions while running; deleting a user immediately disconnects it and removes its container:
+
+```bash
+xunx user-del alice
+```
+
+Container ports are selected randomly from `--port-range` and bound only to host loopback. User workspaces are temporary and disappear whenever their containers stop. All managed containers are removed when the server shuts down, and stale containers from an earlier abnormal exit are removed on the next start. `XUN_*` and `_XUN_*` environment variables except `XUN_HOME` are forwarded into each container. Use `--image` to select an image other than `xun`.
+
 <details>
 <summary>Frontend development</summary>
 The frontend development command starts both the backend and Vite with Vue DevTools:

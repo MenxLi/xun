@@ -55,7 +55,7 @@ class _TokenAuthMiddleware:
         mount_path = request_path.rstrip("/")
         if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and mount_path == self.base_path:
             query = f"?{connection.url.query}" if connection.url.query else ""
-            response = RedirectResponse(f"./chat/{query}")
+            response = RedirectResponse(f"{root_path}{self.chat_path}/{query}")
             await response(scope, receive, send)
             return
 
@@ -76,7 +76,10 @@ class _TokenAuthMiddleware:
                 for key, value in connection.query_params.multi_items()
                 if key != "token"
             ])
-            response = RedirectResponse(f"./?{query}" if query else "./", status_code=303)
+            response = RedirectResponse(
+                f"{root_path}{self.chat_path}/?{query}" if query else f"{root_path}{self.chat_path}/",
+                status_code=303,
+            )
             response.set_cookie(
                 _COOKIE_NAME,
                 self.token,
@@ -237,7 +240,7 @@ class WebDisplayService:
             next: str = Form("/"),
         ) -> Response:
             target = self._login_target(next)
-            if not _tokens_match(token, self.token):
+            if not _tokens_match(token.strip(), self.token):
                 return self._login_response(request, target, error="Invalid access token", status_code=401)
             root_path = request.scope.get("root_path", "").rstrip("/")
             response = RedirectResponse(f"{root_path}{target}" if root_path else target, status_code=303)
