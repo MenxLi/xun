@@ -11,7 +11,7 @@ Some of the design philosophy:
 - Context injection — pass execution context into tools seamlessly 
 -->
 
-The core codebase is compact: about 3000 lines in `src/xun/*.py`, with comprehensive type hints.
+The core codebase is compact: about 3000 lines in `src/xun/*.py` (mostly hand written), with comprehensive type hints.
 
 <!-- <details>
 <summary>Why this name?</summary>

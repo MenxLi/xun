@@ -174,12 +174,18 @@ class WebDisplay(DisplayAbstract):
         agent.hooks.run_start.add(lambda _args: broadcast_closure(True))
         agent.hooks.run_end.add(lambda _args: broadcast_closure(False))
 
-
         def after_command(args: HookArgs.CommandArgs) -> None:
             if args.command.name == "clear":
                 self._store.clear(agent.identifier)
+                # search for any detached agent, also remove their data from the store
+                agent_all = set(event.agent.identifier for event in self._store.list())
+                agents_detached = agent_all - set(self.agents.keys())
+                for agent_id in agents_detached:
+                    self._store.clear(agent_id)
+
             elif args.command.name == "retry":
                 args.agent.execute()
+
             else:
                 pass
         agent.hooks.after_command.add(after_command)
