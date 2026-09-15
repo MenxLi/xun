@@ -210,6 +210,7 @@ class Multiplexer:
             autoclose=True,
             autoping=True,
             heartbeat=self.websocket_heartbeat,
+            compress=False,
         )
         await downstream.prepare(request)
 

@@ -287,6 +287,16 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.type, WSMsgType.PING)
         await websocket.close()
 
+    async def test_websocket_remains_usable_after_heartbeats(self) -> None:
+        websocket = await self.client.ws_connect("/alice/socket", compress=15)
+        response = asyncio.create_task(websocket.receive(timeout=0.5))
+
+        await asyncio.sleep(0.15)
+        await websocket.send_str("after-idle")
+        message = await response
+
+        self.assertEqual(message.data, "/alice/socket:after-idle")
+        await websocket.close()
 
 if __name__ == "__main__":
     unittest.main()
