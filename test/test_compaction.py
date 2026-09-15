@@ -6,6 +6,9 @@ from xun.conversation import Conversation, CompactionCounter
 from xun.loop import _maybe_auto_compact, SUMMARY_ESCALATION_ROUNDS
 
 
+KEEP_RECENT = 16
+
+
 def _conversation_with_tool_chain(tool_rounds: int, tool_size: int = 500) -> Conversation:
     conversation = Conversation()
     conversation.set_system_message_content("sys")
@@ -28,7 +31,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.messages.append({"role": "assistant", "content": "a" * 100})
         conversation.add_user_message("second")
 
-        self.assertTrue(conversation.compact(lambda messages: "SUMMARY"))
+        self.assertTrue(conversation.compact(lambda messages: "SUMMARY", keep_recent=KEEP_RECENT))
         self.assertEqual([m["role"] for m in conversation.messages], ["system", "user"])
         self.assertIn("SUMMARY", conversation.messages[0].get("content") or "")
         # summary supersedes cheap rounds: tool count resets, summary count advances
@@ -38,8 +41,8 @@ class ConversationCompactTest(unittest.TestCase):
     def test_long_tool_chain_compacts_to_bounded_window(self) -> None:
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
-        self.assertTrue(conversation.compact(lambda messages: "BIG"))
-        self.assertLessEqual(len(conversation.messages), 26)  # system + carried user + DEFAULT_KEEP_RECENT
+        self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT))
+        self.assertLessEqual(len(conversation.messages), KEEP_RECENT + 2)  # system + carried user + retained tail
         # the kept tail never opens with an orphaned tool result
         self.assertNotEqual(conversation.messages[1]["role"], "tool")
         # every tool result in the tail keeps its owning assistant message
@@ -54,7 +57,7 @@ class ConversationCompactTest(unittest.TestCase):
         # query, so it must survive into the kept tail
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
-        self.assertTrue(conversation.compact(lambda messages: "BIG"))
+        self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT))
         self.assertIn("user", [m["role"] for m in conversation.messages])
 
     def test_nothing_to_condense_leaves_history_untouched(self) -> None:
@@ -62,7 +65,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.set_system_message_content("sys")
         conversation.add_user_message("hi")
 
-        self.assertFalse(conversation.compact(lambda messages: "S"))
+        self.assertFalse(conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT))
         self.assertEqual([m["role"] for m in conversation.messages], ["system", "user"])
 
     def test_failed_summary_rolls_back_and_clears_token_count(self) -> None:
@@ -73,7 +76,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.add_user_message("keep going")
         before = list(conversation.messages)
 
-        self.assertFalse(conversation.compact(lambda messages: None))
+        self.assertFalse(conversation.compact(lambda messages: None, keep_recent=KEEP_RECENT))
         self.assertEqual(conversation.messages, before)
         self.assertEqual(conversation.total_tokens, 12345)
 
@@ -84,7 +87,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.messages.append({"role": "assistant", "content": "done"})
         conversation.add_user_message("keep going")
 
-        self.assertTrue(conversation.compact(lambda messages: "S"))
+        self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT))
         self.assertIsNone(conversation.total_tokens)
 
 
@@ -118,7 +121,10 @@ class AutoCompactionTest(unittest.TestCase):
         agent.conversation = _conversation_with_tool_chain(tool_rounds=30)
         agent.conversation.total_tokens = total_tokens
         # a real summary must actually rewrite history, so cadence state updates too
-        agent.compact_conversation.side_effect = lambda *a, **k: agent.conversation.compact(lambda m: "SUMMARY")
+        agent.compact_conversation.side_effect = lambda *a, **k: agent.conversation.compact(
+            lambda messages: "SUMMARY",
+            keep_recent=k.get("keep_recent", KEEP_RECENT),
+        )
         return agent
 
     def test_disabled_never_compacts(self) -> None:
@@ -144,10 +150,12 @@ class AutoCompactionTest(unittest.TestCase):
         # huge stale count vs. tiny threshold: even a big reclaim cannot get under it
         agent = self._agent(1_000, 9_999_999)
         _maybe_auto_compact(agent)
-        agent.compact_conversation.assert_called()
+        self.assertEqual(agent.compact_conversation.call_count, 3)
+        agent.error.assert_called_once()
+        self.assertIn("no further progress possible", agent.error.call_args.args[0])
 
     def test_escalates_after_enough_cheap_rounds(self) -> None:
-        agent = self._agent(1_000, 9_999_999)
+        agent = self._agent(100_000, 105_000)
         for _ in range(SUMMARY_ESCALATION_ROUNDS):
             _maybe_auto_compact(agent)
         agent.compact_conversation.assert_called()

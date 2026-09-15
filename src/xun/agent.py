@@ -14,7 +14,7 @@ from .types import TypeVar, CancelledError
 from .display_abstract import *
 from .running_state import AgentRunningStateMixin, LabeledEvent
 from .displays.display import Display, NullDisplay
-from .conversation import Conversation, DEFAULT_KEEP_RECENT
+from .conversation import Conversation
 from .config import AgentConfig, load_config
 from .prompt import get_condense_prompt
 from .error_catch import except_safe
@@ -258,7 +258,7 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
             command.invoke(self, hook_args.arguments)
         self.hooks.after_command.invoke(hook_args)
     
-    def compact_conversation(self: "Agent[T.Init]", keep_recent: int = DEFAULT_KEEP_RECENT):
+    def compact_conversation(self: "Agent[T.Init]", keep_recent: int = 16):
         """
         Condense conversation history via `Conversation.compact`, 
         supplying the summarizer and logging.
@@ -289,8 +289,9 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
             self.info(f"Conversation history condensed. Summary:\n{summary}")
             return summary
 
-        if not self.conversation.compact(summarize, keep_recent=keep_recent) and not attempted:
+        if not (r:=self.conversation.compact(summarize, keep_recent=keep_recent)) and not attempted:
             self.info("Nothing to condense in conversation history.")
+        return r
 
     def __enter__(self: "Agent[T.Uninit]") -> "Agent[T.Init]":
         # any state: entering an already-initialized agent (e.g. a configured one returned

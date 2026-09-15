@@ -17,7 +17,6 @@ from .openai_helper import ChatCompletionMessageWithReasoning
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
-DEFAULT_KEEP_RECENT = 24
 def _remove_empty_tool_calls(message: Any) -> Any:
     # some provider does not allow empty list for tool_calls
     if not isinstance(message, dict):
@@ -257,7 +256,10 @@ class Conversation:
                 pass
         return total_length
     
-    def compact_toolcall(self, keep_max: int = 16):
+    def estimated_message_length(self) -> int:
+        return self._estimate_message_length(self.messages) # type: ignore
+    
+    def compact_toolcall(self, keep_max: int = 12):
         """
         Condense the tool call history by marking older tool calls as compacted, keeping only the most recent `keep_max` tool calls.
         Returns a ToolCallCompactReturn: the number of tool call results newly compacted,
@@ -269,10 +271,8 @@ class Conversation:
         class ToolCallCompactReturn:
             reclaimed_count: int
             reclaimed_fraction: float
-        def message_length() -> int:
-            return self._estimate_message_length(self.messages) # type: ignore
 
-        message_length_before: int = message_length()
+        message_length_before: int = self.estimated_message_length()
         for i in range(len(self.messages) - 1, -1, -1):
             if self.messages[i].get("role") == "tool":
                 keep_max -= 1
@@ -288,7 +288,7 @@ class Conversation:
                         self.messages[i]['content'] = new_content
                         self._compacted_toolcalls[toolcall_id] = old_content
                         n_compacted += 1
-        message_length_after: int = message_length()
+        message_length_after: int = self.estimated_message_length()
         return ToolCallCompactReturn(
             reclaimed_count=n_compacted,
             reclaimed_fraction=((message_length_before - message_length_after) / message_length_before) if message_length_before > 0 else 0.0,
@@ -301,7 +301,7 @@ class Conversation:
         """
         return self._compacted_toolcalls.get(toolcall_id)
 
-    def compact(self, summarize: Callable[[list[Any]], str | None], keep_recent: int = DEFAULT_KEEP_RECENT) -> bool:
+    def compact(self, summarize: Callable[[list[Any]], str | None], keep_recent: int):
         """
         Replace older messages with a system-message summary from `summarize(messages)`
         (None to abort), keeping a bounded recent tail.
@@ -315,6 +315,11 @@ class Conversation:
         Returns False, leaving history untouched, when there is nothing beyond the system
         message to condense or `summarize` returns None.
         """
+        @dataclass
+        class SummaryCompactResult:
+            reclaimed_fraction: float
+
+        len_before = self.estimated_message_length()
         msgs = self.messages
 
         cut: int | None = None
@@ -336,18 +341,18 @@ class Conversation:
             keep_messages = [msgs[last_user_idx]] + keep_messages
 
         if not any(m.get("role") != "system" for m in condense_messages):
-            return False
+            return None
 
         summary = summarize(condense_messages)
         if summary is None:
-            return False
+            return None
 
         self.set_system_message_content(get_compacted_system_prompt(summary))  # in-place on the leading system message, or inserted at index 0
         self.messages = self.messages[:1] + keep_messages
         # the count refers to the pre-compaction history and would re-trigger auto-compaction
         self.total_tokens = None
         self.compaction_counter = CompactionCounter(summary_rounds=self.compaction_counter.summary_rounds + 1)
-        return True
+        return SummaryCompactResult(reclaimed_fraction = 1 - self.estimated_message_length() / len_before)
     
     def to_history(self, truncate = False) -> list[MessageRecord]:
         res = []
