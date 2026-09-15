@@ -263,10 +263,10 @@ def main():
 
     user_input = args.instruction.strip()
 
+    # setup_agent() installs the console Display by default
     agent = setup_agent(
         default_tools=True, 
         default_commands=True, 
-        display=Display()
         )
 
     agent.command.register(*cli_commands())

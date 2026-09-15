@@ -12,8 +12,8 @@ from threading import Semaphore
 
 from .types import TypeVar, CancelledError
 from .display_abstract import *
+from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, LabeledEvent
-from .displays.display import Display
 from .conversation import Conversation
 from .config import AgentConfig, load_config
 from .error_catch import except_safe
@@ -74,7 +74,7 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
 
     name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
     identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
-    display: DisplayAbstract = field(default_factory=Display)
+    display: DisplayAbstract = field(default_factory=NullDisplay)
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
     command: CommandRegistry = field(default_factory=CommandRegistry)
@@ -183,7 +183,7 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
             # auto inherit
             config = parent_agent.config.clone(),
             api_call_semaphore=parent_agent.api_call_semaphore,
-            display=parent_agent.display if share_display else Display(),
+            display=parent_agent.display if share_display else NullDisplay(),
         )
         if share_workspace:
             # share the whole on-disk footprint: same workdir and same (lazy) tempdir

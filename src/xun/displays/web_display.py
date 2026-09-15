@@ -18,7 +18,6 @@ from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMes
 from ..types import CancelledError, Result
 from .web_file import build_file_router
 from ..hooks import HookArgs
-from ..agent import Agent  # runtime import: needed only for the Agent.is_initialized guard
 
 if TYPE_CHECKING:
     from ..agent import Agent
@@ -221,6 +220,7 @@ class WebDisplay(DisplayAbstract):
         executor.submit(function, *args)
 
     def _submit(self, message: WebMessage) -> None:
+        from ..agent import Agent
         if isinstance(message, ChatMessage):
             agent = self._agent(message.agent_id)
             content = message.content.strip()

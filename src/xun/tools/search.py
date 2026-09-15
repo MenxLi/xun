@@ -170,7 +170,6 @@ def web_search(ctx: ToolCallContext, query: str, max_results: int = 5) -> WebSea
     Output: query, engine used, ordered results (title/url/snippet), notes.
     """
     from ..agent import Agent  # avoid circular import
-    from ..displays.display import NullDisplay
     from ..toolbox import ToolBox
     from .system import system_info, system_time
 
@@ -181,15 +180,15 @@ def web_search(ctx: ToolCallContext, query: str, max_results: int = 5) -> WebSea
         raise ValueError("max_results must be greater than 0.")
     max_results = min(max_results, SEARCH_MAX_RESULTS_LIMIT)
 
-    # A dedicated agent: inherits parent config/display/cancel event, but gets a
+    # A dedicated agent: inherits parent config/cancel event, but gets a
     # minimal toolbox (browser + system info) so it cannot recurse or touch files.
+    # share_display=False: the searcher runs silently on the default NullDisplay.
     agent = Agent.inherit(
         ctx.agent, 
         copy_toolbox=False, 
         copy_command=False, 
         share_display=False, 
         )
-    agent.display = NullDisplay()
     agent.name = f"{ctx.agent.name}-search-{hashlib.md5(query.encode()).hexdigest()}"
     agent.toolbox = ToolBox().register(*_shared_browser_tools_once(), system_info, system_time)
     agent.system(SEARCH_SYSTEM_PROMPT)
@@ -249,10 +248,11 @@ def expose_search_tools() -> list[Callable]:
 
 if __name__ == "__main__":
     from ..agent import Agent
+    from ..displays.display import Display
     from ..toolcall import ToolCallContext
 
     query = input("Enter your search query: ")
-    host = Agent().initialize()
+    host = Agent(display=Display()).initialize()
     ctx = ToolCallContext(agent=host, tool_name="web_search", v=None)
     try:
         output = web_search(ctx, query)

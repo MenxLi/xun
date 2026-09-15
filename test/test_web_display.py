@@ -24,7 +24,7 @@ from xun.display_abstract import (
 from xun.running_state import AgentRunningStateMixin, LabeledEvent
 from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
-from xun.displays.display import NullDisplay
+from xun.displays.null_display import NullDisplay
 from xun.types import CancelledError, ErrorInfo, Result
 from xun.workspace import Workspace
 

@@ -189,10 +189,3 @@ def _choose_from_int(
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)
     console.print(panel)
-
-class NullDisplay(DisplayAbstract):
-    def get_choice( self, *args, **kwargs) -> str:
-        raise NotImplementedError("NullDisplay does not support get_choice.")
-
-    def on_event(self, event: DisplayEvent):
-        pass

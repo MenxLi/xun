@@ -66,9 +66,7 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16):
     Condense conversation history via `Conversation.compact`,
     supplying the summarizer and logging.
     """
-    # local imports keep the module graph acyclic (same idiom as command.py)
     from .agent import Agent
-    from .displays.display import NullDisplay
 
     agent.info("Condensing conversation history...")
     attempted = False
@@ -82,7 +80,6 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16):
             copy_toolbox=False,
             copy_command=False,
         )
-        compactor.display = NullDisplay()
         compactor.config.auto_compact.enabled = False
         compactor.conversation.messages = messages.copy()
 
