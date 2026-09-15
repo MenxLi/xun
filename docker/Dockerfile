@@ -1,17 +1,19 @@
 FROM ubuntu:24.04
 
-RUN if [ -f /etc/apt/sources.list ]; then \
-    sed -i \
+RUN sed -i \
     -e 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' \
     -e 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' \
-    /etc/apt/sources.list; \
-    fi && \
-    if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
-    sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' \
-    /etc/apt/sources.list.d/ubuntu.sources; \
-    fi
+    /etc/apt/sources.list.d/ubuntu.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && sed -i 's|http://mirrors.aliyun.com/ubuntu/|https://mirrors.aliyun.com/ubuntu/|g' \
+        /etc/apt/sources.list.d/ubuntu.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get update
 
-RUN apt-get update -y && apt-get upgrade -y
+    # && apt-get upgrade -y
 
 # some dev tools
 RUN apt-get install -y \
@@ -20,13 +22,19 @@ RUN apt-get install -y \
     ninja-build \
     build-essential
 
-
-# install other dependencies
+# install other dependencies and common utilities
 RUN apt-get install -y apt-utils
 RUN apt-get install -y rsync openssh-server tmux vim neovim
 RUN apt-get install -y curl wget iproute2 iputils-ping proxychains-ng
 RUN apt-get install -y htop iftop lsof
-RUN apt-get install -y zip unzip
+RUN apt-get install -y zip unzip ripgrep
+RUN apt-get install -y --no-install-recommends \
+    gnupg jq less tree file \
+    fd-find git-lfs \
+    procps psmisc netcat-openbsd dnsutils \
+    shellcheck \
+    gdb clang-format pkg-config \
+    tini
 
 # locale
 RUN apt-get install -y locales
@@ -44,6 +52,9 @@ RUN dpkg-reconfigure --frontend noninteractive tzdata
 # cpp things
 RUN apt-get install -y clangd bear
 
+# nodejs and npm
+RUN apt-get install -y nodejs npm
+
 # install python things
 RUN apt-get install -y python3 python3-pip python3-dev python3-venv
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -51,6 +62,10 @@ RUN echo '\nalias python=python3\nalias pip=pip3\n' >> .bashrc
 
 # common libs
 RUN apt-get install -y libsqlite3-dev libomp-dev libnuma-dev
+
+# applications
+RUN apt-get install -y libreoffice-impress fonts-noto-cjk
+RUN apt-get install -y evince poppler-utils
 
 # create default venv
 ENV VIRTUAL_ENV=/venv
