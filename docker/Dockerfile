@@ -63,9 +63,17 @@ RUN echo '\nalias python=python3\nalias pip=pip3\n' >> .bashrc
 # common libs
 RUN apt-get install -y libsqlite3-dev libomp-dev libnuma-dev
 
-# applications
-RUN apt-get install -y libreoffice-impress fonts-noto-cjk
+# applications (office)
+RUN apt-get install -y \
+    libreoffice-impress libreoffice-writer libreoffice-calc libreoffice-math \
+    fonts-noto-cjk
 RUN apt-get install -y evince poppler-utils
+RUN apt-get install -y ghostscript imagemagick
+RUN apt-get install -y python3-uno
+
+RUN add-apt-repository -y contrib && apt-get update
+RUN apt-get install -y ttf-mscorefonts-installer
+RUN apt-get install -y fonts-noto-cjk-extra fonts-arphic-uming
 
 # create default venv
 ENV VIRTUAL_ENV=/venv
