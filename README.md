@@ -2,31 +2,18 @@
 
 A mini LLM agent framework with function-based tools and sub-agent spawning.
 
-<!-- 
-Some of the design philosophy:
-- Plain functions as tools — no decorators, no classes needed
-- Compact core — no heavy abstractions, full type hints
-- Sub-agent spawning — built-in multi-agent orchestration
-- Event-driven display — pluggable I/O via a simple interface
-- Context injection — pass execution context into tools seamlessly 
--->
-
 The core codebase is compact: about 3000 lines in `src/xun/*.py` (mostly hand written), with comprehensive type hints.
 
 <!-- <details>
 <summary>Why this name?</summary>
 
-**Xun** has multiple relevant meanings in Chinese, all pronounced the same way but written with different characters and have meanings that align well with the purpose of this project:
+取此名称有两点考虑。其一是技术含义：智能体的执行过程本身即一种搜索，在可
+用工具与不断变化的会话状态中检索、试探与回退，直至任务收敛，模型侧的优化
+过程同样可作此理解；其同音字“询”对应以对话问询驱动的交互方式，“训”对应以
+指令与工具配置约束并扩展智能体行为的方式。
 
-| Character | Pinyin | Meaning | Why it fits |
-|---|---|---|---|
-| **寻** | *xún* | seek, search | Agents that seek information and solutions for you |
-| **讯** | *xùn* | message, information | Agents that process information and communicate with you |
-| **训** | *xùn* | train, instruct | A extensible framework that can be tuned with new tools and instructions |
-
-Pronounced like *shoon*: short, simple, and easy to type.
-
-Also drawn from the author's given name (Meng-Xun), as a personal touch :)
+其二是使用便利：xun 为单音节三字母拼音，在命令行中无需切换输入法即可连续
+键入，符合本软件以命令行与终端交互为主要入口的使用习惯。
 
 </details>  -->
 
@@ -57,11 +44,9 @@ make build-web
 xuns .
 # - Use a temporary workspace instead
 xuns
-# - Disable creating and removing sessions from the UI
-xuns . --no-manage-sessions
 ```
 
-`xuns` accepts at most one workspace directory. Session management is enabled by default. When a directory is supplied, every session uses it; otherwise, each session gets an independent temporary workspace that is removed when the session ends.
+`xuns` accepts at most one workspace directory: every session shares it, or each session gets its own temporary workspace if omitted. Session management is on by default; disable it with `--no-manage-sessions`.
 
 ## Usage
 
@@ -130,14 +115,9 @@ service = WebDisplayService().mount("/", display)
 service.start(blocking=True)
 ```
 
-Open any tokenized URL printed at startup. The service exchanges its query token for one HttpOnly cookie scoped to `/`, so the browser can access every mounted display without logging in again. API clients can use `Authorization: Bearer <token>`.
+Open any tokenized URL printed at startup; the query token is exchanged for an HttpOnly cookie, so the browser reaches every mounted display without logging in again. API clients can use `Authorization: Bearer <token>`. File browsing, upload, download, and deletion require `expose_files=True`.
 
-The shared UI is served once at `<base_path>/chat/`. Display backends are isolated below `<base_path>/session/`: with `base_path="/xun"`, a display mounted logically at `/` is available at `/xun/session/`, while `/research` is available at `/xun/session/research/`. Session management and login are similarly scoped below `/xun/api/sessions` and `/xun/login`. Selecting a session updates the UI's connection without reloading the page.
-
-File browsing, upload, download, and deletion are disabled unless `expose_files=True`. 
-The agent will start in web mode, and you can access it via the printed URL.
-
-Multiple displays can share one authenticated service. Each mount keeps its own agents, event history, and file policy:
+Multiple displays can share one authenticated service, each keeping its own agents, event history, and file policy:
 
 ```python
 service = WebDisplayService()
@@ -146,47 +126,32 @@ service.mount("/coding", coding_display)
 service.start(blocking=True)
 ```
 
-`display.build_routes()` and `display.build_app()` do not add authentication. Use `WebDisplayService` for the authenticated server, or provide authentication and lifecycle handling in your own ASGI host.
+`display.build_routes()` and `display.build_app()` do not add authentication — use `WebDisplayService`, or provide your own in a custom ASGI host.
 
 ## Docker
-
-Build the image and run the agent in a container with `xunc`:
 
 ```bash
 make build-docker   # builds the web frontend, then the `xun` image
 
-xunc                # sandbox: no host mount; xuns creates a temporary workspace in the container
-xunc .              # mount the current directory as /workspace inside the container
-xunc --copy .       # copy the current directory into /workspace (no host bind mount)
+xunc                # sandbox: temporary workspace inside the container
+xunc .              # bind mount the current directory as /workspace
+xunc --copy .       # copy the current directory into /workspace instead
 ```
 
-By default `xunc` starts `xuns --host 0.0.0.0` in the container and publishes port 18960 (`bridge` network), so the web UI is reachable from the host at the tokenized URL printed at startup. Options:
-
-- `--exec CMD`: command to run inside the container (e.g. `--exec bash` for a plain shell, `--exec ""` for the image's default CMD)
-- `--port LIST`: ports to publish in bridge mode (default `18960`)
-- `--network host`: host networking (on macOS this is the Docker VM's network namespace, which is **not** reachable from a host browser — prefer the default bridge mode there)
-- `--env PATTERNS`: extra environment variables to forward, comma-separated wildcards (`XUN_*` and `_XUN_*` are always forwarded)
-- `--copy`: copy the positional directory into `/workspace` before starting instead of bind mounting it
-- `--image` / `--name`: image (default `xun`) and container name
+`xunc` runs `xuns --host 0.0.0.0` in the container and publishes port 18960 (bridge mode), so the web UI is reachable from the host at the tokenized URL printed at startup. Other options: `--exec CMD` (e.g. `--exec bash`), `--port LIST`, `--network host` (avoid on macOS — not reachable from a host browser), `--env PATTERNS` (extra env vars to forward; `XUN_*`/`_XUN_*` are always forwarded), `--image` / `--name`.
 
 ### Multiplexed server
 
-`xunx` runs one temporary container per registered user and proxies each user path through one public server. Build the `xun` image first, then manage users and start the server:
+`xunx` runs one temporary container per registered user, proxied through one public server:
 
 ```bash
-make build-docker
-xunx user-add alice
+xunx user-add alice   # prints the access token
 xunx user-list
+xunx user-del alice   # disconnects the user and removes its container
 xunx serve --host 0.0.0.0 --port 18960 --port-range 20000-20100
 ```
 
-Open `http://localhost:18960/alice?token=TOKEN`, using the token printed by `user-add` or `user-list`. User records are stored in `$XUN_HOME/x/xunx.db` (default `~/.xun/x/xunx.db`). The daemon notices user additions and deletions while running; deleting a user immediately disconnects it and removes its container:
-
-```bash
-xunx user-del alice
-```
-
-Container ports are selected randomly from `--port-range` and bound only to host loopback. User workspaces are temporary and disappear whenever their containers stop. All managed containers are removed when the server shuts down, and stale containers from an earlier abnormal exit are removed on the next start. `XUN_*` and `_XUN_*` environment variables except `XUN_HOME` are forwarded into each container. Use `--image` to select an image other than `xun`.
+Open `http://localhost:18960/alice?token=TOKEN`. Users live in `$XUN_HOME/x/xunx.db`; container ports are drawn randomly from `--port-range` and bound to host loopback only. Workspaces are temporary, and managed containers are cleaned up on shutdown (stale ones on next start). `XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container.
 
 <details>
 <summary>Frontend development</summary>
@@ -203,10 +168,7 @@ Open `http://127.0.0.1:5173`. Build a production bundle with `npm run build`. Se
 
 ## Configuration
 
-xun reads its configuration from `~/.xun/config.json` (the location can be overridden with the `XUN_HOME` environment variable). The file is **optional**: 
-if it does not exist, built-in defaults are used, and no files are created.
-
-The file only needs to contain the fields you want to change. For example, to just override the model:
+xun reads optional configuration from `.xun/config.json` (override the location with `XUN_HOME`); missing fields fall back to built-in defaults. Include only the fields you want to change, for example to override the model:
 
 ```json
 {
@@ -218,10 +180,10 @@ The file only needs to contain the fields you want to change. For example, to ju
 
 The config supports `${XUN_...}` placeholders which are substituted from environment variables (e.g. `${XUN_OPENAI_API_KEY}`), so secrets can live in a `.env` file instead. A placeholder with no matching environment variable causes a startup error. 
 
-| Config field | Built-in default | Description |
+| Config field | Environment variable | Description |
 |---|---|---|
 | `provider.openai_base_url` | `${XUN_OPENAI_BASE_URL}` | OpenAI-compatible API endpoint. |
 | `provider.openai_api_key` | `${XUN_OPENAI_API_KEY}` | API key. |
 | `model.name` | `${XUN_OPENAI_MODEL}` (empty) | Model identifier. If the resolved value is empty, available models are auto-detected from the API. |
-| `model.capabilities` | `["vision"]` | Capabilities exposed to the model (e.g. `vision` for image input). |
-| `auto_confirm` | `false` | Auto-approve actions without prompting. |
+
+More configuration options are available; see the source code at [src/xun/config.py](src/xun/config.py).
