@@ -66,6 +66,10 @@ class HookArgs:
         """(tool_id, tool_result) pairs, editable"""
 
     @dataclass
+    class BeforeExecutionStepArgs:
+        agent: "Agent[Agent.T.Init]"
+
+    @dataclass
     class AfterExecutionStepArgs:
         agent: "Agent[Agent.T.Init]"
 
@@ -102,6 +106,8 @@ class Hooks:
 
     before_tool_call: HookRegistry[HookArgs.BeforeToolCallArgs] = field(default_factory=HookRegistry)
     after_tool_call: HookRegistry[HookArgs.AfterToolCallArgs] = field(default_factory=HookRegistry)
+    before_execution_step: HookRegistry[HookArgs.BeforeExecutionStepArgs] = field(default_factory=HookRegistry)
+    """Called at the start of each execution step, before the model call is made. `Agent.compactor` installs auto-compaction here."""
     after_execution_step: HookRegistry[HookArgs.AfterExecutionStepArgs] = field(default_factory=HookRegistry)
     """Called after each execution step, after tool results are added to the conversation and before the next model call is made."""
 

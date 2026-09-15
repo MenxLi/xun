@@ -1,8 +1,9 @@
 """
 Centralised prompt definitions for xun.
 
-All prompt strings used by the agent are stored here so that the
+General-purpose prompt strings used by the agent are stored here so that the
 business-logic modules (agent.py, entrypoint.py) stay clean.
+Compaction-specific prompts live in compact.py, next to the strategy that uses them.
 """
 
 
@@ -49,41 +50,6 @@ Output:
 - Include: (1) what you completed, (2) key findings, (3) assumptions or blockers.
 """
 
-CONDENSE_PROMPT = """\
-Condense the conversation above into a compact, structured summary that preserves all critical context for seamless continuation.
-Your output will be used as a system message to inform the assistant of the conversation history, so it should be concise yet comprehensive enough for the assistant to understand the context and continue the conversation without losing important information.
-
-RULES:
-- PRESERVE SYSTEM MESSAGES: If any `system` role messages exist in the history, extract and include their key instructions/constraints in the "System Context" section. 
-- PRESERVE: user goals, explicit preferences, factual claims, decisions made, pending tasks, open questions, and any constraints or rules established.
-- DISCARD: greetings, small talk, filler, repeated statements, and conversational noise.
-- GROUP by topic if it improves clarity, but maintain logical flow.
-- Keep total output under 1024 tokens. If uncertain about a detail, mark it as "unconfirmed".
-- OUTPUT in markdown format with the following field, do not add any other extra comment or explanation:
-
-SCHEMA (in markdown format):
-- system_context: key instructions or constraints from system messages (if any)
-- overview: 1-2 sentence high-level summary of conversation purpose & current state
-- key_facts: list of important facts mentioned
-- user_preferences: list of user preferences
-- decisions: list of decisions made
-- pending_tasks: list of pending tasks
-- open_questions: list of open questions
-- tone_context: brief note on communication style or constraints (e.g., "formal", "prefers bullet points", "avoid technical jargon")
-"""
-
-COMPACTED_SYSTEM_PROMPT = """\
-You are an assistant having a conversation with a user. Earlier conversation history has been compacted into the summary below:
-
-{summary}
-
----
-Context management notes:
-- The most recent user message is always preserved verbatim and is authoritative for the current task. Messages around it may change: earlier turns are replaced by the summary above, and older tool results after it may be trimmed. 
-- Older tool results may appear as [Compacted, ID: ...] placeholders. When such content is still needed, call `extract_compacted_tool_result` with that ID or re-run the tool / re-read the file. Never rely on memory of compacted output.
-- This conversation will be compacted again when the context limit is reached. Persist important state to files rather than keeping it only in the context window.
-"""
-
 def get_system_prompt() -> str:
     """Get the system prompt for the main agent."""
     return SYSTEM_PROMPT
@@ -91,11 +57,3 @@ def get_system_prompt() -> str:
 def get_subagent_prompt() -> str:
     """Get the system prompt for the worker agents."""
     return SUBAGENT_PROMPT
-
-def get_condense_prompt() -> str:
-    """Return the instruction appended to a copied conversation for compaction."""
-    return CONDENSE_PROMPT
-
-def get_compacted_system_prompt(summary: str) -> str:
-    """Build the system message replacing history after a summary compaction."""
-    return COMPACTED_SYSTEM_PROMPT.format(summary=summary)

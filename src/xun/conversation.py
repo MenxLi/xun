@@ -10,7 +10,7 @@ import jinja2
 import markdown
 from markupsafe import Markup, escape
 from .config import ASSET_DIR
-from .prompt import get_compacted_system_prompt
+from .compact import get_compacted_system_prompt
 from .toolbox import ToolResultType
 from .util import image_to_url
 from .openai_helper import ChatCompletionMessageWithReasoning

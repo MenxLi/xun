@@ -136,6 +136,7 @@ class CommandRegistry:
 
 def default_commands() -> list[Command]:
     from .store import Store
+    from .compact import compact_conversation
     from .display_abstract import ShowHistoryEvent, ShowToolsEvent
     
     def _token_query_handler(agent: "Agent[Agent.T.Init]") -> None:
@@ -231,7 +232,7 @@ def default_commands() -> list[Command]:
             else:
                 agent.info("No tool call results to compact.")
         else:
-            agent.compact_conversation()
+            compact_conversation(agent)
     
     def _yolo_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.config.auto_confirm = not agent.config.auto_confirm

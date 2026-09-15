@@ -1,9 +1,14 @@
 import json
+import tempfile
 import unittest
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+from xun import Agent, NullDisplay
 from xun.conversation import Conversation, CompactionCounter
-from xun.loop import _maybe_auto_compact, SUMMARY_ESCALATION_ROUNDS
+from xun.compact import AutoCompactor, CompactorAbstract
+from xun.hooks import HookArgs, Hooks
+from xun.workspace import Workspace
 
 
 KEEP_RECENT = 16
@@ -120,67 +125,145 @@ class AutoCompactionTest(unittest.TestCase):
         agent.config.auto_compact.token_threshold = threshold
         agent.conversation = _conversation_with_tool_chain(tool_rounds=30)
         agent.conversation.total_tokens = total_tokens
-        # a real summary must actually rewrite history, so cadence state updates too
-        agent.compact_conversation.side_effect = lambda *a, **k: agent.conversation.compact(
+        return agent
+
+    def _summary(self, agent: MagicMock) -> MagicMock:
+        # _auto_compact resolves compact_conversation through the module
+        # namespace, so that is the attribute to patch.
+        summary = MagicMock()
+        summary.side_effect = lambda *a, **k: agent.conversation.compact(
             lambda messages: "SUMMARY",
             keep_recent=k.get("keep_recent", KEEP_RECENT),
         )
-        return agent
+        return summary
 
     def test_disabled_never_compacts(self) -> None:
         agent = self._agent(1_000, 9_999_999)
         agent.config.auto_compact.enabled = False
-        _maybe_auto_compact(agent)
-        agent.compact_conversation.assert_not_called()
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            AutoCompactor().auto_compact(agent)
+        compact_conversation.assert_not_called()
 
     def test_under_threshold_never_compacts(self) -> None:
         agent = self._agent(100_000, 5_000)
-        _maybe_auto_compact(agent)
-        agent.compact_conversation.assert_not_called()
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            AutoCompactor().auto_compact(agent)
+        compact_conversation.assert_not_called()
 
     def test_no_escalation_when_cheap_pass_brings_estimate_under_threshold(self) -> None:
         # the tool chain's reclaim fraction is large enough that the estimated token
         # count falls below the threshold: the cheap pass alone suffices
         agent = self._agent(100_000, 105_000)
-        _maybe_auto_compact(agent)
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            AutoCompactor().auto_compact(agent)
         self.assertEqual(agent.conversation.compaction_counter.tool_rounds, 1)
-        agent.compact_conversation.assert_not_called()
+        compact_conversation.assert_not_called()
 
     def test_escalates_when_reclaim_leaves_estimate_over_threshold(self) -> None:
         # huge stale count vs. tiny threshold: even a big reclaim cannot get under it
         agent = self._agent(1_000, 9_999_999)
-        _maybe_auto_compact(agent)
-        self.assertEqual(agent.compact_conversation.call_count, 3)
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            AutoCompactor().auto_compact(agent)
+        self.assertEqual(compact_conversation.call_count, 3)
         agent.error.assert_called_once()
         self.assertIn("no further progress possible", agent.error.call_args.args[0])
 
     def test_escalates_after_enough_cheap_rounds(self) -> None:
         agent = self._agent(100_000, 105_000)
-        for _ in range(SUMMARY_ESCALATION_ROUNDS):
-            _maybe_auto_compact(agent)
-        agent.compact_conversation.assert_called()
+        compactor = AutoCompactor()
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            for _ in range(compactor.escalation_rounds):
+                compactor.auto_compact(agent)
+        compact_conversation.assert_called()
         self.assertEqual(agent.conversation.compaction_counter.tool_rounds, 0)
         self.assertEqual(agent.conversation.compaction_counter.summary_rounds, 1)
 
     def test_escalates_immediately_when_cheap_pass_reclaims_nothing(self) -> None:
         agent = self._agent(1_000, 9_999_999)
         agent.conversation.messages = agent.conversation.messages[:4]  # below keep_max, nothing to reclaim
-        _maybe_auto_compact(agent)
-        agent.compact_conversation.assert_called()
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            AutoCompactor().auto_compact(agent)
+        compact_conversation.assert_called()
 
     def test_no_retrigger_while_token_count_unknown(self) -> None:
         agent = self._agent(1_000, None)
-        _maybe_auto_compact(agent)
-        agent.compact_conversation.assert_not_called()
+        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            AutoCompactor().auto_compact(agent)
+        compact_conversation.assert_not_called()
 
     def test_summary_failure_is_reported_without_aborting_execution(self) -> None:
         agent = self._agent(1_000, 9_999_999)
-        agent.conversation.compaction_counter.tool_rounds = SUMMARY_ESCALATION_ROUNDS - 1
-        agent.compact_conversation.side_effect = RuntimeError("summary failed")
-
-        _maybe_auto_compact(agent)
+        agent.conversation.compaction_counter.tool_rounds = AutoCompactor().escalation_rounds - 1
+        failed = MagicMock(side_effect=RuntimeError("summary failed"))
+        with patch("xun.compact.compact_conversation", failed):
+            AutoCompactor().auto_compact(agent)
 
         agent.error.assert_called_once_with("Auto-compaction failed: summary failed")
+
+
+class CompactorInstallTest(unittest.TestCase):
+    """initialize() wires the compactor component into the hooks."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def _agent(self) -> Agent:
+        return Agent(display=NullDisplay(), workspace=Workspace(workdir=Path(self._tmp.name)))
+
+    def test_hooks_are_clean_before_initialize(self) -> None:
+        agent = self._agent()
+        self.assertEqual(len(agent.hooks.before_execution_step._callbacks), 0)
+
+    def test_initialize_installs_the_compactor(self) -> None:
+        agent = self._agent().initialize()
+        # one callback for the default Compactor
+        self.assertEqual(len(agent.hooks.before_execution_step._callbacks), 1)
+        # initialize is idempotent, so the install happens at most once
+        agent.initialize()
+        self.assertEqual(len(agent.hooks.before_execution_step._callbacks), 1)
+
+    def test_subagent_gets_its_own_compactor(self) -> None:
+        child = Agent.inherit(self._agent())
+        self.assertIsInstance(child.compactor, AutoCompactor)
+        child.initialize()
+        self.assertEqual(len(child.hooks.before_execution_step._callbacks), 1)
+
+    def test_install_wires_the_step_hook(self) -> None:
+        hooks = Hooks()
+        AutoCompactor().install(hooks)
+        self.assertEqual(len(hooks.before_execution_step._callbacks), 1)
+
+    def test_abstract_contract(self) -> None:
+        with self.assertRaises(TypeError):
+            CompactorAbstract()  # type: ignore[abstract]
+
+        class NoopCompactor(CompactorAbstract):
+            def auto_compact(self, agent) -> None:
+                pass
+
+        hooks = Hooks()
+        NoopCompactor().install(hooks)
+        self.assertEqual(len(hooks.before_execution_step._callbacks), 1)
+
+    def test_hook_delegates_to_auto_compact(self) -> None:
+        agent = MagicMock()
+        hooks = Hooks()
+        compactor = AutoCompactor()
+        compactor.install(hooks)
+        with patch.object(compactor, "auto_compact") as auto_compact:
+            hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
+        auto_compact.assert_called_once_with(agent)
+
+    def test_hook_reports_failures_without_raising(self) -> None:
+        # HookRegistry swallows hook exceptions, so the hook must log them itself
+        agent = MagicMock()
+        hooks = Hooks()
+        compactor = AutoCompactor()
+        compactor.install(hooks)
+        with patch.object(compactor, "auto_compact", side_effect=RuntimeError("boom")):
+            hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
+        agent.error.assert_called_once_with("Compaction hook failed: boom")
 
 
 if __name__ == "__main__":

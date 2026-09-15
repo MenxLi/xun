@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
 import json_repair
 from pydantic import BaseModel
@@ -11,69 +11,8 @@ from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReaso
 from .types import CancelledError, ToolResultType
 from .hooks import HookArgs
 
-if TYPE_CHECKING:
-    from .agent import Agent
-
 # rename for semantics
 ExecutionLoopParams = HookArgs.BeforeExecutionArgs
-
-SUMMARY_ESCALATION_ROUNDS = 2
-"""Auto-compaction does this many cheap tool-call compactions before escalating to a summary."""
-
-def _maybe_auto_compact(
-    agent: "Agent[Agent.T.Init]", 
-    toolcall_keep_max = 12, 
-    summary_keep_max = 16, 
-    _remaining = 2, 
-    ) -> None:
-    if not (ac := agent.config.auto_compact).enabled:
-        return
-    conv = agent.conversation
-    # `total_tokens` is reset to None by Conversation.compact until the next model call refreshes it
-    if conv.total_tokens is None or conv.total_tokens <= ac.token_threshold:
-        return
-
-    # Cheap first: shrinking old tool results costs no API call. Escalate to a summary 
-    # once enough cheap rounds pile up, or when the reclaim did not sufficiently reduce the estimated token count.
-    agent.info("Auto-compaction of old tool results...")
-    reclaimed = conv.compact_toolcall(keep_max = toolcall_keep_max)
-    estimated_token_after_reclaim = int(conv.total_tokens * (1 - reclaimed.reclaimed_fraction))
-    agent.info(
-        f"Last call used {conv.total_tokens} tokens, over the auto-compact threshold "
-        f"({ac.token_threshold}); compacted {reclaimed.reclaimed_count} tool calls, estimated tokens after reclaim: {estimated_token_after_reclaim:.0f}"
-    )
-
-    if (
-        conv.compaction_counter.tool_rounds >= SUMMARY_ESCALATION_ROUNDS or 
-        estimated_token_after_reclaim > ac.token_threshold * 0.95
-        ):
-        agent.info("Escalating to full conversation compaction...")
-        try:
-            r = agent.compact_conversation(keep_recent = summary_keep_max)
-            
-            if r is None:
-                agent.error("Full conversation compaction did not produce a summary.")
-            elif (et:=int(estimated_token_after_reclaim * (1 - r.reclaimed_fraction))) > ac.token_threshold * 0.95:
-
-                if _remaining == 0:
-                    agent.error(f"Conversation still ~{et} tokens after compaction; no further progress possible.")
-                
-                else:
-                    agent.warning(f"Estimated tokens after full conversation compaction: {et}. Will auto-compact again.")
-                    conv.total_tokens = et      # must update before recursive auto-compaction
-                    _maybe_auto_compact(
-                        agent, 
-                        toolcall_keep_max = toolcall_keep_max//2, 
-                        summary_keep_max = summary_keep_max//2, 
-                        _remaining = _remaining - 1 if _remaining > 0 else 0,
-                        )
-            else:
-                pass
-
-        except CancelledError:
-            raise
-        except Exception as exc:
-            agent.error(f"Auto-compaction failed: {exc}")
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     # cancellation is the caller's contract: Agent.execute wraps this loop in cancellable_execution
@@ -94,7 +33,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         )
     for iteration in range(params.max_iterations):
         agent.check_cancel()
-        _maybe_auto_compact(agent)
+        agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
         model_call_id = str(uuid.uuid4())
         agent.display_event(ModelWorkingEvent(
             model_call_id=model_call_id,

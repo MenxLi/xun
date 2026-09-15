@@ -13,14 +13,14 @@ from threading import Semaphore
 from .types import TypeVar, CancelledError
 from .display_abstract import *
 from .running_state import AgentRunningStateMixin, LabeledEvent
-from .displays.display import Display, NullDisplay
+from .displays.display import Display
 from .conversation import Conversation
 from .config import AgentConfig, load_config
-from .prompt import get_condense_prompt
 from .error_catch import except_safe
 from .toolbox import ToolBox
 from .workspace import Workspace
 from .command import CommandRegistry
+from .compact import AutoCompactor, CompactorAbstract
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
 
@@ -88,6 +88,7 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
     # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
+    compactor: CompactorAbstract = field(default_factory=AutoCompactor)
 
     _openai_client: OpenAI = field(init=False, repr=False)
     _lifecycle: StateT = field(init=False, repr=False, default_factory=lambda: cast(StateT, _Uninit()))
@@ -141,6 +142,8 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         self.display_event(AgentBindEvent())
 
         self.workspace.prepare()
+
+        self.compactor.install(self.hooks)
 
         initialized_self = self._cast_self(_Init)
         self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
@@ -257,41 +260,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         with self.cancellable_execution():
             command.invoke(self, hook_args.arguments)
         self.hooks.after_command.invoke(hook_args)
-    
-    def compact_conversation(self: "Agent[T.Init]", keep_recent: int = 16):
-        """
-        Condense conversation history via `Conversation.compact`, 
-        supplying the summarizer and logging.
-        """
-        self.info("Condensing conversation history...")
-        attempted = False
-
-        def summarize(messages: list[Any]) -> Optional[str]:
-            nonlocal attempted
-            attempted = True
-            compactor = Agent.inherit(
-                self,
-                share_display=False,
-                copy_toolbox=False,
-                copy_command=False,
-            )
-            compactor.display = NullDisplay()
-            compactor.config.auto_compact.enabled = False
-            compactor.conversation.messages = messages.copy()
-
-            with compactor as ready:
-                result = ready.instruct(get_condense_prompt(), _emit_event=False).execute(max_iterations=1)
-            if result.is_err():
-                error = result.unwrap_err()
-                self.error(f"Failed to condense conversation history: {error.error}")
-                return None
-            summary = result.unwrap()
-            self.info(f"Conversation history condensed. Summary:\n{summary}")
-            return summary
-
-        if not (r:=self.conversation.compact(summarize, keep_recent=keep_recent)) and not attempted:
-            self.info("Nothing to condense in conversation history.")
-        return r
 
     def __enter__(self: "Agent[T.Uninit]") -> "Agent[T.Init]":
         # any state: entering an already-initialized agent (e.g. a configured one returned
