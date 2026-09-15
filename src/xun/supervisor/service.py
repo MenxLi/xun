@@ -93,9 +93,16 @@ _WEBSOCKET_HEADERS = {
 
 
 class Multiplexer:
-    def __init__(self, supervisor: Supervisor, *, manage_supervisor: bool = True) -> None:
+    def __init__(
+        self,
+        supervisor: Supervisor,
+        *,
+        manage_supervisor: bool = True,
+        websocket_heartbeat: float = 20.0,
+    ) -> None:
         self.supervisor = supervisor
         self.manage_supervisor = manage_supervisor
+        self.websocket_heartbeat = websocket_heartbeat
         self.client: ClientSession | None = None
 
     def app(self) -> web.Application:
@@ -198,7 +205,12 @@ class Multiplexer:
         except ClientError as error:
             raise web.HTTPBadGateway(text=f"Upstream unavailable: {error}") from error
 
-        downstream = web.WebSocketResponse(protocols=protocols, autoclose=True, autoping=True)
+        downstream = web.WebSocketResponse(
+            protocols=protocols,
+            autoclose=True,
+            autoping=True,
+            heartbeat=self.websocket_heartbeat,
+        )
         await downstream.prepare(request)
 
         async def forward(source, destination) -> None:

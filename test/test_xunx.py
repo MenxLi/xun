@@ -251,7 +251,11 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
 
         supervisor = Mock()
         supervisor.active = {"alice": ManagedContainer("container", upstream_port, "token")}
-        proxy_app = Multiplexer(supervisor, manage_supervisor=False).app()
+        proxy_app = Multiplexer(
+            supervisor,
+            manage_supervisor=False,
+            websocket_heartbeat=0.05,
+        ).app()
         self.client = TestClient(TestServer(proxy_app))
         await self.client.start_server()
 
@@ -273,6 +277,14 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
         message = await websocket.receive()
 
         self.assertEqual(message.data, "/alice/socket:hello")
+        await websocket.close()
+
+    async def test_sends_websocket_heartbeat_to_downstream_client(self) -> None:
+        websocket = await self.client.ws_connect("/alice/socket", autoping=False)
+
+        message = await websocket.receive(timeout=0.5)
+
+        self.assertEqual(message.type, WSMsgType.PING)
         await websocket.close()
 
 
