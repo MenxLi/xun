@@ -1,8 +1,13 @@
 [project]
-name = "xun"
-version = "0.1.0"
+name = "xun-agent"
+version = "1.0.0"
 description = "An autonomous mini LLM agent with tooling."
 readme = "README.md"
+keywords = ["agent", "llm", "llm-agent"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 authors = [
     { name = "limengxun", email = "limengxun45@outlook.com" }
 ]
@@ -38,3 +43,7 @@ default = true
 [build-system]
 requires = ["uv_build"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "xun"
