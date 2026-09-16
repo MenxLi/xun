@@ -264,15 +264,15 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-empty, .file-error { padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
 .file-error { padding: 8px 10px; color: var(--danger); background: #f8e9e7; }
 .file-preview { flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--paper); }
+.file-preview.is-fullscreen { position: fixed; inset: 0; width: 100vw; height: 100dvh !important; border: 0; z-index: 100; }
 .file-preview header { height: 36px; padding-left: 10px; flex: none; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }
 .file-preview header span { min-width: 0; flex: 1; overflow: hidden; font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; }
 .preview-actions { display: flex; align-items: center; gap: 2px; }
 .file-preview pre { min-height: 0; flex: 1; margin: 0; padding: 11px; overflow: auto; color: #eaf0ec; background: var(--code); font-size: 10px; line-height: 1.55; white-space: pre; }
 .file-preview img { min-height: 0; flex: 1; width: 100%; object-fit: contain; padding: 11px; background: var(--panel); }
+.preview-document { min-height: 0; width: 100%; flex: 1; border: 0; background: var(--panel); }
 .preview-error { min-height: 0; flex: 1; padding: 11px; overflow: auto; color: var(--danger); font-size: 11px; }
 .preview-unsupported { min-height: 0; flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); font-size: 11px; text-align: center; }
-.preview-download { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 5px; color: var(--accent-dark); background: var(--panel); font-size: 11px; text-decoration: none; }
-.preview-download:hover { border-color: var(--line-strong); background: var(--hover); }
 .file-drop-target { position: absolute; inset: 8px; display: grid; place-content: center; justify-items: center; gap: 8px; border: 2px dashed var(--accent); border-radius: 6px; color: var(--accent-dark); background: rgba(220, 235, 229, .96); z-index: 4; pointer-events: none; }
 .file-drop-target strong { font-size: 12px; }
 .file-drop-target span { max-width: 240px; overflow: hidden; color: var(--muted); font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; }

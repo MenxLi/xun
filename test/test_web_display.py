@@ -269,7 +269,9 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_content_preview_dispatches_on_media_type(self) -> None:
         png = bytes.fromhex("89504e470d0a1a0a")  # minimal bytes; content is streamed, not parsed
+        pdf = b"%PDF-1.4\n%%EOF\n"
         (self.root / "pic.png").write_bytes(png)
+        (self.root / "report.pdf").write_bytes(pdf)
         (self.root / "data.json").write_text('{"ok": true}', encoding="utf-8")
         (self.root / "blob.bin").write_bytes(b"\x00\x01\x02")
         (self.root / "Makefile").write_text("all:\n\techo hi\n", encoding="utf-8")
@@ -277,6 +279,7 @@ class WebDisplayTest(unittest.TestCase):
         listing = self.client.get("api/files/agent-1").json()
         media_types = {entry["name"]: entry["media_type"] for entry in listing["entries"] if entry["kind"] == "file"}
         self.assertEqual(media_types["pic.png"], "image/png")
+        self.assertEqual(media_types["report.pdf"], "application/pdf")
         self.assertEqual(media_types["data.json"], "application/json")
         self.assertEqual(media_types["blob.bin"], "application/octet-stream")
         # extension-less files fall back to content sniffing
@@ -288,6 +291,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(image.headers["content-type"], "image/png")
         self.assertEqual(image.content, png)
         self.assertEqual(image.headers["content-security-policy"], "default-src 'none'")
+
+        pdf_preview = self.client.get("api/files/agent-1/content", params={"path": "report.pdf"})
+        self.assertEqual(pdf_preview.status_code, 200)
+        self.assertEqual(pdf_preview.headers["content-type"], "application/pdf")
+        self.assertEqual(pdf_preview.content, pdf)
 
         # structured non-text/* formats still preview as text
         json_preview = self.client.get("api/files/agent-1/content", params={"path": "data.json"})

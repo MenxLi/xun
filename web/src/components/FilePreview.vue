@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Download, FileQuestion, X } from 'lucide-vue-next'
+import { FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import { api } from '../api'
 import { previewKind } from '../preview'
@@ -15,6 +15,7 @@ const contentUrl = computed(() => api.contentUrl(props.agentId, props.entry.path
 const text = ref('')
 const loading = ref(false)
 const error = ref('')
+const fullscreen = ref(false)
 
 watch(() => props.entry.path, () => {
   error.value = ''
@@ -29,32 +30,36 @@ watch(() => props.entry.path, () => {
 </script>
 
 <template>
-  <section class="file-preview">
-    <ResizeHandle orientation="vertical" @drag="delta => emit('resize', delta)" />
-    <header>
-      <span>{{ entry.path }}</span>
-      <div class="preview-actions">
-        <a class="icon-button" :href="api.downloadUrl(agentId, entry.path)" :download="entry.name" title="Download"><Download :size="14" /></a>
-        <button class="icon-button" title="Close preview" @click="emit('close')"><X :size="15" /></button>
+  <Teleport to="body" :disabled="!fullscreen">
+    <section class="file-preview" :class="{ 'is-fullscreen': fullscreen }">
+      <ResizeHandle v-if="!fullscreen" orientation="vertical" @drag="delta => emit('resize', delta)" />
+      <header>
+        <span>{{ entry.path }}</span>
+        <div class="preview-actions">
+          <button class="icon-button" :title="fullscreen ? 'Exit fullscreen' : 'Fullscreen'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
+            <Minimize2 v-if="fullscreen" :size="14" />
+            <Maximize2 v-else :size="14" />
+          </button>
+          <button class="icon-button" title="Close preview" @click="emit('close')"><X :size="15" /></button>
+        </div>
+      </header>
+
+      <template v-if="kind === 'image'">
+        <img v-show="!error" :src="contentUrl" :alt="entry.name" @error="error = 'Could not load image'">
+        <div v-if="error" class="preview-error">{{ error }}</div>
+      </template>
+
+      <template v-else-if="kind === 'text'">
+        <div v-if="error" class="preview-error">{{ error }}</div>
+        <pre v-else>{{ loading ? 'Loading…' : text }}</pre>
+      </template>
+
+      <iframe v-else-if="kind === 'pdf'" class="preview-document" :src="contentUrl" :title="`Preview of ${entry.name}`" />
+
+      <div v-else class="preview-unsupported">
+        <FileQuestion :size="20" />
+        <span>No preview for {{ entry.media_type || 'this file' }}</span>
       </div>
-    </header>
-
-    <template v-if="kind === 'image'">
-      <img v-show="!error" :src="contentUrl" :alt="entry.name" @error="error = 'Could not load image'">
-      <div v-if="error" class="preview-error">{{ error }}</div>
-    </template>
-
-    <template v-else-if="kind === 'text'">
-      <div v-if="error" class="preview-error">{{ error }}</div>
-      <pre v-else>{{ loading ? 'Loading…' : text }}</pre>
-    </template>
-
-    <div v-else class="preview-unsupported">
-      <FileQuestion :size="20" />
-      <span>No preview for {{ entry.media_type || 'this file' }}</span>
-      <a class="preview-download" :href="api.downloadUrl(agentId, entry.path)" :download="entry.name">
-        <Download :size="12" /> Download file
-      </a>
-    </div>
-  </section>
+    </section>
+  </Teleport>
 </template>

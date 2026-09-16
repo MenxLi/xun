@@ -85,6 +85,7 @@ INLINE_SECURITY_HEADERS = {
 MAX_ARCHIVE_SIZE = 1_073_741_824  # 1 GiB hard cap on the packed archive
 MAX_PREVIEW_TEXT_SIZE = 1_000_000  # 1 MB cap on inline text previews
 MAX_PREVIEW_IMAGE_SIZE = 20_971_520  # 20 MiB cap on inline image previews
+MAX_PREVIEW_DOCUMENT_SIZE = 50_000_000  # 50 MB cap on inline document previews
 CHUNK_SIZE = 1024 * 1024
 _SLASH_NAME = re.compile(r"[/\\]")
 
@@ -212,6 +213,10 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         if media_type.startswith("image/"):
             if target.stat().st_size > MAX_PREVIEW_IMAGE_SIZE:
                 raise HTTPException(413, "Image is too large to preview")
+            return FileResponse(target, media_type=media_type, headers=INLINE_SECURITY_HEADERS)
+        if media_type == "application/pdf":
+            if target.stat().st_size > MAX_PREVIEW_DOCUMENT_SIZE:
+                raise HTTPException(413, "Document is too large to preview")
             return FileResponse(target, media_type=media_type, headers=INLINE_SECURITY_HEADERS)
         if media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES:
             if target.stat().st_size > MAX_PREVIEW_TEXT_SIZE:
