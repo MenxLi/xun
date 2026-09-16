@@ -159,6 +159,12 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 if agent.config.model.reasoning_field:
                     message._reasoning_field = agent.config.model.reasoning_field
 
+                if not message.content and not message.tool_calls:
+                    # occasionally providers stream a usage-only chunk and an empty message;
+                    # treat as a failed turn so it goes through the retry path below
+                    # instead of ending the run with "" or polluting the history
+                    raise RuntimeError("Model returned an empty response")
+
             break
 
         except (CancelledError, KeyboardInterrupt):
@@ -240,4 +246,4 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
         agent=agent,
     ))
 
-    return tool_called, message.content or "[No content]"
+    return tool_called, message.content or ""

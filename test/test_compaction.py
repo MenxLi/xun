@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from xun import Agent, NullDisplay
 from xun.conversation import Conversation, CompactionCounter
-from xun.compact import AutoCompactor, CompactorAbstract
+from xun.compact import AutoCompactor, CompactorAbstract, SummaryCompactResult, compact_conversation
 from xun.hooks import HookArgs, Hooks
 from xun.workspace import Workspace
 
@@ -36,7 +36,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.messages.append({"role": "assistant", "content": "a" * 100})
         conversation.add_user_message("second")
 
-        self.assertTrue(conversation.compact(lambda messages: "SUMMARY", keep_recent=KEEP_RECENT))
+        self.assertTrue(conversation.compact(lambda messages: "SUMMARY", keep_recent=KEEP_RECENT).compacted)
         self.assertEqual([m["role"] for m in conversation.messages], ["system", "user"])
         self.assertIn("SUMMARY", conversation.messages[0].get("content") or "")
         # summary supersedes cheap rounds: tool count resets, summary count advances
@@ -46,7 +46,7 @@ class ConversationCompactTest(unittest.TestCase):
     def test_long_tool_chain_compacts_to_bounded_window(self) -> None:
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
-        self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT))
+        self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT).compacted)
         self.assertLessEqual(len(conversation.messages), KEEP_RECENT + 2)  # system + carried user + retained tail
         # the kept tail never opens with an orphaned tool result
         self.assertNotEqual(conversation.messages[1]["role"], "tool")
@@ -62,7 +62,7 @@ class ConversationCompactTest(unittest.TestCase):
         # query, so it must survive into the kept tail
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
-        self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT))
+        self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT).compacted)
         self.assertIn("user", [m["role"] for m in conversation.messages])
 
     def test_nothing_to_condense_leaves_history_untouched(self) -> None:
@@ -70,7 +70,9 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.set_system_message_content("sys")
         conversation.add_user_message("hi")
 
-        self.assertFalse(conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT))
+        result = conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT)
+        self.assertEqual(result.status, SummaryCompactResult.Status.NOTHING_TO_CONDENSE)
+        self.assertFalse(result.compacted)
         self.assertEqual([m["role"] for m in conversation.messages], ["system", "user"])
 
     def test_failed_summary_rolls_back_and_clears_token_count(self) -> None:
@@ -81,7 +83,8 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.add_user_message("keep going")
         before = list(conversation.messages)
 
-        self.assertFalse(conversation.compact(lambda messages: None, keep_recent=KEEP_RECENT))
+        result = conversation.compact(lambda messages: None, keep_recent=KEEP_RECENT)
+        self.assertEqual(result.status, SummaryCompactResult.Status.SUMMARIZE_FAILED)
         self.assertEqual(conversation.messages, before)
         self.assertEqual(conversation.total_tokens, 12345)
 
@@ -92,7 +95,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.messages.append({"role": "assistant", "content": "done"})
         conversation.add_user_message("keep going")
 
-        self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT))
+        self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT).compacted)
         self.assertIsNone(conversation.total_tokens)
 
 
@@ -264,6 +267,46 @@ class CompactorInstallTest(unittest.TestCase):
         with patch.object(compactor, "auto_compact", side_effect=RuntimeError("boom")):
             hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
         agent.error.assert_called_once_with("Compaction hook failed: boom")
+
+
+class SummarizerConfigTest(unittest.TestCase):
+    """The summarizer agent built by compact_conversation runs headless."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_headless_summarizer_forces_auto_confirm(self) -> None:
+        # NullDisplay (share_display=False) cannot prompt; without auto_confirm the
+        # completion retry in _execute_step would raise NotImplementedError from
+        # NullDisplay.get_choice and mask the real API error
+        parent = Agent(
+            display=NullDisplay(),
+            workspace=Workspace(workdir=Path(self._tmp.name)),
+        ).initialize()
+        parent.config.auto_confirm = False
+        parent.conversation.set_system_message_content("sys")
+        parent.conversation.add_user_message("start")
+        for i in range(40):
+            parent.conversation.messages.append({"role": "assistant", "content": "a" * 100})
+            parent.conversation.add_user_message("next")
+
+        seen: dict = {}
+
+        def fake_execution_loop(params):
+            summarizer = params.agent
+            seen["auto_confirm"] = summarizer.config.auto_confirm
+            seen["auto_compact"] = summarizer.config.auto_compact.enabled
+            seen["display"] = summarizer.display
+            return "SUMMARY"
+
+        with patch("xun.agent.execution_loop", fake_execution_loop):
+            result = compact_conversation(parent)
+
+        self.assertTrue(result.compacted)
+        self.assertTrue(seen["auto_confirm"])
+        self.assertFalse(seen["auto_compact"])  # the summarizer must not compact itself
+        self.assertIsInstance(seen["display"], NullDisplay)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import jinja2
 import markdown
 from markupsafe import Markup, escape
 from .config import ASSET_DIR
-from .compact import get_compacted_system_prompt
+from .compact import SummaryCompactResult, ToolCallCompactResult, COMPACTED_SYSTEM_PROMPT
 from .toolbox import ToolResultType
 from .util import image_to_url
 from .openai_helper import ChatCompletionMessageWithReasoning
@@ -259,19 +259,14 @@ class Conversation:
     def estimated_message_length(self) -> int:
         return self._estimate_message_length(self.messages) # type: ignore
     
-    def compact_toolcall(self, keep_max: int = 12):
+    def compact_toolcall(self, keep_max: int = 12) -> ToolCallCompactResult:
         """
         Condense the tool call history by marking older tool calls as compacted, keeping only the most recent `keep_max` tool calls.
-        Returns a ToolCallCompactReturn: the number of tool call results newly compacted,
-        and the fraction of estimated (text-only) message length that was reclaimed.
+        Returns the number of tool call results newly compacted and the fraction of
+        estimated (text-only) message length that was reclaimed.
         """
         self.compaction_counter.tool_rounds += 1
         n_compacted = 0
-        @dataclass
-        class ToolCallCompactReturn:
-            reclaimed_count: int
-            reclaimed_fraction: float
-
         message_length_before: int = self.estimated_message_length()
         for i in range(len(self.messages) - 1, -1, -1):
             if self.messages[i].get("role") == "tool":
@@ -289,7 +284,7 @@ class Conversation:
                         self._compacted_toolcalls[toolcall_id] = old_content
                         n_compacted += 1
         message_length_after: int = self.estimated_message_length()
-        return ToolCallCompactReturn(
+        return ToolCallCompactResult(
             reclaimed_count=n_compacted,
             reclaimed_fraction=((message_length_before - message_length_after) / message_length_before) if message_length_before > 0 else 0.0,
         )
@@ -312,13 +307,9 @@ class Conversation:
         message, the user request is re-kept at the head of the tail: some providers
         reject request bodies without any user message, and it preserves the task verbatim.
 
-        Returns False, leaving history untouched, when there is nothing beyond the system
-        message to condense or `summarize` returns None.
+        Returns a `SummaryCompactResult` whose `status` distinguishes the three outcomes;
+        history is left untouched unless the status is `SummaryCompactResult.Status.COMPACTED`.
         """
-        @dataclass
-        class SummaryCompactResult:
-            reclaimed_fraction: float
-
         len_before = self.estimated_message_length()
         msgs = self.messages
 
@@ -340,19 +331,30 @@ class Conversation:
         if last_user_idx is not None and last_user_idx < cut:
             keep_messages = [msgs[last_user_idx]] + keep_messages
 
+        Status = SummaryCompactResult.Status
         if not any(m.get("role") != "system" for m in condense_messages):
-            return None
+            return SummaryCompactResult(
+                Status.NOTHING_TO_CONDENSE, 
+                "Nothing to condense in conversation history."
+                )
 
         summary = summarize(condense_messages)
         if summary is None:
-            return None
+            return SummaryCompactResult(
+                Status.SUMMARIZE_FAILED, 
+                "Conversation compaction did not produce a summary."
+                )
 
-        self.set_system_message_content(get_compacted_system_prompt(summary))  # in-place on the leading system message, or inserted at index 0
+        self.set_system_message_content(COMPACTED_SYSTEM_PROMPT.format(summary=summary))  # in-place on the leading system message, or inserted at index 0
         self.messages = self.messages[:1] + keep_messages
         # the count refers to the pre-compaction history and would re-trigger auto-compaction
         self.total_tokens = None
         self.compaction_counter = CompactionCounter(summary_rounds=self.compaction_counter.summary_rounds + 1)
-        return SummaryCompactResult(reclaimed_fraction = 1 - self.estimated_message_length() / len_before)
+        return SummaryCompactResult(
+            Status.COMPACTED, 
+            "Conversation history condensed.", 
+            reclaimed_fraction = 1 - self.estimated_message_length() / len_before
+            )
     
     def to_history(self, truncate = False) -> list[MessageRecord]:
         res = []

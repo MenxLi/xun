@@ -6,6 +6,7 @@ Conversation compaction.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, Optional
 
 from .types import CancelledError
@@ -49,19 +50,33 @@ Context management notes:
 - This conversation will be compacted again when the context limit is reached. Persist important state to files rather than keeping it only in the context window.
 """
 
-def get_condense_prompt() -> str:
-    """Return the instruction appended to a copied conversation for compaction."""
-    return CONDENSE_PROMPT
-
-def get_compacted_system_prompt(summary: str) -> str:
-    """Build the system message replacing history after a summary compaction."""
-    return COMPACTED_SYSTEM_PROMPT.format(summary=summary)
-
-
 ESCALATION_RATIO = 0.95
 """Token estimate must fall under this fraction of the threshold to count as progress."""
 
-def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16):
+@dataclass(frozen=True)
+class SummaryCompactResult:
+    """Outcome of `Conversation.compact`. `reclaimed_fraction` is only meaningful when compacted."""
+
+    class Status(Enum):
+        COMPACTED = auto()
+        NOTHING_TO_CONDENSE = auto()
+        SUMMARIZE_FAILED = auto()
+
+    status: Status
+    message: str
+    reclaimed_fraction: float = 0.0
+
+    @property
+    def compacted(self) -> bool:
+        return self.status is SummaryCompactResult.Status.COMPACTED
+
+@dataclass(frozen=True)
+class ToolCallCompactResult:
+    """Outcome of `Conversation.compact_toolcall`."""
+    reclaimed_count: int
+    reclaimed_fraction: float
+
+def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) -> SummaryCompactResult:
     """
     Condense conversation history via `Conversation.compact`,
     supplying the summarizer and logging.
@@ -69,11 +84,8 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16):
     from .agent import Agent
 
     agent.info("Condensing conversation history...")
-    attempted = False
 
     def summarize(messages: list[Any]) -> Optional[str]:
-        nonlocal attempted
-        attempted = True
         compactor = Agent.inherit(
             agent,
             share_display=False,
@@ -81,20 +93,29 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16):
             copy_command=False,
         )
         compactor.config.auto_compact.enabled = False
+        # summarizer runs headless (NullDisplay cannot prompt), so let the completion
+        # retry in _execute_step auto-confirm instead of raising on get_choice
+        compactor.config.auto_confirm = True
         compactor.conversation.messages = messages.copy()
 
         with compactor as ready:
-            result = ready.instruct(get_condense_prompt(), _emit_event=False).execute(max_iterations=1)
+            result = ready.instruct(CONDENSE_PROMPT, _emit_event=False).execute(max_iterations=1)
         if result.is_err():
             error = result.unwrap_err()
             agent.error(f"Failed to condense conversation history: {error.error}")
             return None
         summary = result.unwrap()
-        agent.info(f"Conversation history condensed. Summary:\n{summary}")
-        return summary
+        if summary:
+            agent.info(f"Conversation history condensed. Summary:\n{summary}")
+            return summary
+        else:
+            # somehow may be ""...
+            agent.error("Conversation history condensed but produced an empty summary.")
+            return None
 
-    if not (r := agent.conversation.compact(summarize, keep_recent=keep_recent)) and not attempted:
-        agent.info("Nothing to condense in conversation history.")
+    r = agent.conversation.compact(summarize, keep_recent=keep_recent)
+    if r.status is SummaryCompactResult.Status.NOTHING_TO_CONDENSE:
+        agent.info(r.message)
     return r
 
 class CompactorAbstract(ABC):
@@ -158,25 +179,25 @@ class AutoCompactor(CompactorAbstract):
         )
 
         if (
-            conv.compaction_counter.tool_rounds >= self.escalation_rounds or 
-            estimated_token_after_reclaim > ac.token_threshold * ESCALATION_RATIO
-            ):
-            agent.info("Escalating to full conversation compaction...")
-            try:
-                r = compact_conversation(agent, keep_recent = summary_keep_max)
+            conv.compaction_counter.tool_rounds < self.escalation_rounds
+            and estimated_token_after_reclaim <= ac.token_threshold * ESCALATION_RATIO
+        ):
+            return
 
-                if r is None:
-                    agent.error("Full conversation compaction did not produce a summary.")
-                elif (et:=int(estimated_token_after_reclaim * (1 - r.reclaimed_fraction))) > ac.token_threshold * ESCALATION_RATIO:
-
-                    if remaining == 0:
-                        agent.error(f"Conversation still ~{et} tokens after compaction; no further progress possible.")
-                    else:
-                        agent.warning(f"Estimated tokens after full conversation compaction: {et}. Will auto-compact again.")
-                        conv.total_tokens = et      # must update before recursive auto-compaction
-                        self._auto_compact(agent, toolcall_keep_max//2, summary_keep_max//2, remaining - 1)
-
-            except CancelledError:
-                raise
-            except Exception as exc:
-                agent.error(f"Auto-compaction failed: {exc}")
+        agent.info("Escalating to full conversation compaction...")
+        try:
+            r = compact_conversation(agent, keep_recent = summary_keep_max)
+            if not r.compacted:
+                return  # compact_conversation already reported why
+            if (et:=int(estimated_token_after_reclaim * (1 - r.reclaimed_fraction))) <= ac.token_threshold * ESCALATION_RATIO:
+                return
+            if remaining == 0:
+                agent.error(f"Conversation still ~{et} tokens after compaction; no further progress possible.")
+            else:
+                agent.warning(f"Estimated tokens after full conversation compaction: {et}. Will auto-compact again.")
+                conv.total_tokens = et      # must update before recursive auto-compaction
+                self._auto_compact(agent, toolcall_keep_max//2, summary_keep_max//2, remaining - 1)
+        except CancelledError:
+            raise
+        except Exception as exc:
+            agent.error(f"Auto-compaction failed: {exc}")
