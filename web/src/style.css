@@ -252,6 +252,10 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-name { min-width: 0; height: 100%; flex: 1; padding: 0 7px; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--ink); cursor: pointer; text-align: left; }
 .file-name svg { flex: none; color: var(--muted); }
 .file-name span { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.inline-name { cursor: default; }
+.inline-name input { min-width: 0; height: 25px; flex: 1; padding: 0 5px; border: 1px solid var(--accent); border-radius: 3px; outline: none; color: var(--ink); background: var(--input); font: 11px/1 'Fira Code', monospace; }
+.inline-name input[aria-invalid="true"] { border-color: var(--danger); }
+.inline-name input:disabled { opacity: .65; }
 .file-actions { flex: none; display: none; align-items: center; }
 .file-row:hover .file-actions, .file-actions.open { display: flex; }
 .file-actions .icon-button { width: 26px; height: 26px; }
