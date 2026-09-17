@@ -171,7 +171,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             raise
 
         except Exception as e:
-            agent.display_event(ErrorEvent(message=f"Error during chat completion: {e}"))
+            agent.display_event(ErrorEvent(message=f"Error during chat completion: {e}."))
             if n_completion_max_retries > 0 and agent.get_confirm("Retry?", default=True):
                 n_completion_max_retries -= 1
                 continue
@@ -212,6 +212,9 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             tool_res: ToolResultType
             try:
                 arguments_json: Any = json_repair.loads(arguments)
+                if not arguments_json:
+                    # None, "", [], {}
+                    arguments_json = {}
                 agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
                 tool_res = agent.toolbox.call_tool(
                     agent=agent,
