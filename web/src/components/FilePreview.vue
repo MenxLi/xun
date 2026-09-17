@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import { api } from '../api'
+import { highlightFile } from '../highlight'
 import { previewKind } from '../preview'
 import type { FileInfo } from '../types'
 
@@ -16,6 +17,7 @@ const text = ref('')
 const loading = ref(false)
 const error = ref('')
 const fullscreen = ref(false)
+const highlighted = computed(() => highlightFile(props.entry.path, text.value))
 
 watch(() => props.entry.path, () => {
   error.value = ''
@@ -50,6 +52,7 @@ watch(() => props.entry.path, () => {
 
     <template v-else-if="kind === 'text'">
       <div v-if="error" class="preview-error">{{ error }}</div>
+      <pre v-else-if="highlighted" v-html="highlighted" />
       <pre v-else>{{ loading ? 'Loading…' : text }}</pre>
     </template>
 

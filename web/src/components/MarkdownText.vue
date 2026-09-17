@@ -1,23 +1,8 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
-import hljs from 'highlight.js/lib/core'
-import bash from 'highlight.js/lib/languages/bash'
-import css from 'highlight.js/lib/languages/css'
-import diff from 'highlight.js/lib/languages/diff'
-import dockerfile from 'highlight.js/lib/languages/dockerfile'
-import javascript from 'highlight.js/lib/languages/javascript'
-import json from 'highlight.js/lib/languages/json'
-import markdown from 'highlight.js/lib/languages/markdown'
-import python from 'highlight.js/lib/languages/python'
-import sql from 'highlight.js/lib/languages/sql'
-import typescript from 'highlight.js/lib/languages/typescript'
-import xml from 'highlight.js/lib/languages/xml'
-import yaml from 'highlight.js/lib/languages/yaml'
 import { marked, Renderer, type Tokens } from 'marked'
 import { copyText } from '../clipboard'
-
-const languages = { bash, css, diff, dockerfile, javascript, json, markdown, python, sql, typescript, xml, yaml }
-for (const [name, language] of Object.entries(languages)) hljs.registerLanguage(name, language)
+import { highlightLanguage } from '../highlight'
 
 const props = defineProps<{ content: string; enabled: boolean; plain?: boolean }>()
 let copyTimer = 0
@@ -32,9 +17,8 @@ function escapeHtml(value: string): string {
 class CodeBlockRenderer extends Renderer {
   override code({ text, lang }: Tokens.Code): string {
     const name = (lang || '').split(/\s+/)[0]
-    const language = hljs.getLanguage(name) ? name : ''
-    const highlighted = language ? hljs.highlight(text, { language, ignoreIllegals: true }).value : escapeHtml(text)
-    const classAttr = language ? ` class="language-${language}"` : ''
+    const highlighted = highlightLanguage(name, text) ?? escapeHtml(text)
+    const classAttr = name ? ` class="language-${name}"` : ''
     return `<div class="code-block"><pre><code${classAttr}>${highlighted}</code></pre>`
       + `<button type="button" class="code-copy" title="Copy code">${COPY_ICON}${CHECK_ICON}</button></div>`
   }

@@ -19,7 +19,7 @@ Operating principles:
 
 Tool use:
 - Use sub-agents for self-contained, multi-step subtasks to keep your context manageable.
-- Prefer dedicated tools over raw shell commands.
+- Prefer dedicated tools over raw shell (bash) commands.
 - Read before you write; inspect directories before modifying files.
 
 Safety:
@@ -41,7 +41,7 @@ Your role:
 - If the task is clear, proceed without asking follow-up questions. If ambiguous, pick the most conservative reasonable assumption, continue, and note it in your answer. Stop only when a critical input is truly missing.
 
 Tool use:
-- Prefer dedicated tools over shell commands. Treat shell commands as higher risk.
+- Prefer dedicated tools over shell (bash) commands. Treat shell commands as higher risk.
 - Read before writing; stay within the workspace.
 - For anything current or uncertain, use tools to find the answer instead of relying on outdated knowledge.
 
