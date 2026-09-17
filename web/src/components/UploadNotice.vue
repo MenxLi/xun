@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { AlertCircle, Check, File, LoaderCircle, X } from 'lucide-vue-next'
 
 defineProps<{
@@ -8,6 +9,8 @@ defineProps<{
 }>()
 
 defineEmits<{ dismiss: [] }>()
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -20,10 +23,10 @@ defineEmits<{ dismiss: [] }>()
           <LoaderCircle v-else :size="16" />
         </span>
         <div class="upload-heading">
-          <strong>{{ status === 'complete' ? 'Upload complete' : status === 'failed' ? 'Upload failed' : 'Uploading files' }}</strong>
-          <span>{{ files.length }} {{ files.length === 1 ? 'file' : 'files' }}</span>
+          <strong>{{ t(status === 'complete' ? 'upload.complete' : status === 'failed' ? 'upload.failed' : 'upload.uploading') }}</strong>
+          <span>{{ t('upload.filesCount', { n: files.length }) }}</span>
         </div>
-        <button class="upload-dismiss" title="Dismiss upload status" @click="$emit('dismiss')"><X :size="17" /></button>
+        <button class="upload-dismiss" :title="t('upload.dismiss')" @click="$emit('dismiss')"><X :size="17" /></button>
       </header>
 
       <div class="upload-notice-body">
@@ -32,7 +35,7 @@ defineEmits<{ dismiss: [] }>()
             <File :size="14" aria-hidden="true" />
             <span class="upload-file-name" :title="name">{{ name }}</span>
           </div>
-          <div v-if="files.length > 3" class="upload-file-more">+{{ files.length - 3 }} more {{ files.length - 3 === 1 ? 'file' : 'files' }}</div>
+          <div v-if="files.length > 3" class="upload-file-more">{{ t('upload.moreFiles', { n: files.length - 3 }) }}</div>
         </div>
         <small v-if="error" class="upload-error">{{ error }}</small>
       </div>

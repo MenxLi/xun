@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bot, Check, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Wifi, WifiOff } from 'lucide-vue-next'
+import { useI18n } from 'vue-i18n'
+import { Bot, Check, Globe, Languages, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type, Wifi, WifiOff } from 'lucide-vue-next'
 import { api, appUrl, chatUrl, configureSession, formatTokens } from './api'
+import i18n, { resolveLocale, type Language } from './i18n'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
 import FileBrowser from './components/FileBrowser.vue'
@@ -14,6 +16,7 @@ import { useInputHistoryStore } from './stores/inputHistory'
 
 const settings = useSettingsStore()
 const inputHistory = useInputHistoryStore()
+const { t } = useI18n()
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -74,6 +77,9 @@ watch(() => settings.theme, theme => {
   if (theme === 'system') delete document.documentElement.dataset.theme
   else document.documentElement.dataset.theme = theme
 }, { immediate: true })
+watch(() => settings.language, language => {
+  i18n.global.locale.value = resolveLocale(language)
+}, { immediate: true })
 watch([selectedAgentId, selectedOnly], () => stream.value?.anchor())
 watch(selectedAgentId, async agentId => {
   const requestId = ++agentDataRequest
@@ -116,7 +122,7 @@ async function loadSessions() {
       if (fallback) switchSession(fallback.path)
     }
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : 'Could not load sessions'
+    sessionError.value = error instanceof Error ? error.message : t('sessions.loadError')
   }
 }
 
@@ -128,7 +134,7 @@ async function createSession(name: string) {
     await loadSessions()
     switchSession(session.path)
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : 'Could not create session'
+    sessionError.value = error instanceof Error ? error.message : t('sessions.createError')
   } finally {
     sessionBusy.value = false
   }
@@ -147,7 +153,7 @@ async function removeSession(session: SessionInfo) {
       return
     }
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : 'Could not remove session'
+    sessionError.value = error instanceof Error ? error.message : t('sessions.removeError')
   } finally {
     sessionBusy.value = false
   }
@@ -316,7 +322,7 @@ function readImage(file: File): Promise<ImageDescriptor> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.addEventListener('load', () => resolve({ kind: 'base64', value: String(reader.result) }))
-    reader.addEventListener('error', () => reject(reader.error || new Error(`Could not read ${file.name}`)))
+    reader.addEventListener('error', () => reject(reader.error || new Error(t('errors.couldNotRead', { name: file.name }))))
     reader.readAsDataURL(file)
   })
 }
@@ -344,7 +350,7 @@ async function submit() {
       stream.value?.anchor()
     } catch (error) {
       if (socket === targetSocket) {
-        sendError.value = error instanceof Error ? error.message : 'Could not upload images'
+        sendError.value = error instanceof Error ? error.message : t('composer.uploadError')
       }
       return
     } finally {
@@ -384,7 +390,7 @@ async function answerPrompt(promptId: string, value: string) {
     pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== promptId)
   } catch (error) {
     if (currentSessionPath.value !== sessionPath) return
-    promptErrors.value.set(promptId, error instanceof Error ? error.message : 'Could not submit response')
+    promptErrors.value.set(promptId, error instanceof Error ? error.message : t('prompt.submitError'))
     promptErrors.value = new Map(promptErrors.value)
   } finally {
     if (currentSessionPath.value === sessionPath) {
@@ -395,10 +401,16 @@ async function answerPrompt(promptId: string, value: string) {
   }
 }
 
-const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }> = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
+const themeOptions: Array<{ value: Theme; labelKey: string; icon: typeof Monitor }> = [
+  { value: 'system', labelKey: 'app.themeSystem', icon: Monitor },
+  { value: 'light', labelKey: 'app.themeLight', icon: Sun },
+  { value: 'dark', labelKey: 'app.themeDark', icon: Moon },
+]
+
+const languageOptions: Array<{ value: Language; labelKey: string; icon: typeof Globe }> = [
+  { value: 'system', labelKey: 'app.languageSystem', icon: Globe },
+  { value: 'en', labelKey: 'app.languageEn', icon: Type },
+  { value: 'zh', labelKey: 'app.languageZh', icon: Languages },
 ]
 
 onMounted(async () => {
@@ -438,38 +450,44 @@ onBeforeUnmount(() => {
     <main class="chat-shell">
       <header class="topbar">
         <div class="brand">
-          <button class="icon-button" :title="showSessions ? 'Hide sessions' : 'Show sessions'" @click="toggleSessions">
+          <button class="icon-button" :title="showSessions ? t('app.hideSessions') : t('app.showSessions')" @click="toggleSessions">
             <PanelLeftClose v-if="showSessions" :size="18" />
             <PanelLeftOpen v-else :size="18" />
           </button>
         </div>
         <div class="agent-controls">
           <Bot :size="15" />
-          <select v-model="selectedAgentId" aria-label="Active agent" :disabled="!agents.length">
+          <select v-model="selectedAgentId" :aria-label="t('app.activeAgent')" :disabled="!agents.length">
             <option v-if="!agents.length" value="" />
             <option v-for="agent in agents" :key="agent.identifier" :value="agent.identifier">{{ agent.name }}</option>
           </select>
-          <label class="stream-filter" title="Show events from the active agent only">
+          <label class="stream-filter" :title="t('app.selectedOnlyHint')">
             <input v-model="selectedOnly" type="checkbox">
-            <span>Selected only</span>
+            <span>{{ t('app.selectedOnly') }}</span>
           </label>
-          <span v-if="selectedAgentTokens != null" class="token-badge" title="Total tokens used by the active agent's conversation">{{ formatTokens(selectedAgentTokens) }} tokens</span>
+          <span v-if="selectedAgentTokens != null" class="token-badge" :title="t('app.tokensTitle')">{{ formatTokens(selectedAgentTokens) }} {{ t('app.tokens') }}</span>
         </div>
         <div class="topbar-actions">
-          <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? 'Connected' : 'Reconnecting' }}</span>
+          <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? t('app.connected') : t('app.reconnecting') }}</span>
           <div class="settings-wrap">
-            <button class="icon-button" title="Display settings" aria-label="Display settings" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Settings :size="17" /></button>
+            <button class="icon-button" :title="t('app.displaySettings')" :aria-label="t('app.displaySettings')" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Settings :size="17" /></button>
             <div v-if="settingsOpen" class="settings-menu">
-              <span class="settings-label">Theme</span>
+              <span class="settings-label">{{ t('app.theme') }}</span>
               <div class="theme-options">
                 <button v-for="option in themeOptions" :key="option.value" :class="{ selected: settings.theme === option.value }" @click="settings.theme = option.value">
-                  <component :is="option.icon" :size="14" />{{ option.label }}<Check v-if="settings.theme === option.value" class="theme-check" :size="13" />
+                  <component :is="option.icon" :size="14" />{{ t(option.labelKey) }}<Check v-if="settings.theme === option.value" class="theme-check" :size="13" />
                 </button>
               </div>
-              <label class="setting-toggle"><span>Render Markdown</span><input v-model="settings.markdown" type="checkbox"></label>
+              <span class="settings-label">{{ t('app.language') }}</span>
+              <div class="theme-options">
+                <button v-for="option in languageOptions" :key="option.value" :class="{ selected: settings.language === option.value }" @click="settings.language = option.value">
+                  <component :is="option.icon" :size="14" />{{ t(option.labelKey) }}<Check v-if="settings.language === option.value" class="theme-check" :size="13" />
+                </button>
+              </div>
+              <label class="setting-toggle"><span>{{ t('app.renderMarkdown') }}</span><input v-model="settings.markdown" type="checkbox"></label>
             </div>
           </div>
-          <button class="icon-button" :title="showFiles ? 'Hide workspace' : 'Show workspace'" @click="toggleFiles">
+          <button class="icon-button" :title="showFiles ? t('app.hideWorkspace') : t('app.showWorkspace')" @click="toggleFiles">
             <PanelRightClose v-if="showFiles" :size="18" />
             <PanelRightOpen v-else :size="18" />
           </button>
@@ -497,7 +515,7 @@ onBeforeUnmount(() => {
           :commands="commands"
           :agent-id="selectedAgentId"
           :files-available="exposeFiles === true"
-          :placeholder="selectedAgent ? `Message ${selectedAgent.name}` : ''"
+          :placeholder="selectedAgent ? t('app.messageAgent', { name: selectedAgent.name }) : ''"
           :disabled="!connected || !selectedAgent"
           :supports-vision="supportsVision"
           :images="images"

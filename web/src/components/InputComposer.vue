@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { File, Folder, ImagePlus, Send, Square, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { useInputHistoryStore } from '../stores/inputHistory'
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   (e: 'remove-image', index: number): void
 }>()
 
+const { t } = useI18n()
 const history = useInputHistoryStore()
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const MAX_IMAGES = 8
@@ -264,9 +266,9 @@ function handlePaste(event: ClipboardEvent) {
 }
 
 const hint = computed(() => {
-  if (props.cancelling) return 'Cancelling execution...'
-  if (menuKind.value) return '↑↓ navigate · Enter/Tab select · Ctrl/⌘+Enter send'
-  return 'Ctrl/⌘+Enter send · Enter new line · Ctrl/⌘+↑↓ history'
+  if (props.cancelling) return t('composer.cancellingHint')
+  if (menuKind.value) return t('composer.hintMenu')
+  return t('composer.hintSend')
 })
 
 const isCommand = computed(() => input.value.startsWith('/'))
@@ -293,18 +295,18 @@ const isCommand = computed(() => input.value.startsWith('/'))
       >
         <Folder v-if="file.kind === 'directory'" :size="14" />
         <File v-else :size="14" />
-        <code>{{ file.path }}</code><span>{{ file.kind }}</span>
+        <code>{{ file.path }}</code><span>{{ t(file.kind === 'directory' ? 'common.kindDirectory' : 'common.kindFile') }}</span>
       </button>
     </div>
     <div v-if="images.length" class="image-tray">
       <div v-for="(image, index) in images" :key="image.url" class="image-preview">
         <img :src="image.url" :alt="image.file.name">
-        <button type="button" :title="`Remove ${image.file.name}`" @click="emit('remove-image', index)"><X :size="13" /></button>
+        <button type="button" :title="t('composer.removeImage', { name: image.file.name })" @click="emit('remove-image', index)"><X :size="13" /></button>
       </div>
     </div>
     <div class="composer">
       <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
-      <button v-if="supportsVision" class="attach-button" type="button" title="Attach images" :disabled="sending || running || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
+      <button v-if="supportsVision" class="attach-button" type="button" :title="t('composer.attachImages')" :disabled="sending || running || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
       <textarea
         ref="textarea"
         v-model="input"
@@ -320,8 +322,8 @@ const isCommand = computed(() => input.value.startsWith('/'))
         @keyup="updateCursor"
         @paste="handlePaste"
       />
-      <button v-if="running" class="stop-button" :title="cancelling ? 'Cancelling' : 'Stop'" :disabled="cancelling" @click="emit('stop')"><Square :size="15" fill="currentColor" /></button>
-      <button v-else class="send-button" title="Send" :disabled="disabled || sending || (!input.trim() && !images.length)" @click="emit('send')"><Send :size="18" /></button>
+      <button v-if="running" class="stop-button" :title="cancelling ? t('composer.cancelling') : t('composer.stop')" :disabled="cancelling" @click="emit('stop')"><Square :size="15" fill="currentColor" /></button>
+      <button v-else class="send-button" :title="t('composer.send')" :disabled="disabled || sending || (!input.trim() && !images.length)" @click="emit('send')"><Send :size="18" /></button>
     </div>
     <span v-if="error" class="composer-error">{{ error }}</span>
     <span class="composer-hint">{{ hint }}</span>

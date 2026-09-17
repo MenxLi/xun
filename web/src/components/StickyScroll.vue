@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ArrowDown } from 'lucide-vue-next'
 
 // Auto-scrolls to the bottom while the user is following the stream. Scrolling
@@ -7,6 +8,7 @@ import { ArrowDown } from 'lucide-vue-next'
 // surfaces a "jump to latest" pill instead of moving the view.
 const props = defineProps<{ size: number }>()
 
+const { t } = useI18n()
 const container = ref<HTMLElement>()
 const follow = ref(true)
 const unseen = ref(0)
@@ -55,8 +57,8 @@ defineExpose({ anchor })
     <Transition name="jump-fade">
       <button v-if="showJump" type="button" class="jump-to-latest" @click="scrollToEnd('smooth')">
         <ArrowDown :size="13" />
-        <span>Jump to latest</span>
-        <em v-if="unseen">{{ unseen }} new</em>
+        <span>{{ t('stream.jumpToLatest') }}</span>
+        <em v-if="unseen">{{ t('stream.newCount', { n: unseen }) }}</em>
       </button>
     </Transition>
   </div>

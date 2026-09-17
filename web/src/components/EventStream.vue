@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import ToolCalls from './ToolCalls.vue'
@@ -9,6 +10,7 @@ import { copyText } from '../clipboard'
 import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolItem } from '../types'
 
 const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
+const { t } = useI18n()
 
 type TurnStep =
   | { kind: 'reason'; key: string; event: ModelMessageDisplayEvent }
@@ -97,7 +99,10 @@ function text(event: DisplayEvent): string {
 
 function label(event: DisplayEvent): string {
   if (event.name === 'ModelMessageEvent') return event.agent.name
-  if (event.name === 'UserCommandEvent') return 'Command'
+  if (event.name === 'UserCommandEvent') return t('stream.command')
+  if (event.name === 'InfoEvent') return t('stream.info')
+  if (event.name === 'WarningEvent') return t('stream.warning')
+  if (event.name === 'ErrorEvent') return t('stream.error')
   return event.name.replace(/Event$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
 }
 
@@ -128,17 +133,17 @@ async function copyMessage(key: string, event: DisplayEvent) {
       <section v-if="item.kind === 'turn'" class="turn">
         <div class="turn-header">
           <span class="turn-agent">{{ item.agent.name }}</span>
-          <span class="token-usage" title="Total tokens used in this conversation">· {{ formatTokens(item.tokens) }} tokens</span>
+          <span class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.tokens) }} {{ t('app.tokens') }}</span>
           <span v-if="item.working" class="tool-state">
             <Clock3 :size="12" />
-            Running
+            {{ t('stream.running') }}
           </span>
           <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
         </div>
         <div class="turn-steps">
           <template v-for="step in item.steps" :key="step.key">
             <details v-if="step.kind === 'reason'" class="reasoning">
-              <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
+              <summary><ChevronRight :size="11" class="chevron" />{{ t('stream.reasoning') }}</summary>
               <MarkdownText :content="step.event.payload.reasoning!" :enabled="markdown" />
             </details>
             <ToolCalls v-else-if="step.kind === 'tools'" :tools="step.tools" />
@@ -156,37 +161,37 @@ async function copyMessage(key: string, event: DisplayEvent) {
           <Link2 v-if="item.data.name === 'AgentBindEvent'" :size="12" />
           <Link2Off v-else :size="12" />
           <span>{{ item.data.agent.name }}</span>
-          {{ item.data.name === 'AgentBindEvent' ? 'joined' : 'left' }}
+          {{ item.data.name === 'AgentBindEvent' ? t('stream.joined') : t('stream.left') }}
           <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
         </div>
 
         <div v-else-if="item.data.name === 'ModelWorkingEvent'" class="working">
-          <span class="working-dot" /> {{ item.data.agent.name }} is working
+          <span class="working-dot" /> {{ t('stream.working', { name: item.data.agent.name }) }}
         </div>
 
         <ConfirmPill v-else-if="item.data.name === 'ConfirmEvent'" :event="item.data" />
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
-          <header><Terminal :size="15" /> Available commands</header>
+          <header><Terminal :size="15" /> {{ t('stream.availableCommands') }}</header>
           <div v-for="command in item.data.payload.commands" :key="command.name" class="command-line">
             <code>/{{ command.name }}</code><span>{{ command.description }}</span>
           </div>
         </section>
 
         <section v-else-if="item.data.name === 'ShowToolsEvent'" class="tools-result">
-          <header><Wrench :size="15" /> Tools <span>{{ item.data.payload.tools.length }}</span></header>
-          <div v-if="!item.data.payload.tools.length" class="tools-empty">No tools registered.</div>
+          <header><Wrench :size="15" /> {{ t('stream.tools') }} <span>{{ item.data.payload.tools.length }}</span></header>
+          <div v-if="!item.data.payload.tools.length" class="tools-empty">{{ t('stream.noTools') }}</div>
           <div v-for="tool in item.data.payload.tools" v-else :key="tool.name" class="tool-listing">
             <div class="tool-listing-name">
               <code>{{ tool.name }}</code>
               <span v-for="capability in tool.required_capabilities" :key="capability" class="capability-chip">{{ capability }}</span>
             </div>
-            <p>{{ tool.description || 'No description provided.' }}</p>
+            <p>{{ tool.description || t('stream.noDescription') }}</p>
           </div>
         </section>
 
         <section v-else-if="item.data.name === 'ShowHistoryEvent'" class="history-result">
-          <header>Conversation history</header>
+          <header>{{ t('stream.conversationHistory') }}</header>
           <div v-for="(message, index) in item.data.payload.history" :key="index" class="history-line">
             <span>{{ message.role }}</span>
             <pre>{{ typeof message.content === 'string' ? message.content : JSON.stringify(message.content, null, 2) }}</pre>
@@ -205,19 +210,19 @@ async function copyMessage(key: string, event: DisplayEvent) {
         }">
           <div class="message-label">
             <CircleAlert v-if="item.data.name === 'ErrorEvent'" :size="13" />
-            {{ isUser(item.data) ? 'You' : label(item.data) }}
+            {{ isUser(item.data) ? t('stream.you') : label(item.data) }}
             <template v-if="item.data.name === 'UserMessageEvent'">
-              <span class="message-recipient">to</span> {{ item.data.agent.name }}
+              <span class="message-recipient">{{ t('stream.to') }}</span> {{ item.data.agent.name }}
             </template>
             <template v-if="item.data.name === 'ModelMessageEvent'">
               <span class="message-recipient">·</span>
-              <span class="token-usage" title="Total tokens used in this conversation">{{ formatTokens(item.data.payload.total_tokens) }} tokens</span>
+              <span class="token-usage" :title="t('stream.tokensTitle')">{{ formatTokens(item.data.payload.total_tokens) }} {{ t('app.tokens') }}</span>
             </template>
             <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
             <button
               type="button"
               class="message-copy"
-              title="Copy message"
+              :title="t('stream.copyMessage')"
               :class="{ copied: copiedKey === item.key }"
               @click="copyMessage(item.key, item.data)"
             >
@@ -226,13 +231,13 @@ async function copyMessage(key: string, event: DisplayEvent) {
             </button>
           </div>
           <details v-if="item.data.name === 'ModelMessageEvent' && item.data.payload.reasoning" class="reasoning">
-            <summary><ChevronRight :size="11" class="chevron" />Reasoning</summary>
+            <summary><ChevronRight :size="11" class="chevron" />{{ t('stream.reasoning') }}</summary>
             <MarkdownText :content="item.data.payload.reasoning" :enabled="markdown" />
           </details>
           <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" :plain="isPlainTextEvent(item.data)" />
           <div v-if="item.data.name === 'UserMessageEvent' && item.data.payload.images.length" class="message-images">
             <a v-for="image in item.data.payload.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
-              <img :src="image.value" alt="Attached image">
+              <img :src="image.value" :alt="t('stream.attachedImage')">
             </a>
           </div>
         </article>

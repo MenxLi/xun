@@ -1,4 +1,5 @@
 import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, SessionInfo, SessionList, WebConfig } from './types'
+import i18n from './i18n'
 
 const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
 const inferredServiceRoot = location.pathname.match(/^(.*)\/chat(?:\/|$)/)?.[1] ?? ''
@@ -29,7 +30,7 @@ async function fetchOk(url: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(url, options)
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(body?.detail || `Request failed (${response.status})`)
+    throw new Error(body?.detail || i18n.global.t('errors.requestFailed', { status: response.status }))
   }
   return response
 }
