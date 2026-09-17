@@ -7,7 +7,7 @@ from xun.tools.cmd import _confirmation_policy, _parse_command_spec
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
     def assertConfirmationRequired(self, command: str, expected: bool) -> None:
-        ctx = ToolCallContext(SimpleNamespace(state={}), "shell", None)
+        ctx = ToolCallContext(SimpleNamespace(state={}), "bash", None)
         policy = _confirmation_policy(ctx, _parse_command_spec(command))
         self.assertIs(policy.requires_confirmation, expected, command)
 

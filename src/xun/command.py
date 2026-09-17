@@ -255,6 +255,6 @@ def default_commands() -> list[Command]:
         Command(name="save", description="Save history.", handler=_save_handler),
         Command(name="load", description="Load history. (latest, [idx])", handler=_load_handler),
         Command(name="compact", description="Condense conversation. Use 'compact toolcall' to only condense tool call history.", handler=_condense_handler),
-        Command(name="yolo", description="Toggle auto-confirm (auto-approve actions without prompting).", handler=_yolo_handler),
+        Command(name="yolo", description="Toggle global auto approve (You Only Look Once).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
     ]

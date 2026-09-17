@@ -429,7 +429,7 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path
     if executable is not None:
         return executable
 
-    # Bare shell builtins such as `cd` are resolved by the invoked shell.
+    # Bare shell builtins such as `cd` are resolved by the invoked bash.
     return None
 
 
@@ -472,20 +472,18 @@ def _run_shell_command(
     env_overrides: Optional[dict[str, str]],
     cancel_check: Callable[[], bool],
     ) -> subprocess.CompletedProcess[str]:
-    shell_executable = os.environ.get("SHELL")
     envs = os.environ.copy()
     if env_overrides:
         envs.update(env_overrides)
     popen_kwargs = {
         "shell": True,
+        "executable": shutil.which("bash") or "/bin/sh",
         "text": True,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "env": envs,
         "cwd": cwd,
     }
-    if shell_executable:
-        popen_kwargs["executable"] = shell_executable
     if os.name != "nt":
         popen_kwargs["start_new_session"] = True
 
@@ -529,7 +527,7 @@ class CmdExecResult(TypedDict):
 
 
 # Unlisted commands, unsupported shell operators, and path-based commands still require confirmation.
-def shell(
+def bash(
     ctx: ToolCallContext,
     command: str,
     timeout: float = 300,
@@ -539,7 +537,7 @@ def shell(
 ) -> CmdExecResult:
     """
     Runs a command and returns its output.
-    Commands are always run through the current shell with inherited environment variables.
+    Commands are always run through bash (falling back to sh) with inherited environment variables.
 
     The command runs in the current process working directory, and cannot change it persistently.
 
@@ -599,6 +597,6 @@ def shell(
 def expose_cmd_tools() -> list[Callable]:
     import rich
     if os.name == "nt":
-        rich.print("[Warning] The shell tool is not available on Windows. Skip registering it.")
+        rich.print("[Warning] The bash tool is not available on Windows. Skip registering it.")
         return []
-    return [shell]
+    return [bash]
