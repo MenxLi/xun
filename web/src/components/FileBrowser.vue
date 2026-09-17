@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, FolderPlus, Image, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import ResizeHandle from './ResizeHandle.vue'
+import UploadNotice from './UploadNotice.vue'
 import { api } from '../api'
 import { previewKind } from '../preview'
 import type { AgentInfo, FileEntry } from '../types'
@@ -24,6 +25,11 @@ const activeEntry = ref<FileEntry | null>(null)
 const menuPosition = ref({ top: '0px', left: '0px' })
 const error = ref('')
 const fileInput = ref<HTMLInputElement>()
+const uploadNotice = ref<{
+  files: string[]
+  status: 'uploading' | 'complete' | 'failed'
+  error?: string
+} | null>(null)
 let dragDepth = 0
 let listingRequest = 0
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
@@ -120,14 +126,25 @@ function open(entry: FileEntry) {
 }
 
 async function upload(files: FileList | null) {
-  if (!props.available || !props.agentId || !files?.length) return
+  if (!props.available || !props.agentId || !files?.length || uploading.value) return
+  const selectedFiles = Array.from(files)
   uploading.value = true
   error.value = ''
+  uploadNotice.value = {
+    files: selectedFiles.map(file => file.name),
+    status: 'uploading',
+  }
   try {
-    await api.upload(props.agentId, path.value, Array.from(files))
+    await api.upload(props.agentId, path.value, selectedFiles)
+    if (uploadNotice.value) uploadNotice.value.status = 'complete'
     await refresh()
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Upload failed'
+    const message = reason instanceof Error ? reason.message : 'Upload failed'
+    error.value = message
+    if (uploadNotice.value) {
+      uploadNotice.value.status = 'failed'
+      uploadNotice.value.error = message
+    }
   } finally {
     uploading.value = false
     if (fileInput.value) fileInput.value.value = ''
@@ -249,7 +266,10 @@ function goUp() {
           <button class="danger" @click="remove(activeEntry); closeMenu()"><Trash2 :size="14" /><span>Delete</span></button>
         </template>
       </div>
+
     </Teleport>
+
+    <UploadNotice v-if="uploadNotice" v-bind="uploadNotice" @dismiss="uploadNotice = null" />
 
     <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" :style="{ height: `${settings.previewHeight}px` }" @resize="resizePreview" @close="previewEntry = null" />
 
