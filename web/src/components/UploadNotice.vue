@@ -1,21 +1,60 @@
 <script setup lang="ts">
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AlertCircle, Check, File, LoaderCircle, X } from 'lucide-vue-next'
 
-defineProps<{
+const props = defineProps<{
   files: string[]
   status: 'uploading' | 'complete' | 'failed'
   error?: string
 }>()
 
-defineEmits<{ dismiss: [] }>()
+const emit = defineEmits<{ dismiss: [] }>()
 
 const { t } = useI18n()
+
+// Completed notices dismiss themselves after a short grace period; failures
+// stay until closed. Hovering pauses the countdown and its bar together.
+const AUTO_DISMISS_MS = 5000
+const paused = ref(false)
+let remaining = AUTO_DISMISS_MS
+let startedAt = 0
+let timer: number | undefined
+
+function clearTimer() {
+  window.clearTimeout(timer)
+  timer = undefined
+}
+
+watch(() => props.status, status => {
+  clearTimer()
+  paused.value = false
+  if (status !== 'complete') return
+  remaining = AUTO_DISMISS_MS
+  startedAt = performance.now()
+  timer = window.setTimeout(() => emit('dismiss'), remaining)
+}, { immediate: true })
+
+function pause() {
+  if (timer === undefined) return
+  paused.value = true
+  remaining -= performance.now() - startedAt
+  clearTimer()
+}
+
+function resume() {
+  if (!paused.value) return
+  paused.value = false
+  startedAt = performance.now()
+  timer = window.setTimeout(() => emit('dismiss'), remaining)
+}
+
+onBeforeUnmount(clearTimer)
 </script>
 
 <template>
   <Teleport to="body">
-    <section class="upload-notice" :class="status" role="status" aria-live="polite">
+    <section class="upload-notice" :class="status" role="status" aria-live="polite" @mouseenter="pause" @mouseleave="resume">
       <header>
         <span class="upload-status-icon" :class="status" aria-hidden="true">
           <Check v-if="status === 'complete'" :size="16" />
@@ -39,6 +78,7 @@ const { t } = useI18n()
         </div>
         <small v-if="error" class="upload-error">{{ error }}</small>
       </div>
+      <div v-if="status === 'complete'" class="upload-countdown" :class="{ paused }" :style="{ animationDuration: `${AUTO_DISMISS_MS}ms` }" />
     </section>
   </Teleport>
 </template>
@@ -62,9 +102,12 @@ const { t } = useI18n()
 .upload-file-name { overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .upload-file-more { height: 28px; padding: 0 8px 0 32px; display: flex; align-items: center; border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .upload-error { display: block; margin: 6px 8px 3px; color: var(--danger); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.upload-countdown { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; transform-origin: left; background: color-mix(in srgb, var(--accent) 45%, transparent); animation: upload-countdown linear forwards; }
+.upload-countdown.paused { animation-play-state: paused; }
 
 @keyframes upload-notice-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes upload-spin { to { transform: rotate(360deg); } }
+@keyframes upload-countdown { to { transform: scaleX(0); } }
 
 @media (max-width: 600px) {
   .upload-notice { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
@@ -72,5 +115,6 @@ const { t } = useI18n()
 
 @media (prefers-reduced-motion: reduce) {
   .upload-notice, .upload-status-icon.uploading svg { animation: none; }
+  .upload-countdown { display: none; }
 }
 </style>
