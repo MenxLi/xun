@@ -4,7 +4,8 @@ A mini LLM agent framework with function-based tools and sub-agent spawning.
 
 The core codebase is compact: about 3000 lines in `src/xun/*.py` (mostly hand written), with comprehensive type hints.
 
-<!-- <details>
+<!-- 
+<details>
 <summary>Why this name?</summary>
 
 取此名称有两点考虑。其一是技术含义：智能体的执行过程本身即一种搜索，在可
@@ -15,7 +16,10 @@ The core codebase is compact: about 3000 lines in `src/xun/*.py` (mostly hand wr
 其二是使用便利：xun 为单音节三字母拼音，在命令行中无需切换输入法即可连续
 键入，符合本软件以命令行与终端交互为主要入口的使用习惯。
 
-</details>  -->
+此外，本人名字中也包含“寻”字，这个名称对我个人也有特殊意义 :D
+
+</details>
+-->
 
 
 ## Quick Start
@@ -23,8 +27,8 @@ The core codebase is compact: about 3000 lines in `src/xun/*.py` (mostly hand wr
 Requires Python 3.12+ (PEP 695)
 
 ```bash
-# 1. Install dependencies
-pip install git+https://github.com/MenxLi/xun.git
+# 1. Install the package
+pip install xun-agent
 
 # 2. Install Playwright browsers (if using the default browser tools)
 playwright install
@@ -34,19 +38,24 @@ vim .env
 
 # 4. Run the agent in interactive mode
 xun
-```
 
-Optionally, run the agent in web mode: 
-```sh
-# - Build the web frontend (if using the web display)
-make build-web
-# - Start the web server at current directory
+# (OR) Run the agent in web mode
 xuns .
-# - Use a temporary workspace instead
-xuns
 ```
 
-`xuns` accepts at most one workspace directory: every session shares it, or each session gets its own temporary workspace if omitted. Session management is on by default; disable it with `--no-manage-sessions`.
+`xuns` accepts at most one workspace directory: every session shares it, 
+or each session gets its own temporary workspace if omitted. 
+
+<details>
+<summary>Installation from source</summary>
+
+```sh
+git clone https://github.com/MenxLi/xun.git
+cd xun
+make build-web
+pip install .
+```
+</details>
 
 ## Usage
 
@@ -131,6 +140,10 @@ service.start(blocking=True)
 ## Docker
 
 ```bash
+# first clone the repository
+git clone https://github.com/MenxLi/xun.git
+cd xun
+
 make build-docker   # builds the web frontend, then the `xun` image
 
 xunc                # sandbox: temporary workspace inside the container
@@ -178,7 +191,7 @@ xun reads optional configuration from `.xun/config.json` (override the location 
 }
 ```
 
-The config supports `${XUN_...}` placeholders which are substituted from environment variables (e.g. `${XUN_OPENAI_API_KEY}`), so secrets can live in a `.env` file instead. A placeholder with no matching environment variable causes a startup error. 
+The config supports `${XUN_...}` placeholders which are substituted from environment variables (e.g. `${XUN_OPENAI_API_KEY}`), so secrets can live in a `.env` file instead. 
 
 | Config field | Environment variable | Description |
 |---|---|---|
