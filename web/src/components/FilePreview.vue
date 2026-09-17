@@ -30,36 +30,34 @@ watch(() => props.entry.path, () => {
 </script>
 
 <template>
-  <Teleport to="body" :disabled="!fullscreen">
-    <section class="file-preview" :class="{ 'is-fullscreen': fullscreen }">
-      <ResizeHandle v-if="!fullscreen" orientation="vertical" @drag="delta => emit('resize', delta)" />
-      <header>
-        <span>{{ entry.path }}</span>
-        <div class="preview-actions">
-          <button class="icon-button" :title="fullscreen ? 'Exit fullscreen' : 'Fullscreen'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
-            <Minimize2 v-if="fullscreen" :size="14" />
-            <Maximize2 v-else :size="14" />
-          </button>
-          <button class="icon-button" title="Close preview" @click="emit('close')"><X :size="15" /></button>
-        </div>
-      </header>
-
-      <template v-if="kind === 'image'">
-        <img v-show="!error" :src="contentUrl" :alt="entry.name" @error="error = 'Could not load image'">
-        <div v-if="error" class="preview-error">{{ error }}</div>
-      </template>
-
-      <template v-else-if="kind === 'text'">
-        <div v-if="error" class="preview-error">{{ error }}</div>
-        <pre v-else>{{ loading ? 'Loading…' : text }}</pre>
-      </template>
-
-      <iframe v-else-if="kind === 'pdf'" class="preview-document" :src="contentUrl" :title="`Preview of ${entry.name}`" />
-
-      <div v-else class="preview-unsupported">
-        <FileQuestion :size="20" />
-        <span>No preview for {{ entry.media_type || 'this file' }}</span>
+  <section class="file-preview" :class="{ 'is-fullscreen': fullscreen }">
+    <ResizeHandle v-if="!fullscreen" orientation="vertical" @drag="delta => emit('resize', delta)" />
+    <header>
+      <span>{{ entry.path }}</span>
+      <div class="preview-actions">
+        <button class="icon-button" :title="fullscreen ? 'Exit fullscreen' : 'Fullscreen'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
+          <Minimize2 v-if="fullscreen" :size="14" />
+          <Maximize2 v-else :size="14" />
+        </button>
+        <button class="icon-button" title="Close preview" @click="emit('close')"><X :size="15" /></button>
       </div>
-    </section>
-  </Teleport>
+    </header>
+
+    <template v-if="kind === 'image'">
+      <img v-show="!error" :src="contentUrl" :alt="entry.name" @error="error = 'Could not load image'">
+      <div v-if="error" class="preview-error">{{ error }}</div>
+    </template>
+
+    <template v-else-if="kind === 'text'">
+      <div v-if="error" class="preview-error">{{ error }}</div>
+      <pre v-else>{{ loading ? 'Loading…' : text }}</pre>
+    </template>
+
+    <iframe v-else-if="kind === 'pdf'" class="preview-document" :src="contentUrl" :title="`Preview of ${entry.name}`" />
+
+    <div v-else class="preview-unsupported">
+      <FileQuestion :size="20" />
+      <span>No preview for {{ entry.media_type || 'this file' }}</span>
+    </div>
+  </section>
 </template>
