@@ -29,6 +29,7 @@ const canManageSessions = ref(false)
 const sessionBusy = ref(false)
 const sessionError = ref('')
 const narrowLayout = ref(window.innerWidth < 900)
+const narrowPanel = ref<'sessions' | 'files' | null>(null)
 const pendingPrompts = ref<PendingPrompt[]>([])
 const supportsVision = ref(false)
 const images = ref<Array<{ file: File; url: string }>>([])
@@ -47,8 +48,8 @@ let syncing = false
 let queuedMessages: ServerMessage[] = []
 
 const currentSessionPath = ref('/')
-const showSessions = computed(() => settings.sessionsOpen)
-const showFiles = computed(() => settings.filesOpen && (!narrowLayout.value || !showSessions.value))
+const showSessions = computed(() => narrowLayout.value ? narrowPanel.value === 'sessions' : settings.sessionsOpen)
+const showFiles = computed(() => narrowLayout.value ? narrowPanel.value === 'files' : settings.filesOpen)
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
 const selectedAgentRunning = computed(() => runningAgents.value.has(selectedAgentId.value))
 const selectedAgentCancelling = computed(() => cancellingAgents.value.has(selectedAgentId.value))
@@ -153,25 +154,29 @@ async function removeSession(session: SessionInfo) {
 }
 
 function toggleSessions() {
-  if (narrowLayout.value && !showSessions.value) {
-    settings.sessionsOpen = true
-    settings.filesOpen = false
-  } else {
-    settings.sessionsOpen = !settings.sessionsOpen
-  }
+  if (narrowLayout.value) narrowPanel.value = showSessions.value ? null : 'sessions'
+  else settings.sessionsOpen = !settings.sessionsOpen
 }
 
 function toggleFiles() {
-  if (narrowLayout.value && !showFiles.value) {
-    settings.filesOpen = true
-    settings.sessionsOpen = false
-  } else {
-    settings.filesOpen = !settings.filesOpen
-  }
+  if (narrowLayout.value) narrowPanel.value = showFiles.value ? null : 'files'
+  else settings.filesOpen = !settings.filesOpen
+}
+
+function closeSessions() {
+  if (narrowLayout.value) narrowPanel.value = null
+  else settings.sessionsOpen = false
+}
+
+function closeFiles() {
+  if (narrowLayout.value) narrowPanel.value = null
+  else settings.filesOpen = false
 }
 
 function updateLayout() {
-  narrowLayout.value = window.innerWidth < 900
+  const next = window.innerWidth < 900
+  if (next !== narrowLayout.value) narrowPanel.value = null
+  narrowLayout.value = next
 }
 
 function ensureAgentSelection() {
@@ -256,6 +261,7 @@ function disconnect() {
 }
 
 function switchSession(path: string, updateHistory = true) {
+  if (narrowLayout.value && narrowPanel.value === 'sessions') narrowPanel.value = null
   if (path === currentSessionPath.value && socket && socket.readyState < WebSocket.CLOSING) return
   disconnect()
   currentSessionPath.value = path
@@ -415,7 +421,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell">
-    <div v-if="showSessions" class="mobile-scrim session-scrim" @click="settings.sessionsOpen = false" />
+    <div v-if="narrowLayout && showSessions" class="mobile-scrim session-scrim" @click="closeSessions" />
     <SessionSidebar
       v-if="showSessions"
       :sessions="sessions"
@@ -423,7 +429,7 @@ onBeforeUnmount(() => {
       :can-manage="canManageSessions"
       :busy="sessionBusy"
       :error="sessionError"
-      @close="settings.sessionsOpen = false"
+      @close="closeSessions"
       @create="createSession"
       @remove="removeSession"
       @select="switchSession"
@@ -508,8 +514,8 @@ onBeforeUnmount(() => {
 
     </main>
 
-    <div v-if="showFiles" class="mobile-scrim workspace-scrim" @click="settings.filesOpen = false" />
-    <FileBrowser v-if="showFiles" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" @close="settings.filesOpen = false" />
+    <div v-if="narrowLayout && showFiles" class="mobile-scrim workspace-scrim" @click="closeFiles" />
+    <FileBrowser v-if="showFiles" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" @close="closeFiles" />
 
   </div>
 </template>

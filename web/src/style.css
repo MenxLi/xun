@@ -262,7 +262,7 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-menu button:disabled { opacity: .4; cursor: default; }
 .file-menu .danger { color: var(--danger); }
 .file-empty, .file-error { padding: 18px 10px; color: var(--muted); font-size: 10px; text-align: center; }
-.file-error { padding: 8px 10px; color: var(--danger); background: #f8e9e7; }
+.file-error { padding: 8px 10px; color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .file-preview { flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--paper); }
 .file-preview.is-fullscreen { position: fixed; inset: 0; width: 100vw; height: 100dvh !important; border: 0; z-index: 100; }
 .file-preview header { height: 36px; padding-left: 10px; flex: none; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }

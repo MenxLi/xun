@@ -53,9 +53,8 @@ defineEmits<{ dismiss: [] }>()
 .upload-status-icon.uploading svg { animation: upload-spin .8s linear infinite; }
 .upload-status-icon.failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--paper)); }
 .upload-file-list { min-width: 0; }
-.upload-file-row { min-width: 0; height: 32px; padding: 0 8px; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: center; border-radius: 4px; }
+.upload-file-row { min-width: 0; height: 32px; padding: 0 8px; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: center; }
 .upload-file-row + .upload-file-row { border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent); }
-.upload-file-row:hover { background: color-mix(in srgb, var(--hover) 70%, transparent); }
 .upload-file-row svg { color: var(--muted); }
 .upload-file-name { overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .upload-file-more { height: 28px; padding: 0 8px 0 32px; display: flex; align-items: center; border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }
