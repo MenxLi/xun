@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, Download, File, Folder, FolderArchive, FolderPlus, Info, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
+import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import UploadNotice from './UploadNotice.vue'
 import { api } from '../api'
@@ -17,6 +18,11 @@ const path = ref('')
 const entries = ref<FileEntry[]>([])
 const previewEntry = ref<FileInfo | null>(null)
 const infoEntry = ref<FileInfo | null>(null)
+const dialog = ref<'create' | 'move' | 'delete' | null>(null)
+const dialogEntry = ref<FileEntry | null>(null)
+const dialogValue = ref('')
+const dialogError = ref('')
+const dialogBusy = ref(false)
 const loading = ref(false)
 const uploading = ref(false)
 const dragActive = ref(false)
@@ -35,6 +41,8 @@ let listingRequest = 0
 let metadataRequest = 0
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
+const dialogTitle = computed(() => ({ create: 'New folder', move: 'Rename or move', delete: 'Delete path' })[dialog.value ?? 'create'])
+const dialogConfirmLabel = computed(() => ({ create: 'Create', move: 'Move', delete: 'Delete' })[dialog.value ?? 'create'])
 
 function archiveName(path: string) {
   return `${path.split('/').pop() || 'workspace'}.zip`
@@ -197,40 +205,43 @@ function dropFiles(event: DragEvent) {
   void upload(event.dataTransfer?.files ?? null)
 }
 
-async function remove(entry: FileEntry) {
-  if (!window.confirm(`Delete ${entry.name}?`)) return
-  try {
-    await api.remove(props.agentId, entry.path)
-    if (previewEntry.value?.path === entry.path) previewEntry.value = null
-    await refresh()
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Delete failed'
-  }
+function closeDialog() {
+  if (dialogBusy.value) return
+  dialog.value = null
+  dialogEntry.value = null
+  dialogValue.value = ''
+  dialogError.value = ''
 }
 
-
-async function createDirectory() {
+function openDialog(action: 'create' | 'move' | 'delete', entry: FileEntry | null = null) {
   closeMenu()
-  const name = window.prompt('New folder name')?.trim()
-  if (!name) return
-  try {
-    await api.createDirectory(props.agentId, childPath(name))
-    await refresh()
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not create folder'
-  }
+  dialogEntry.value = entry
+  dialogValue.value = action === 'move' ? entry?.path ?? '' : ''
+  dialogError.value = ''
+  dialog.value = action
 }
 
-async function move(entry: FileEntry) {
-  closeMenu()
-  const destination = window.prompt('New workspace-relative path', entry.path)?.trim()
-  if (!destination || destination === entry.path) return
+async function submitDialog() {
+  const action = dialog.value
+  const entry = dialogEntry.value
+  const value = dialogValue.value.trim()
+  if (!action || (action === 'create' && !value) || (action !== 'create' && !entry)) return
+  if (action === 'move' && (!value || value === entry?.path)) return
+  dialogBusy.value = true
+  dialogError.value = ''
   try {
-    await api.move(props.agentId, entry.path, destination)
-    if (previewEntry.value?.path === entry.path) previewEntry.value = null
+    if (action === 'create') await api.createDirectory(props.agentId, childPath(value))
+    if (action === 'move' && entry) await api.move(props.agentId, entry.path, value)
+    if (action === 'delete' && entry) await api.remove(props.agentId, entry.path)
+    if (entry && previewEntry.value?.path === entry.path) previewEntry.value = null
+    dialogBusy.value = false
+    closeDialog()
     await refresh()
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not move file'
+    const fallback = action === 'create' ? 'Could not create folder' : action === 'move' ? 'Could not move path' : 'Delete failed'
+    dialogError.value = reason instanceof Error ? reason.message : fallback
+  } finally {
+    dialogBusy.value = false
   }
 }
 
@@ -282,38 +293,39 @@ function goUp() {
     <Teleport to="body">
       <div v-if="activeMenu" class="file-menu" :style="menuPosition" @click.stop>
         <template v-if="activeMenu === 'toolbar'">
-          <button @click="createDirectory"><FolderPlus :size="14" /><span>New folder</span></button>
+          <button @click="openDialog('create')"><FolderPlus :size="14" /><span>New folder</span></button>
           <button :disabled="uploading" @click="fileInput?.click(); closeMenu()"><Upload :size="14" /><span>Upload files</span></button>
           <a :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" @click="closeMenu"><FolderArchive :size="14" /><span>Download folder</span></a>
         </template>
         <template v-else-if="activeEntry">
           <button @click="showInfo(activeEntry)"><Info :size="14" /><span>Info</span></button>
-          <button @click="move(activeEntry)"><Pencil :size="14" /><span>Rename or move</span></button>
+          <button @click="openDialog('move', activeEntry)"><Pencil :size="14" /><span>Rename or move</span></button>
           <a v-if="activeEntry.kind === 'file'" :href="api.downloadUrl(agentId, activeEntry.path)" :download="activeEntry.name" @click="closeMenu"><Download :size="14" /><span>Download</span></a>
           <a v-else :href="api.archiveUrl(agentId, activeEntry.path)" :download="archiveName(activeEntry.path)" @click="closeMenu"><FolderArchive :size="14" /><span>Download folder</span></a>
-          <button class="danger" @click="remove(activeEntry); closeMenu()"><Trash2 :size="14" /><span>Delete</span></button>
+          <button class="danger" @click="openDialog('delete', activeEntry)"><Trash2 :size="14" /><span>Delete</span></button>
         </template>
       </div>
 
-      <div v-if="infoEntry" class="file-info-backdrop" role="presentation" @click.self="infoEntry = null">
-        <section class="file-info-dialog" role="dialog" aria-modal="true" aria-labelledby="file-info-title">
-          <header>
-            <strong id="file-info-title">{{ infoEntry.name }}</strong>
-            <button class="icon-button" title="Close info" @click="infoEntry = null"><X :size="16" /></button>
-          </header>
-          <dl>
-            <dt>Path</dt><dd>{{ infoEntry.path }}</dd>
-            <dt>Type</dt><dd>{{ infoEntry.kind }}</dd>
-            <template v-if="infoEntry.kind === 'file'">
-              <dt>Size</dt><dd>{{ formatSize(infoEntry.size) }}</dd>
-              <dt>Media type</dt><dd>{{ infoEntry.media_type || 'Unknown' }}</dd>
-            </template>
-            <dt>Modified</dt><dd>{{ formatModified(infoEntry.modified_at) }}</dd>
-          </dl>
-        </section>
-      </div>
-
     </Teleport>
+
+    <AppDialog :open="dialog !== null" :title="dialogTitle" :confirm-label="dialogConfirmLabel" :danger="dialog === 'delete'" :busy="dialogBusy" :error="dialogError" @close="closeDialog" @confirm="submitDialog">
+      <label v-if="dialog !== 'delete'" class="dialog-field">
+        <span>{{ dialog === 'create' ? 'Folder name' : 'Workspace-relative path' }}</span>
+        <input v-model="dialogValue" autofocus autocomplete="off">
+      </label>
+      <p v-else>Delete <strong>{{ dialogEntry?.name }}</strong>? This cannot be undone.</p>
+    </AppDialog>
+    <AppDialog :open="infoEntry !== null" :title="infoEntry?.name || 'Info'" @close="infoEntry = null">
+      <dl v-if="infoEntry" class="file-info">
+        <dt>Path</dt><dd>{{ infoEntry.path }}</dd>
+        <dt>Type</dt><dd>{{ infoEntry.kind }}</dd>
+        <template v-if="infoEntry.kind === 'file'">
+          <dt>Size</dt><dd>{{ formatSize(infoEntry.size) }}</dd>
+          <dt>Media type</dt><dd>{{ infoEntry.media_type || 'Unknown' }}</dd>
+        </template>
+        <dt>Modified</dt><dd>{{ formatModified(infoEntry.modified_at) }}</dd>
+      </dl>
+    </AppDialog>
 
     <UploadNotice v-if="uploadNotice" v-bind="uploadNotice" @dismiss="uploadNotice = null" />
 

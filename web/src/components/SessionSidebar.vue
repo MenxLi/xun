@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { LoaderCircle, MessageSquare, Plus, Trash2, X } from 'lucide-vue-next'
+import AppDialog from './AppDialog.vue'
 import type { SessionInfo } from '../types'
 
 const props = defineProps<{
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 
 const creating = ref(false)
 const name = ref('')
+const removing = ref<SessionInfo | null>(null)
 
 function submit() {
   if (props.busy) return
@@ -31,8 +33,13 @@ function cancelCreate() {
 }
 
 function confirmRemove(session: SessionInfo) {
-  if (props.busy || !window.confirm(`Remove ${session.name}?`)) return
-  emit('remove', session)
+  if (!props.busy) removing.value = session
+}
+
+function remove() {
+  if (!removing.value || props.busy) return
+  emit('remove', removing.value)
+  removing.value = null
 }
 
 watch(() => props.busy, (busy, wasBusy) => {
@@ -84,5 +91,9 @@ watch(() => props.busy, (busy, wasBusy) => {
         ><Trash2 :size="14" /></button>
       </div>
     </nav>
+
+    <AppDialog :open="removing !== null" title="Remove session" confirm-label="Remove" danger :busy="busy" @close="removing = null" @confirm="remove">
+      <p>Remove <strong>{{ removing?.name }}</strong>? This cannot be undone.</p>
+    </AppDialog>
   </aside>
 </template>
