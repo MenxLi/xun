@@ -4,9 +4,9 @@ import { FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import { api } from '../api'
 import { previewKind } from '../preview'
-import type { FileEntry } from '../types'
+import type { FileInfo } from '../types'
 
-const props = defineProps<{ agentId: string; entry: FileEntry }>()
+const props = defineProps<{ agentId: string; entry: FileInfo }>()
 const emit = defineEmits<{ resize: [delta: number]; close: [] }>()
 
 const kind = computed(() => previewKind(props.entry.media_type))

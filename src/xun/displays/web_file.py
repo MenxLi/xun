@@ -16,6 +16,7 @@ import mimetypes
 import os
 import re
 import shutil
+import stat
 import tempfile
 import zipfile
 from functools import lru_cache
@@ -128,20 +129,17 @@ def _sniff_mime(path_str: str, mtime_ns: int, size: int) -> str:
         print(f"Warning: could not sniff media type for {path_str}: {exc}. Falling back to application/octet-stream.")
         return "application/octet-stream"
 
-def _media_type(path: Path, size: int | None = None) -> str:
-    """Override table, then extension guess, then a content sniff for extension-less files.
-    ``size`` may be supplied by callers that already stat'ed the file so the
-    empty-file check does not need another stat call.
-    """
+def _media_type(path: Path, file_stat: os.stat_result | None = None) -> str:
+    """Return an extension guess, falling back to a cached content sniff."""
     guess = MEDIA_TYPE_OVERRIDES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0]
     if guess:
         return guess
     try:
-        stat = path.stat()
+        file_stat = file_stat or path.stat()
     except OSError as exc:
         print(f"Warning: could not stat {path}: {exc}. Falling back to application/octet-stream.")
         return "application/octet-stream"
-    return _sniff_mime(str(path), stat.st_mtime_ns, stat.st_size if size is None else size)
+    return _sniff_mime(str(path), file_stat.st_mtime_ns, file_stat.st_size)
 
 
 def _slugify(path: str) -> str:
@@ -199,7 +197,7 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/files/{agent_id}")
-    def list_files(agent_id: str, path: str = "", details: bool = True) -> dict:
+    def list_files(agent_id: str, path: str = "") -> dict:
         # Sync on purpose: FastAPI runs the blocking directory walk on the
         # thread pool instead of stalling the event loop on large folders.
         agent = agent_getter(agent_id)
@@ -207,29 +205,38 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         if not target.is_dir():
             raise HTTPException(404, "Directory not found")
         root = agent.workspace.workdir.resolve()
-        # os.scandir DirEntry caches the type info from the directory scan, so
-        # is_symlink/is_dir are free on most filesystems, and each file that
-        # needs details is stat'ed exactly once and reused for size, sort, and
-        # the media-type sniff.
+        # DirEntry reuses type information from the directory scan on most
+        # filesystems, avoiding a stat call per item.
         with os.scandir(target) as scan:
             children = [entry for entry in scan if not entry.is_symlink()]
-        infos = []
-        for entry in children:
-            is_directory = entry.is_dir()
-            stat = None if not details or is_directory else entry.stat()
-            infos.append((entry, is_directory, stat))
-        infos.sort(key=lambda info: (not info[1], info[0].name.lower()))
+        children_with_kind = [(entry, entry.is_dir()) for entry in children]
+        children_with_kind.sort(key=lambda item: (not item[1], item[0].name.lower()))
         entries = [
             {
                 "name": entry.name,
                 "path": Path(entry.path).relative_to(root).as_posix(),
                 "kind": "directory" if is_directory else "file",
-                "size": stat.st_size if stat else None,
-                "media_type": _media_type(Path(entry.path), stat.st_size if stat else None) if stat else None,
             }
-            for entry, is_directory, stat in infos
+            for entry, is_directory in children_with_kind
         ]
         return {"path": path, "entries": entries}
+
+    @router.get("/api/files/{agent_id}/info")
+    def file_info(agent_id: str, path: str) -> dict:
+        target = resolve_path(agent_getter(agent_id), path)
+        try:
+            file_stat = target.stat()
+        except OSError as exc:
+            raise HTTPException(404, "Path not found") from exc
+        is_directory = stat.S_ISDIR(file_stat.st_mode)
+        return {
+            "name": target.name,
+            "path": path,
+            "kind": "directory" if is_directory else "file",
+            "size": None if is_directory else file_stat.st_size,
+            "media_type": None if is_directory else _media_type(target, file_stat),
+            "modified_at": file_stat.st_mtime,
+        }
 
     @router.get("/api/files/{agent_id}/content")
     async def file_content(agent_id: str, path: str) -> Response:

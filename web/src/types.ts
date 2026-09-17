@@ -76,8 +76,12 @@ export interface FileEntry {
   name: string
   path: string
   kind: 'file' | 'directory'
+}
+
+export interface FileInfo extends FileEntry {
   size: number | null
   media_type: string | null
+  modified_at: number
 }
 
 export interface FileListing {

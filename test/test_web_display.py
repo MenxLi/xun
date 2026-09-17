@@ -112,15 +112,17 @@ class WebDisplayTest(unittest.TestCase):
         agents = self.client.get("api/agents").json()
         commands = self.client.get("api/commands/agent-1").json()
         listing = self.client.get("api/files/agent-1").json()
-        lightweight = self.client.get("api/files/agent-1", params={"details": "false"}).json()
+        info = self.client.get("api/files/agent-1/info", params={"path": "note.md"}).json()
 
         self.assertEqual(agents[0]["identifier"], "agent-1")
         self.assertEqual(Path(agents[0]["workdir"]), self.root.resolve())
         self.assertEqual([command["name"] for command in commands], ["help", "sample"])
         self.assertEqual([entry["name"] for entry in listing["entries"]], ["folder", "note.md"])
-        self.assertEqual(listing["entries"][1]["media_type"], "text/markdown")
-        self.assertIsNone(lightweight["entries"][1]["size"])
-        self.assertIsNone(lightweight["entries"][1]["media_type"])
+        self.assertNotIn("size", listing["entries"][1])
+        self.assertNotIn("media_type", listing["entries"][1])
+        self.assertEqual(info["size"], 6)
+        self.assertEqual(info["media_type"], "text/markdown")
+        self.assertEqual(info["kind"], "file")
 
     def test_file_routes_are_opt_in(self) -> None:
         display = WebDisplay()
@@ -276,8 +278,10 @@ class WebDisplayTest(unittest.TestCase):
         (self.root / "blob.bin").write_bytes(b"\x00\x01\x02")
         (self.root / "Makefile").write_text("all:\n\techo hi\n", encoding="utf-8")
 
-        listing = self.client.get("api/files/agent-1").json()
-        media_types = {entry["name"]: entry["media_type"] for entry in listing["entries"] if entry["kind"] == "file"}
+        media_types = {
+            name: self.client.get("api/files/agent-1/info", params={"path": name}).json()["media_type"]
+            for name in ("pic.png", "report.pdf", "data.json", "blob.bin", "Makefile")
+        }
         self.assertEqual(media_types["pic.png"], "image/png")
         self.assertEqual(media_types["report.pdf"], "application/pdf")
         self.assertEqual(media_types["data.json"], "application/json")

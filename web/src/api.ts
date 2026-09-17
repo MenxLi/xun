@@ -1,4 +1,4 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, PendingPrompt, SessionInfo, SessionList, WebConfig } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, SessionInfo, SessionList, WebConfig } from './types'
 
 const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
 const inferredServiceRoot = location.pathname.match(/^(.*)\/chat(?:\/|$)/)?.[1] ?? ''
@@ -79,8 +79,10 @@ export const api = {
   running: () => request<string[]>(appUrl('/api/running')),
   commands: (agentId: string) => request<CommandInfo[]>(appUrl(`/api/commands/${encodeURIComponent(agentId)}`)),
   capabilities: (agentId: string) => request<ModelCapabilities>(appUrl(`/api/capabilities/${encodeURIComponent(agentId)}`)),
-  files: (agentId: string, path = '', details = true) =>
-    request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path, details: String(details) })}`)),
+  files: (agentId: string, path = '') =>
+    request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`)),
+  fileInfo: (agentId: string, path: string) =>
+    request<FileInfo>(appUrl(`/api/files/${encodeURIComponent(agentId)}/info?${query({ path })}`)),
   contentUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/content?${query({ path })}`),
   textContent: (agentId: string, path: string) =>

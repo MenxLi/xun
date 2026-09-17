@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowLeft, Download, File, FileText, Folder, FolderArchive, FolderPlus, Image, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Download, File, Folder, FolderArchive, FolderPlus, Info, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import UploadNotice from './UploadNotice.vue'
 import { api } from '../api'
-import { previewKind } from '../preview'
-import type { AgentInfo, FileEntry } from '../types'
+import type { AgentInfo, FileEntry, FileInfo } from '../types'
 import { useSettingsStore } from '../stores/settings'
 
 const props = defineProps<{ agents: AgentInfo[]; agentId: string; available: boolean | null }>()
@@ -16,7 +15,8 @@ const settings = useSettingsStore()
 
 const path = ref('')
 const entries = ref<FileEntry[]>([])
-const previewEntry = ref<FileEntry | null>(null)
+const previewEntry = ref<FileInfo | null>(null)
+const infoEntry = ref<FileInfo | null>(null)
 const loading = ref(false)
 const uploading = ref(false)
 const dragActive = ref(false)
@@ -32,6 +32,7 @@ const uploadNotice = ref<{
 } | null>(null)
 let dragDepth = 0
 let listingRequest = 0
+let metadataRequest = 0
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
@@ -52,7 +53,7 @@ function toggleMenu(kind: 'toolbar' | 'entry', event: MouseEvent, entry?: FileEn
   const rect = button.getBoundingClientRect()
   const margin = 6
   const width = 176
-  const height = 106
+  const height = kind === 'entry' ? 138 : 106
   const top = rect.bottom + 4 + height <= window.innerHeight - margin
     ? rect.bottom + 4
     : rect.top - height - 4
@@ -89,9 +90,11 @@ function resizePreview(delta: number) {
 }
 
 watch([() => props.agentId, () => props.available], () => {
+  metadataRequest += 1
   closeMenu()
   path.value = ''
   previewEntry.value = null
+  infoEntry.value = null
   void refresh()
 }, { immediate: true })
 
@@ -114,15 +117,41 @@ async function refresh() {
   }
 }
 
-function open(entry: FileEntry) {
+async function open(entry: FileEntry) {
   if (entry.kind === 'directory') {
     path.value = entry.path
     previewEntry.value = null
     void refresh()
   } else {
-    // FilePreview renders inline or offers a download, based on media type.
-    previewEntry.value = entry
+    const request = ++metadataRequest
+    try {
+      const info = await api.fileInfo(props.agentId, entry.path)
+      if (request === metadataRequest) previewEntry.value = info
+    } catch (reason) {
+      if (request === metadataRequest) error.value = reason instanceof Error ? reason.message : 'Could not inspect file'
+    }
   }
+}
+
+async function showInfo(entry: FileEntry) {
+  closeMenu()
+  const request = ++metadataRequest
+  error.value = ''
+  try {
+    const info = await api.fileInfo(props.agentId, entry.path)
+    if (request === metadataRequest) infoEntry.value = info
+  } catch (reason) {
+    if (request === metadataRequest) error.value = reason instanceof Error ? reason.message : 'Could not inspect path'
+  }
+}
+
+function formatSize(size: number | null) {
+  if (size === null) return '—'
+  return new Intl.NumberFormat(undefined, { style: 'unit', unit: 'byte', unitDisplay: 'short' }).format(size)
+}
+
+function formatModified(timestamp: number) {
+  return new Date(timestamp * 1000).toLocaleString()
 }
 
 async function upload(files: FileList | null) {
@@ -238,11 +267,9 @@ function goUp() {
     <div class="file-list" :aria-busy="loading || uploading" @scroll="closeMenu">
       <div v-if="available === false" class="file-empty">File access is disabled.</div>
       <div v-else-if="available && agentId && !loading && !entries.length" class="file-empty">This folder is empty.</div>
-      <div v-for="entry in entries" :key="entry.path" class="file-row" @dblclick="open(entry)">
+      <div v-for="entry in entries" :key="entry.path" class="file-row">
         <button class="file-name" :title="entry.name" @click="open(entry)">
           <Folder v-if="entry.kind === 'directory'" :size="16" />
-          <Image v-else-if="previewKind(entry.media_type) === 'image'" :size="16" />
-          <FileText v-else-if="previewKind(entry.media_type) === 'text'" :size="16" />
           <File v-else :size="16" />
           <span>{{ entry.name }}</span>
         </button>
@@ -260,11 +287,30 @@ function goUp() {
           <a :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" @click="closeMenu"><FolderArchive :size="14" /><span>Download folder</span></a>
         </template>
         <template v-else-if="activeEntry">
+          <button @click="showInfo(activeEntry)"><Info :size="14" /><span>Info</span></button>
           <button @click="move(activeEntry)"><Pencil :size="14" /><span>Rename or move</span></button>
           <a v-if="activeEntry.kind === 'file'" :href="api.downloadUrl(agentId, activeEntry.path)" :download="activeEntry.name" @click="closeMenu"><Download :size="14" /><span>Download</span></a>
           <a v-else :href="api.archiveUrl(agentId, activeEntry.path)" :download="archiveName(activeEntry.path)" @click="closeMenu"><FolderArchive :size="14" /><span>Download folder</span></a>
           <button class="danger" @click="remove(activeEntry); closeMenu()"><Trash2 :size="14" /><span>Delete</span></button>
         </template>
+      </div>
+
+      <div v-if="infoEntry" class="file-info-backdrop" role="presentation" @click.self="infoEntry = null">
+        <section class="file-info-dialog" role="dialog" aria-modal="true" aria-labelledby="file-info-title">
+          <header>
+            <strong id="file-info-title">{{ infoEntry.name }}</strong>
+            <button class="icon-button" title="Close info" @click="infoEntry = null"><X :size="16" /></button>
+          </header>
+          <dl>
+            <dt>Path</dt><dd>{{ infoEntry.path }}</dd>
+            <dt>Type</dt><dd>{{ infoEntry.kind }}</dd>
+            <template v-if="infoEntry.kind === 'file'">
+              <dt>Size</dt><dd>{{ formatSize(infoEntry.size) }}</dd>
+              <dt>Media type</dt><dd>{{ infoEntry.media_type || 'Unknown' }}</dd>
+            </template>
+            <dt>Modified</dt><dd>{{ formatModified(infoEntry.modified_at) }}</dd>
+          </dl>
+        </section>
       </div>
 
     </Teleport>

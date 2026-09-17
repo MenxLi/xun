@@ -107,7 +107,7 @@ watch(
     files.value = []
     if (directory === null || !agentId || !available) return
     try {
-      const listing = await api.files(agentId, directory, false)
+      const listing = await api.files(agentId, directory)
       if (request === fileRequest) files.value = listing.entries
     } catch {
       if (request === fileRequest) files.value = []
