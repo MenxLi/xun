@@ -18,6 +18,7 @@ import re
 import shutil
 import tempfile
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal
 
@@ -113,21 +114,34 @@ def resolve_entry_path(agent: "Agent[Agent.T.Any]", relative_path: str) -> Path:
     return parent / target.name
 
 
-def _media_type(path: Path) -> str:
-    """Override table, then extension guess, then a content sniff for extension-less files."""
+@lru_cache(maxsize=4096)
+def _sniff_mime(path_str: str, mtime_ns: int, size: int) -> str:
+    """Content sniff cached by path+mtime+size so repeat listings skip the reads."""
+    try:
+        if size == 0:
+            # puremagic raises PureValueError on empty input; empty files have
+            # nothing to sniff and are best treated as plain text.
+            return "text/plain"
+        return puremagic.from_file(path_str, mime=True)
+    except (puremagic.PureError, ValueError, OSError) as exc:
+        # PureValueError subclasses ValueError, not PureError, in puremagic 2.x.
+        print(f"Warning: could not sniff media type for {path_str}: {exc}. Falling back to application/octet-stream.")
+        return "application/octet-stream"
+
+def _media_type(path: Path, size: int | None = None) -> str:
+    """Override table, then extension guess, then a content sniff for extension-less files.
+    ``size`` may be supplied by callers that already stat'ed the file so the
+    empty-file check does not need another stat call.
+    """
     guess = MEDIA_TYPE_OVERRIDES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0]
     if guess:
         return guess
     try:
-        if path.stat().st_size == 0:
-            # puremagic raises PureValueError on empty input; empty files have
-            # nothing to sniff and are best treated as plain text.
-            return "text/plain"
-        return puremagic.from_file(str(path), mime=True)
-    except (puremagic.PureError, ValueError, OSError) as exc:
-        # PureValueError subclasses ValueError, not PureError, in puremagic 2.x.
-        print(f"Warning: could not sniff media type for {path}: {exc}. Falling back to application/octet-stream.")
+        stat = path.stat()
+    except OSError as exc:
+        print(f"Warning: could not stat {path}: {exc}. Falling back to application/octet-stream.")
         return "application/octet-stream"
+    return _sniff_mime(str(path), stat.st_mtime_ns, stat.st_size if size is None else size)
 
 
 def _slugify(path: str) -> str:
@@ -185,22 +199,36 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/files/{agent_id}")
-    async def list_files(agent_id: str, path: str = "", details: bool = True) -> dict:
+    def list_files(agent_id: str, path: str = "", details: bool = True) -> dict:
+        # Sync on purpose: FastAPI runs the blocking directory walk on the
+        # thread pool instead of stalling the event loop on large folders.
         agent = agent_getter(agent_id)
         target = resolve_path(agent, path)
         if not target.is_dir():
             raise HTTPException(404, "Directory not found")
-        entries = []
-        items = (item for item in target.iterdir() if not item.is_symlink())
-        for item in sorted(items, key=lambda value: (not value.is_dir(), value.name.lower())):
-            is_directory = item.is_dir()
-            entries.append({
-                "name": item.name,
-                "path": item.relative_to(agent.workspace.workdir.resolve()).as_posix(),
+        root = agent.workspace.workdir.resolve()
+        # os.scandir DirEntry caches the type info from the directory scan, so
+        # is_symlink/is_dir are free on most filesystems, and each file that
+        # needs details is stat'ed exactly once and reused for size, sort, and
+        # the media-type sniff.
+        with os.scandir(target) as scan:
+            children = [entry for entry in scan if not entry.is_symlink()]
+        infos = []
+        for entry in children:
+            is_directory = entry.is_dir()
+            stat = None if not details or is_directory else entry.stat()
+            infos.append((entry, is_directory, stat))
+        infos.sort(key=lambda info: (not info[1], info[0].name.lower()))
+        entries = [
+            {
+                "name": entry.name,
+                "path": Path(entry.path).relative_to(root).as_posix(),
                 "kind": "directory" if is_directory else "file",
-                "size": item.stat().st_size if details and not is_directory else None,
-                "media_type": _media_type(item) if details and not is_directory else None,
-            })
+                "size": stat.st_size if stat else None,
+                "media_type": _media_type(Path(entry.path), stat.st_size if stat else None) if stat else None,
+            }
+            for entry, is_directory, stat in infos
+        ]
         return {"path": path, "entries": entries}
 
     @router.get("/api/files/{agent_id}/content")
