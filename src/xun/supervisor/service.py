@@ -18,23 +18,39 @@ class Supervisor:
         self.backend = containers
         self.interval = interval
         self.active: dict[str, ManagedContainer] = {}
+        self.pruned = False
 
     async def reconcile(self) -> None:
         users = {user.name: user for user in await asyncio.to_thread(self.store.list)}
         for name, container in list(self.active.items()):
             user = users.get(name)
-            unchanged = user is not None and container.token == user.token
+            unchanged = (
+                user is not None
+                and container.token == user.token
+                and container.generation == user.generation
+            )
             running = unchanged and await asyncio.to_thread(self.backend.is_running, container)
             if not running:
                 await asyncio.to_thread(self.backend.stop, container)
                 del self.active[name]
 
         for name, user in users.items():
-            if name not in self.active:
-                try:
-                    self.active[name] = await asyncio.to_thread(self.backend.start, user)
-                except Exception as error:
-                    _console.print(f"[red]Failed to start container for {name}: {error}[/red]")
+            if name in self.active:
+                continue
+            try:
+                adopted = await asyncio.to_thread(self.backend.adopt, user)
+                if adopted is not None and (
+                    adopted.token != user.token or adopted.generation != user.generation
+                ):
+                    await asyncio.to_thread(self.backend.stop, adopted)
+                    adopted = None
+                self.active[name] = adopted or await asyncio.to_thread(self.backend.start, user)
+            except Exception as error:
+                _console.print(f"[red]Failed to start container for {name}: {error}[/red]")
+
+        if not self.pruned:
+            await asyncio.to_thread(self.backend.prune, {c.id for c in self.active.values()})
+            self.pruned = True
 
     async def run(self) -> None:
         while True:
@@ -48,19 +64,10 @@ class Supervisor:
                 _console.print(f"[red]Failed to reconcile containers: {error}[/red]")
             await asyncio.sleep(self.interval)
 
-    async def stop(self) -> None:
-        for container in list(self.active.values()):
-            try:
-                await asyncio.to_thread(self.backend.stop, container)
-            except Exception as error:
-                _console.print(f"[red]Failed to stop container {container.id}: {error}[/red]")
-        self.active.clear()
-
     @asynccontextmanager
     async def lifecycle(self):
         task: asyncio.Task[None] | None = None
         try:
-            await asyncio.to_thread(self.backend.cleanup)
             await self.reconcile()
             task = asyncio.create_task(self.run())
             yield
@@ -69,7 +76,6 @@ class Supervisor:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
-            await self.stop()
             await asyncio.to_thread(self.backend.close)
 
 

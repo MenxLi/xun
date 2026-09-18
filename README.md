@@ -155,16 +155,22 @@ xunc --copy .       # copy the current directory into /workspace instead
 
 ### Multiplexed server
 
-`xunx` runs one temporary container per registered user, proxied through one public server:
+`xunx` runs one persistent container per registered user, proxied through one public server:
 
 ```bash
 xunx user-add alice   # prints the access token
 xunx user-list
-xunx user-del alice   # disconnects the user and removes its container
+xunx user-del alice   # the running container is stopped within one reconcile interval
 xunx serve --host 0.0.0.0 --port 18960 --port-range 20000-20100
+
+xunx upgrade alice    # recreate her container from the current image (or --all)
 ```
 
-Open `http://localhost:18960/alice?token=TOKEN`. Users live in `$XUN_HOME/x/xunx.db`; container ports are drawn randomly from `--port-range` and bound to host loopback only. Workspaces are temporary, and managed containers are cleaned up on shutdown (stale ones on next start). `XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container.
+Open `http://localhost:18960/alice?token=TOKEN`. Users live in `$XUN_HOME/x/xunx.db`; container ports are drawn randomly from `--port-range` and bound to host loopback only. 
+Containers outlive `serve` shutdown and are re-adopted (keeping in-container sessions alive) on the next start; containers left for deleted users are pruned then. 
+Containers are named `xunx-<instance>-<user>`, so use `docker ps` / `docker logs` to inspect them directly. 
+`xunx upgrade` only records intent — the running `serve` process recreates flagged containers on its next reconcile, and recreation discards in-container data (workspace, saved conversations). 
+`XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container.
 
 <details>
 <summary>Frontend development</summary>

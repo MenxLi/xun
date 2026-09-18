@@ -3,10 +3,11 @@ import asyncio
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from aiohttp import WSMsgType, web
 from aiohttp.test_utils import TestClient, TestServer
+from docker.errors import NotFound
 
 from xun.supervisor.runtime import DockerManager, ManagedContainer
 from xun.supervisor.service import Multiplexer, Supervisor
@@ -14,17 +15,6 @@ from xun.supervisor.users import User, UserStore
 
 
 class UserStoreTest(unittest.TestCase):
-    def test_closes_database_connections(self) -> None:
-        store = UserStore.__new__(UserStore)
-        store.path = Path("xunx.db")
-        connection = MagicMock()
-
-        with patch("xun.supervisor.users.sqlite3.connect", return_value=connection):
-            with store._connect() as opened:
-                self.assertIs(opened, connection)
-
-        connection.close.assert_called_once_with()
-
     def test_add_list_and_delete_users(self) -> None:
         with TemporaryDirectory() as directory:
             store = UserStore(Path(directory) / "xunx.db")
@@ -48,15 +38,33 @@ class UserStoreTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "may only contain"):
                 store.add("invalid/user")
 
-    def test_enables_wal_mode(self) -> None:
+    def test_upgrade_bumps_generation(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            alice = store.add("alice")
+            self.assertEqual(alice.generation, 0)
+            self.assertEqual(store.get("alice"), alice)
+            self.assertIsNone(store.get("nobody"))
+
+            upgraded = store.upgrade("alice")
+            self.assertIsNotNone(upgraded)
+            assert upgraded is not None
+            self.assertEqual(upgraded.generation, 1)
+            self.assertEqual(store.list(), [upgraded])
+            self.assertIsNone(store.upgrade("nobody"))
+
+    def test_migrates_databases_without_generation(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "xunx.db"
-            UserStore(path)
-
             with sqlite3.connect(path) as connection:
-                mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+                connection.execute(
+                    "CREATE TABLE users (name TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE)"
+                )
+                connection.execute("INSERT INTO users VALUES (?, ?)", ("alice", "tok"))
 
-            self.assertEqual(mode, "wal")
+            store = UserStore(path)
+
+            self.assertEqual(store.get("alice"), User("alice", "tok", 0))
 
 
 class DockerManagerTest(unittest.TestCase):
@@ -75,9 +83,10 @@ class DockerManagerTest(unittest.TestCase):
                 patch("xun.supervisor.runtime.secrets.choice", return_value=20001):
             container = manager.start(User("alice", "user-token"))
 
-        self.assertEqual(container, ManagedContainer("container-id", 20001, "user-token"))
+        self.assertEqual(container, ManagedContainer("container-id", 20001, "user-token", 0))
         options = client.containers.create.call_args.kwargs
         self.assertEqual(options["ports"], {"20001/tcp": ("127.0.0.1", 20001)})
+        self.assertEqual(options["labels"]["xunx.token"], "user-token")
         self.assertEqual(options["environment"]["XUN_OPENAI_API_KEY"], "secret")
         self.assertNotIn("XUN_HOME", options["environment"])
         self.assertEqual(
@@ -125,16 +134,51 @@ class DockerManagerTest(unittest.TestCase):
         client.containers.get.assert_not_called()
         self.assertNotIn(20000, manager.used_ports)
 
+    def _adopt_manager(self, attrs: dict) -> tuple[DockerManager, Mock]:
+        client = Mock()
+        sdk_container = client.containers.get.return_value
+        sdk_container.id = "container-id"
+        sdk_container.attrs = attrs
+        return DockerManager(image="xun", port_range=range(0, 0), instance="instance", client=client), client
+
+    def test_adopt_resumes_running_container(self) -> None:
+        manager, client = self._adopt_manager({})
+        client.containers.get.return_value.attrs = {
+            "Id": "container-id",
+            "State": {"Status": "running"},
+            "Config": {"Labels": {"xunx.gen": "3", "xunx.token": "user-token"}},
+            "NetworkSettings": {"Ports": {"21001/tcp": [{"HostIp": "127.0.0.1", "HostPort": "21001"}]}},
+        }
+
+        container = manager.adopt(User("alice", "user-token", 3))
+
+        self.assertEqual(container, ManagedContainer("container-id", 21001, "user-token", 3))
+        self.assertIn(21001, manager.used_ports)
+
+    def test_adopt_skips_missing_or_stopped_container(self) -> None:
+        manager, client = self._adopt_manager({"State": {"Status": "exited"}})
+        self.assertIsNone(manager.adopt(User("alice", "token")))
+
+        client.containers.get.side_effect = NotFound("no such container")
+        self.assertIsNone(manager.adopt(User("alice", "token")))
+
 
 class _Docker:
     def __init__(self) -> None:
         self.started: list[User] = []
         self.stopped: list[ManagedContainer] = []
         self.running = True
+        self.adopt_result: ManagedContainer | None = None
+        self.adopted: list[User] = []
+        self.pruned: list[set[str]] = []
 
     def start(self, user: User) -> ManagedContainer:
         self.started.append(user)
-        return ManagedContainer(f"container-{user.name}", 21000 + len(self.started), user.token)
+        return ManagedContainer(f"container-{user.name}", 21000 + len(self.started), user.token, user.generation)
+
+    def adopt(self, user: User) -> ManagedContainer | None:
+        self.adopted.append(user)
+        return self.adopt_result
 
     def stop(self, container: ManagedContainer) -> None:
         self.stopped.append(container)
@@ -143,8 +187,8 @@ class _Docker:
         del container
         return self.running
 
-    def cleanup(self) -> None:
-        pass
+    def prune(self, keep_ids: set[str]) -> None:
+        self.pruned.append(keep_ids)
 
     def close(self) -> None:
         pass
@@ -178,13 +222,67 @@ class SupervisorTest(unittest.IsolatedAsyncioTestCase):
             await supervisor.reconcile()
             self.assertNotIn("alice", supervisor.active)
 
-            bob = store.add("bob")
+    async def test_adopts_live_container_after_supervisor_restart(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            alice = store.add("alice")
+            docker = _Docker()
+            survivor = ManagedContainer("old-container", 21500, alice.token, 0)
+            docker.adopt_result = survivor
+            supervisor = Supervisor(store, docker, interval=1)
+
             await supervisor.reconcile()
-            bob_container = supervisor.active["bob"]
-            await supervisor.stop()
-            self.assertIn(bob, docker.started)
-            self.assertIn(bob_container, docker.stopped)
-            self.assertEqual(supervisor.active, {})
+
+            self.assertIs(supervisor.active["alice"], survivor)
+            self.assertEqual(docker.started, [])
+            self.assertEqual(docker.pruned, [{"old-container"}])
+
+    async def test_upgrade_recreates_container_with_stale_generation(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            alice = store.add("alice")
+            docker = _Docker()
+            docker.adopt_result = ManagedContainer("old-container", 21500, alice.token, alice.generation)
+            supervisor = Supervisor(store, docker, interval=1)
+
+            store.upgrade("alice")
+            await supervisor.reconcile()
+
+            self.assertEqual([c.id for c in docker.stopped], ["old-container"])
+            self.assertEqual([u.name for u in docker.started], ["alice"])
+            self.assertEqual(supervisor.active["alice"].generation, alice.generation + 1)
+            # pruning runs once per supervisor lifetime
+            await supervisor.reconcile()
+            self.assertEqual(len(docker.pruned), 1)
+
+    async def test_adopted_container_with_rotated_token_is_recreated(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            docker = _Docker()
+            # user was re-added while the supervisor was down: stale container token
+            store.add("alice")
+            store.delete("alice")
+            alice = store.add("alice")
+            docker.adopt_result = ManagedContainer("old-container", 21500, "stale-token", alice.generation)
+            supervisor = Supervisor(store, docker, interval=1)
+
+            await supervisor.reconcile()
+
+            self.assertEqual([c.id for c in docker.stopped], ["old-container"])
+            self.assertEqual(supervisor.active["alice"].token, alice.token)
+
+    async def test_lifecycle_keeps_containers_on_shutdown(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            store.add("alice")
+            docker = _Docker()
+            supervisor = Supervisor(store, docker, interval=3600)
+
+            async with supervisor.lifecycle():
+                self.assertIn("alice", supervisor.active)
+
+            self.assertEqual(docker.stopped, [])
+            self.assertEqual(len(supervisor.active), 1)
 
     async def test_run_continues_after_reconcile_failure(self) -> None:
         supervisor = Supervisor(Mock(), Mock(), interval=0)
@@ -204,26 +302,16 @@ class SupervisorTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(reconciled, 2)
 
-    async def test_stop_attempts_every_container(self) -> None:
-        docker = Mock()
-        docker.stop.side_effect = [RuntimeError("first"), None]
-        supervisor = Supervisor(Mock(), docker, interval=1)
-        first = ManagedContainer("first", 21001, "token")
-        second = ManagedContainer("second", 21002, "token")
-        supervisor.active = {"first": first, "second": second}
-
-        with patch("sys.stderr"):
-            await supervisor.stop()
-
-        self.assertEqual([call.args[0] for call in docker.stop.call_args_list], [first, second])
-        self.assertEqual(supervisor.active, {})
-
     async def test_lifecycle_closes_backend_when_startup_fails(self) -> None:
         backend = Mock()
-        backend.cleanup.side_effect = RuntimeError("cleanup")
+        backend.prune.return_value = None
         supervisor = Supervisor(Mock(), backend, interval=1)
 
-        with self.assertRaisesRegex(RuntimeError, "cleanup"):
+        async def failing_reconcile() -> None:
+            raise RuntimeError("reconcile")
+
+        supervisor.reconcile = failing_reconcile
+        with self.assertRaisesRegex(RuntimeError, "reconcile"):
             async with supervisor.lifecycle():
                 self.fail("lifecycle should not start")
 

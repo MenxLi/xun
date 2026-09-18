@@ -6,7 +6,6 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from ..config import get_home_dir
 
@@ -18,6 +17,8 @@ _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 class User:
     name: str
     token: str
+    generation: int = 0
+    """Bumped by `xunx upgrade`; containers are recreated once they lag behind it."""
 
     @property
     def base_path(self) -> str:
@@ -33,9 +34,16 @@ class UserStore:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS users ("
                 "name TEXT PRIMARY KEY, "
-                "token TEXT NOT NULL UNIQUE"
+                "token TEXT NOT NULL UNIQUE, "
+                "generation INTEGER NOT NULL DEFAULT 0"
                 ")"
             )
+            # databases created before the upgrade feature have no generation
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+            if "generation" not in columns:
+                connection.execute(
+                    "ALTER TABLE users ADD COLUMN generation INTEGER NOT NULL DEFAULT 0"
+                )
 
     @contextmanager
     def _connect(self):
@@ -65,9 +73,24 @@ class UserStore:
             cursor = connection.execute("DELETE FROM users WHERE name = ?", (name,))
         return cursor.rowcount > 0
 
+    def get(self, name: str) -> User | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT name, token, generation FROM users WHERE name = ?", (name,)
+            ).fetchone()
+        return User(name=row[0], token=row[1], generation=row[2]) if row else None
+
     def list(self) -> list[User]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT name, token FROM users ORDER BY name"
+                "SELECT name, token, generation FROM users ORDER BY name"
             ).fetchall()
-        return [User(name=name, token=token) for name, token in rows]
+        return [User(name=name, token=token, generation=generation) for name, token, generation in rows]
+
+    def upgrade(self, name: str) -> User | None:
+        """Mark one user's container for recreation on the next reconciliation."""
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE users SET generation = generation + 1 WHERE name = ?", (name,)
+            )
+        return self.get(name)

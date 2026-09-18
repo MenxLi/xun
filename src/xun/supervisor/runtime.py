@@ -85,13 +85,16 @@ class ManagedContainer:
     id: str
     port: int
     token: str
+    generation: int = 0
+    """The user generation this container was created for; used to detect `xunx upgrade`."""
 
 
 class ContainerManager(Protocol):
     def start(self, user: User) -> ManagedContainer: ...
+    def adopt(self, user: User) -> ManagedContainer | None: ...
     def stop(self, container: ManagedContainer) -> None: ...
     def is_running(self, container: ManagedContainer) -> bool: ...
-    def cleanup(self) -> None: ...
+    def prune(self, keep_ids: set[str]) -> None: ...
     def close(self) -> None: ...
 
 
@@ -116,6 +119,9 @@ class DockerManager:
     @property
     def label(self) -> str:
         return f"xunx.instance={self.instance}"
+
+    def container_name(self, user: User) -> str:
+        return f"xunx-{self.instance[:8]}-{user.name}"
 
     def _port_available(self, port: int) -> bool:
         if port in self.used_ports:
@@ -154,7 +160,7 @@ class DockerManager:
 
     def start(self, user: User) -> ManagedContainer:
         port = self._allocate_port()
-        name = f"xunx-{self.instance[:8]}-{user.name}"
+        name = self.container_name(user)
         container: DockerContainer | None = None
         try:
             container = self.client.containers.create(
@@ -167,19 +173,47 @@ class DockerManager:
                 auto_remove=True,
                 ports={f"{port}/tcp": ("127.0.0.1", port)},
                 environment=matching_environment(self.env_patterns, exclude={"XUN_HOME"}),
-                labels={"xunx.managed": "true", "xunx.instance": self.instance},
+                labels={
+                    "xunx.managed": "true",
+                    "xunx.instance": self.instance,
+                    "xunx.gen": str(user.generation),
+                    "xunx.token": user.token,
+                },
             )
             container.start()
             self._stream_logs(container, name)
             if not isinstance(container.id, str):
                 raise RuntimeError("Docker SDK returned a container without an ID")
-            return ManagedContainer(id=container.id, port=port, token=user.token)
+            return ManagedContainer(id=container.id, port=port, token=user.token, generation=user.generation)
         except BaseException:
             self.used_ports.discard(port)
             if container is not None:
                 with suppress(NotFound):
                     container.remove(force=True)
             raise
+
+    def adopt(self, user: User) -> ManagedContainer | None:
+        """Take over a still-running container left behind by a previous supervisor run."""
+        try:
+            container = self.client.containers.get(self.container_name(user))
+        except NotFound:
+            return None
+        attrs = container.attrs
+        if attrs.get("State", {}).get("Status") != "running":
+            return None
+        port = _published_port(attrs)
+        container_id = attrs.get("Id")
+        if port is None or not isinstance(container_id, str):
+            return None
+        # the token recorded here is the one the container was created with,
+        # so a rotated token (user re-added while the supervisor was down)
+        # shows up as a mismatch for reconcile to recreate against
+        labels = (attrs.get("Config") or {}).get("Labels") or {}
+        generation = int(labels.get("xunx.gen", 0))
+        self.used_ports.add(port)
+        return ManagedContainer(
+            id=container_id, port=port, token=labels.get("xunx.token", ""), generation=generation,
+        )
 
     def stop(self, container: ManagedContainer) -> None:
         try:
@@ -196,18 +230,28 @@ class DockerManager:
         except NotFound:
             return False
 
-    def cleanup(self) -> None:
+    def prune(self, keep_ids: set[str]) -> None:
+        """Remove managed containers of this instance that were not adopted."""
         for container in self.client.containers.list(
             all=True,
             filters={"label": self.label},
             sparse=True,
             ignore_removed=True,
         ):
+            if container.id in keep_ids:
+                continue
             with suppress(NotFound):
                 container.remove(force=True)
 
     def close(self) -> None:
         self.client.close()
+
+
+def _published_port(attrs: dict) -> int | None:
+    for binding in (attrs.get("NetworkSettings", {}).get("Ports") or {}).values():
+        if binding:
+            return int(binding[0]["HostPort"])
+    return None
 
 
 def instance_id(path: Path) -> str:

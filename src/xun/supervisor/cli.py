@@ -44,6 +44,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("user-list", help="List users.")
 
+    upgrade = commands.add_parser(
+        "upgrade",
+        help="Recreate containers from the current image on the next serve reconciliation.",
+    )
+    upgrade.add_argument("username", nargs="*")
+    upgrade.add_argument("--all", action="store_true")
+
     serve = commands.add_parser("serve", help="Run the multiplexing server.")
     serve.add_argument("--host", default="0.0.0.0")
     serve.add_argument("--port", type=int, default=18960)
@@ -89,5 +96,18 @@ def main() -> None:
                 console.print("[dim]No users.[/dim]")
             else:
                 console.print(_user_table(users))
+        elif args.command == "upgrade":
+            names = [user.name for user in store.list()] if args.all else args.username
+            if not names:
+                parser.error("provide usernames or --all")
+            if missing := [name for name in names if store.get(name) is None]:
+                parser.error(f"user does not exist: {', '.join(missing)}")
+            for name in names:
+                store.upgrade(name)
+                console.print(f"[green]Queued upgrade[/green] for [cyan]{name}[/cyan]")
+            console.print(
+                "[dim]Containers are recreated on the next serve reconciliation, "
+                "discarding in-container data (workspace, saved conversations).[/dim]"
+            )
     except ValueError as error:
         parser.error(str(error))
