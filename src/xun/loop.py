@@ -2,6 +2,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+import json
 import json_repair
 from pydantic import BaseModel
 
@@ -211,10 +212,13 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
 
             tool_res: ToolResultType
             try:
+                # fix potential JSON issues in the tool arguments
                 arguments_json: Any = json_repair.loads(arguments)
-                if not arguments_json:
-                    # None, "", [], {}
+                if not arguments_json: # None, "", [], {}
                     arguments_json = {}
+                # keep the assistant history consistent with the repaired
+                tool_call.function.arguments = json.dumps(arguments_json, ensure_ascii=False)
+
                 agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
                 tool_res = agent.toolbox.call_tool(
                     agent=agent,
