@@ -29,16 +29,19 @@ def agent_risk_access(
     ) -> RiskAccessResult:
     from .. import Agent, NullDisplay, ToolBox
     from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
-    agent: "Agent[Agent.T.Init]" = Agent(
+    base = Agent(
         name="Command Risk Assessment", 
         display=NullDisplay(), 
         toolbox = ToolBox().register(
             fs_read_file, fs_list, fs_glob_files, fs_grep_files
             ),
         api_call_semaphore=ctx.agent.api_call_semaphore, 
-        cancel_event=ctx.agent.cancel_event, 
         workspace=ctx.agent.workspace,
-    ).system(
+    )
+    # inherit (not share) the parent's cancel event: the parent can cancel this
+    # agent, but clearing this agent's event on exit won't clear the parent's
+    base.cancel_event.parent = ctx.agent.cancel_event
+    agent: "Agent[Agent.T.Init]" = base.system(
         "You are an agent that is responsible for accessing shell commands. "
         "The command will be run under given working directory. "
         "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject).\n\n"
@@ -576,7 +579,7 @@ def bash(
         timeout=timeout, 
         cwd=cwd, 
         env_overrides=envs,
-        cancel_check=ctx.agent.cancel_event.event.is_set,
+        cancel_check=ctx.agent.cancel_event.is_set,
         )
     
     def truncate_output(input_str: str):

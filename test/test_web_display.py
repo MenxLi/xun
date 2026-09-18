@@ -21,7 +21,7 @@ from xun.conversation import Conversation
 from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
-from xun.running_state import AgentRunningStateMixin, LabeledEvent
+from xun.running_state import AgentRunningStateMixin, ChainedEvent
 from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.null_display import NullDisplay
@@ -51,7 +51,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.instruction_called = threading.Event()
         self.cancel_called = threading.Event()
         self._running = False
-        self.cancel_event = LabeledEvent(label=identifier)
+        self.cancel_event = ChainedEvent()
         self.hooks = Hooks()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []

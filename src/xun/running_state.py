@@ -14,15 +14,20 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class LabeledEvent:
-    label: str
+class ChainedEvent:
     event: Event = field(default_factory=Event)
+    parent: Optional[ChainedEvent] = None
+
+    def is_set(self) -> bool:
+        if self.parent:
+            return self.event.is_set() or self.parent.is_set()
+        return self.event.is_set()
 
 
 class AgentRunningStateProtocol(Protocol):
     """The Agent surface that running-state helpers rely on."""
     identifier: str
-    cancel_event: LabeledEvent
+    cancel_event: ChainedEvent
     hooks: "Hooks"
     _running: bool
 
@@ -44,13 +49,11 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         return True
 
     def check_cancel(self) -> None:
-        if self.cancel_event.event.is_set():
+        if self.cancel_event.is_set():
             raise CancelledError("Operation cancelled by user.")
 
     def _clear_cancel(self) -> None:
-        """Clear the cancel event if this agent owns it (label matches its identifier)."""
-        if self.cancel_event.label == self.identifier:
-            self.cancel_event.event.clear()
+        self.cancel_event.event.clear()
 
     @contextmanager
     def cancellable_execution(self):

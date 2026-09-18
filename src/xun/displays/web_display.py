@@ -105,8 +105,17 @@ class _PendingPrompts:
             pending.event.set()
             return True
 
-    def wait(self, pending: _PendingPrompt) -> str:
-        pending.event.wait()
+    def discard(self, pending: _PendingPrompt) -> None:
+        with self._lock:
+            self._prompts.pop(str(pending.data.get("id")), None)
+
+    def wait(self, pending: _PendingPrompt, cancel_check: Optional[Callable[[], bool]] = None) -> str:
+        while not pending.event.wait(0.5):
+            if cancel_check is not None and cancel_check():
+                # the user may have responded in the meantime; prefer their answer
+                if pending.event.is_set():
+                    break
+                raise CancelledError("Operation cancelled by user.")
         assert pending.response is not None
         return pending.response
 
@@ -195,12 +204,20 @@ class WebDisplay(DisplayAbstract):
         self._broadcast(payload)
 
     def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
+        agent = self.agents.get(request.agent_info.identifier)
+        # chained check: cancelling the parent also releases a child's pending prompt
+        cancel_check = agent.cancel_event.is_set if agent is not None else None
         pending = self._pending.set(
             request.agent_info.identifier,
             request.model_dump(mode="json", exclude={"agent_info"}),
         )
         self._broadcast({"type": "pending_prompt", "data": pending.data})
-        return self._pending.wait(pending)
+        try:
+            return self._pending.wait(pending, cancel_check=cancel_check)
+        except CancelledError:
+            self._pending.discard(pending)
+            self._broadcast({"type": "prompt_resolved", "prompt_id": pending.data["id"]})
+            raise
 
     def _agent(self, identifier: str) -> "Agent[Agent.T.Any]":
         agent = self.agents.get(identifier)

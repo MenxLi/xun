@@ -13,7 +13,7 @@ from threading import Semaphore
 from .types import TypeVar, CancelledError
 from .display_abstract import *
 from .displays.null_display import NullDisplay
-from .running_state import AgentRunningStateMixin, LabeledEvent
+from .running_state import AgentRunningStateMixin, ChainedEvent
 from .conversation import Conversation
 from .config import AgentConfig, load_config
 from .error_catch import except_safe
@@ -79,7 +79,7 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
     toolbox: ToolBox = field(default_factory=ToolBox)
     command: CommandRegistry = field(default_factory=CommandRegistry)
     workspace: Workspace = field(default_factory=Workspace)
-    cancel_event: LabeledEvent = field(default_factory=lambda: LabeledEvent(label=""))
+    cancel_event: ChainedEvent = field(default_factory=lambda: ChainedEvent())
 
     # below auto inherit
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
@@ -95,9 +95,6 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
     _running: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self):
-        if self.cancel_event.label == "":
-            self.cancel_event.label = self.identifier
-
         # note: the callback must not hold a strong reference to the agent
         # (weakref.finalize keeps its arguments alive), hence the weakref idiom
         agent_ref = weakref.ref(self)
@@ -168,10 +165,10 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
         parent_agent: Agent[T.Any], 
         share_workspace: bool = True,
         share_display: bool = True,
-        share_cancel_event: bool = True,
         copy_toolbox: bool = True,
         copy_command: bool = True,
         copy_conversation: bool = False,
+        inherit_cancel_event: bool = True,
         ) -> "Agent[T.Uninit]":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
@@ -194,8 +191,8 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
             new_agent.command = parent_agent.command.clone()
         if copy_conversation:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
-        if share_cancel_event:
-            new_agent.cancel_event = parent_agent.cancel_event
+        if inherit_cancel_event:
+            new_agent.cancel_event.parent = parent_agent.cancel_event
         return new_agent
     
     @overload

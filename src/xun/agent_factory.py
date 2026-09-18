@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, Callable, TYPE_CHECKING, Literal, cast
 import concurrent.futures
 import json_repair
+from .types import CancelledError
 from .toolcall import ToolCallContext
 from .error_catch import ErrorInfo, except_safe, Result
 if TYPE_CHECKING:
@@ -36,7 +37,16 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         param = AgentGetterParam(tool_context = ctx, name = name)
         with agent_getter(param) as agent:
             # do not emit events to avoid cluttering the display
-            return agent.instruct(task, _emit_event = False).execute(context = ctx.value)
+            try:
+                return agent.instruct(task, _emit_event = False).execute(context = ctx.value)
+            except CancelledError:
+                if ctx.agent.cancel_event.is_set():
+                    raise
+                else:
+                    return Result.Err(ErrorInfo(
+                        error="Execution cancelled by user.", 
+                        details="Execution was cancelled by the user."
+                        ))
     return agent_run
 
 def agent_run_parallel_factory(agent_getter: AgentGetterProtocol, max_workers: int = 4):
