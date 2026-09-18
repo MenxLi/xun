@@ -1,12 +1,20 @@
+from dataclasses import dataclass
 from typing import Optional, Callable, TYPE_CHECKING, Literal, cast
 import concurrent.futures
 import json_repair
-from ..toolcall import ToolCallContext
-from ..error_catch import ErrorInfo, except_safe, Result
+from .toolcall import ToolCallContext
+from .error_catch import ErrorInfo, except_safe, Result
 if TYPE_CHECKING:
-    from ..agent import Agent
+    from .agent import Agent
 
-def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Uninit]"]):
+@dataclass
+class AgentGetterParam:
+    tool_context: ToolCallContext
+    name: Optional[str] = None
+
+AgentGetterProtocol = Callable[["AgentGetterParam"], "Agent[Agent.T.Uninit]"]
+
+def agent_run_factory(agent_getter: AgentGetterProtocol):
     @except_safe
     def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> Result[str, ErrorInfo]:
         """
@@ -25,16 +33,13 @@ def agent_run_factory(agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.U
         • The new agent starts with a blank context and cannot access the parent conversation history unless explicitly included in the instruction.
         • Prefer instructing the new agent to return results directly in its final message. File I/O can also be used for larger outputs or intermediate results when necessary, but should explicitly be mentioned in the instruction.
         """
-        with agent_getter(ctx) as agent:
-            if name is not None:
-                agent.name = name
-            else:
-                agent.name = f"subagent"
+        param = AgentGetterParam(tool_context = ctx, name = name)
+        with agent_getter(param) as agent:
             # do not emit events to avoid cluttering the display
             return agent.instruct(task, _emit_event = False).execute(context = ctx.value)
     return agent_run
 
-def agent_run_parallel_factory(agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Uninit]"], max_workers: int = 4):
+def agent_run_parallel_factory(agent_getter: AgentGetterProtocol, max_workers: int = 4):
     @except_safe
     def agent_run_parallel(ctx: ToolCallContext, tasks: list[str] | str, names: Optional[list[str] | str] = None ) -> list[Result[str, ErrorInfo]]:
         """

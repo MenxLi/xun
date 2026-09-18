@@ -9,6 +9,7 @@ from .prompt import get_subagent_prompt
 from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
 from .toolcall import Function, ToolCallContext
+from .agent_factory import AgentGetterProtocol, AgentGetterParam, agent_run_factory, agent_run_parallel_factory
 from .config import get_internal_env_bool
 import rich
 
@@ -79,15 +80,19 @@ class ToolBox:
         self.register(func)
         return func
 
-    def with_subagent_provider(self, agent_getter: Callable[[ToolCallContext], "Agent[Agent.T.Uninit]"] | None = None):
+    def with_subagent_provider(self, agent_getter: "AgentGetterProtocol | None" = None):
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
+        The getter receives an AgentGetterParam and is supposed to commit to it (e.g. name).
         """
         if agent_getter is None:
-            def _agent_getter(ctx: ToolCallContext) -> "Agent[_Uninit]":
+            def _agent_getter(param: AgentGetterParam) -> "Agent[_Uninit]":
                 from .agent import Agent    # avoid circular import
+                ctx = param.tool_context
                 agent = Agent.inherit(ctx.agent).system(get_subagent_prompt())
+                if param.name:
+                    agent.name = param.name
                 agent.state[self.SUBAGENT_DEPTH_FLAG] = ctx.agent.state.get(self.SUBAGENT_DEPTH_FLAG, 0)
                 if agent.state[self.SUBAGENT_DEPTH_FLAG] >= self.SUBAGENT_MAX_DEPTH:
                     agent.toolbox.disable_subagent()

@@ -6,6 +6,7 @@ from .hooks import HookArgs, Hooks
 from .command import Command, CommandRegistry
 from .compact import CompactorAbstract, AutoCompactor
 from .toolbox import ToolBox, ToolCallContext
+from .agent_factory import AgentGetterProtocol, AgentGetterParam
 from .toolcall import tool_attr
 from .config import AgentConfig
 from .workspace import Workspace
@@ -15,6 +16,7 @@ __all__ = [
     "Agent", "AgentConfig",
     "Workspace", 
     "tool_attr", "ToolBox", "ToolCallContext", 
+    "AgentGetterProtocol", "AgentGetterParam", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",
     "HookArgs", "Hooks",
