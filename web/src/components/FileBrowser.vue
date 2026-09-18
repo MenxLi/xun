@@ -10,14 +10,19 @@ import UploadNotice from './UploadNotice.vue'
 import { api } from '../api'
 import type { AgentInfo, FileEntry, FileInfo } from '../types'
 import { useSettingsStore } from '../stores/settings'
+import type { BrowserState } from '../stores/sessionBuffers'
 
-const props = defineProps<{ agents: AgentInfo[]; agentId: string; available: boolean | null }>()
+const props = defineProps<{ agents: AgentInfo[]; agentId: string; available: boolean | null; sessionKey: string }>()
+const state = defineModel<BrowserState>('state', { required: true })
 const emit = defineEmits<{ close: [] }>()
 
 const settings = useSettingsStore()
 const { t } = useI18n()
 
-const path = ref('')
+const path = computed({
+  get: () => state.value.path,
+  set: value => { state.value.path = value },
+})
 const entries = ref<FileEntry[]>([])
 const previewEntry = ref<FileInfo | null>(null)
 const infoEntry = ref<FileInfo | null>(null)
@@ -117,15 +122,41 @@ function resizePreview(delta: number) {
   settings.previewHeight = clamp(settings.previewHeight - delta, 120, window.innerHeight - 220)
 }
 
-watch([() => props.agentId, () => props.available], () => {
+function setPreview(entry: FileInfo | null) {
+  previewEntry.value = entry
+  state.value.previewPath = entry?.path ?? null
+}
+
+async function restoreBrowserState() {
+  const sessionKey = props.sessionKey
+  const agentId = props.agentId
+  const previewPath = state.value.previewPath
   metadataRequest += 1
   closeMenu()
   cancelInlineEdit(true)
-  path.value = ''
   previewEntry.value = null
   infoEntry.value = null
-  void refresh()
-}, { immediate: true })
+  await refresh()
+  if (!previewPath || !props.available || !agentId || sessionKey !== props.sessionKey || agentId !== props.agentId) return
+  const request = ++metadataRequest
+  try {
+    const info = await api.fileInfo(agentId, previewPath)
+    if (request === metadataRequest && sessionKey === props.sessionKey && agentId === props.agentId) setPreview(info)
+  } catch {
+    // The preview may have been removed while this session was inactive.
+  }
+}
+
+watch([() => props.sessionKey, () => props.agentId, () => props.available],
+  ([sessionKey, agentId], [previousSessionKey, previousAgentId]) => {
+    if (sessionKey === previousSessionKey && agentId !== previousAgentId) {
+      state.value.path = ''
+      state.value.previewPath = null
+    }
+    void restoreBrowserState()
+  },
+  { immediate: true },
+)
 
 async function refresh() {
   const request = ++listingRequest
@@ -150,13 +181,13 @@ async function open(entry: FileEntry) {
   if (entry.kind === 'directory') {
     cancelInlineEdit(true)
     path.value = entry.path
-    previewEntry.value = null
+    setPreview(null)
     void refresh()
   } else {
     const request = ++metadataRequest
     try {
       const info = await api.fileInfo(props.agentId, entry.path)
-      if (request === metadataRequest) previewEntry.value = info
+      if (request === metadataRequest) setPreview(info)
     } catch (reason) {
       if (request === metadataRequest) error.value = reason instanceof Error ? reason.message : t('files.inspectFileError')
     }
@@ -248,7 +279,7 @@ async function submitDelete() {
   dialogError.value = ''
   try {
     await api.remove(props.agentId, entry.path)
-    if (previewEntry.value?.path === entry.path) previewEntry.value = null
+    if (previewEntry.value?.path === entry.path) setPreview(null)
     dialogBusy.value = false
     closeDialog()
     await refresh()
@@ -316,7 +347,7 @@ async function submitInlineEdit() {
     if (action === 'create') await api.createDirectory(props.agentId, target)
     if (action === 'move' && entry) {
       await api.move(props.agentId, entry.path, target)
-      if (previewEntry.value?.path === entry.path) previewEntry.value = null
+      if (previewEntry.value?.path === entry.path) setPreview(null)
     }
     inlineBusy.value = false
     cancelInlineEdit()
@@ -334,7 +365,7 @@ async function submitInlineEdit() {
 function goUp() {
   cancelInlineEdit(true)
   path.value = parentPath.value
-  previewEntry.value = null
+  setPreview(null)
   void refresh()
 }
 
@@ -425,7 +456,7 @@ function goUp() {
 
     <UploadNotice v-if="uploadNotice" v-bind="uploadNotice" @dismiss="uploadNotice = null" />
 
-    <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" :style="{ height: `${settings.previewHeight}px` }" @resize="resizePreview" @close="previewEntry = null" />
+    <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" :style="{ height: `${settings.previewHeight}px` }" @resize="resizePreview" @close="setPreview(null)" />
 
     <div v-if="dragActive" class="file-drop-target">
       <Upload :size="28" />

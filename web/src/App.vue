@@ -13,17 +13,17 @@ import StickyScroll from './components/StickyScroll.vue'
 import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage, SessionInfo } from './types'
 import { useSettingsStore, type Theme } from './stores/settings'
 import { useInputHistoryStore } from './stores/inputHistory'
+import { useSessionBuffersStore } from './stores/sessionBuffers'
 
 const settings = useSettingsStore()
 const inputHistory = useInputHistoryStore()
+const sessionBuffers = useSessionBuffersStore()
 const { t } = useI18n()
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
-const selectedAgentId = ref('')
 const selectedOnly = ref(false)
 const commands = ref<CommandInfo[]>([])
-const input = ref('')
 const connected = ref(false)
 const exposeFiles = ref<boolean | null>(null)
 const settingsOpen = ref(false)
@@ -35,7 +35,6 @@ const narrowLayout = ref(window.innerWidth < 900)
 const narrowPanel = ref<'sessions' | 'files' | null>(null)
 const pendingPrompts = ref<PendingPrompt[]>([])
 const supportsVision = ref(false)
-const images = ref<Array<{ file: File; url: string }>>([])
 const sending = ref(false)
 const runningAgents = ref(new Set<string>())
 const cancellingAgents = ref(new Set<string>())
@@ -50,7 +49,23 @@ let agentDataRequest = 0
 let syncing = false
 let queuedMessages: ServerMessage[] = []
 
-const currentSessionPath = ref('/')
+const currentSessionPath = computed(() => sessionBuffers.currentPath)
+const input = computed({
+  get: () => sessionBuffers.current.input,
+  set: value => { sessionBuffers.current.input = value },
+})
+const images = computed({
+  get: () => sessionBuffers.current.images,
+  set: value => { sessionBuffers.current.images = value },
+})
+const selectedAgentId = computed({
+  get: () => sessionBuffers.current.selectedAgentId,
+  set: value => { sessionBuffers.current.selectedAgentId = value },
+})
+const browserState = computed({
+  get: () => sessionBuffers.current.browser,
+  set: value => { sessionBuffers.current.browser = value },
+})
 const showSessions = computed(() => narrowLayout.value ? narrowPanel.value === 'sessions' : settings.sessionsOpen)
 const showFiles = computed(() => narrowLayout.value ? narrowPanel.value === 'files' : settings.filesOpen)
 const selectedAgent = computed(() => agents.value.find(agent => agent.identifier === selectedAgentId.value))
@@ -81,11 +96,11 @@ watch(() => settings.language, language => {
   i18n.global.locale.value = resolveLocale(language)
 }, { immediate: true })
 watch([selectedAgentId, selectedOnly], () => stream.value?.anchor())
-watch(selectedAgentId, async agentId => {
+watch([selectedAgentId, currentSessionPath], async ([agentId, sessionPath], [previousAgentId, previousSessionPath]) => {
   const requestId = ++agentDataRequest
   commands.value = []
   supportsVision.value = false
-  clearImages()
+  if (sessionPath === previousSessionPath && agentId !== previousAgentId) clearImages()
   if (!agentId) return
   try {
     const [commandData, capabilityData] = await Promise.all([api.commands(agentId), api.capabilities(agentId)])
@@ -150,8 +165,8 @@ async function removeSession(session: SessionInfo) {
     if (session.path === currentSessionPath.value) {
       const next = remaining[0]?.path || '/'
       switchSession(next)
-      return
     }
+    sessionBuffers.discard(session.path)
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : t('sessions.removeError')
   } finally {
@@ -206,7 +221,6 @@ function applyAgentEvent(event: DisplayEvent) {
 function resetSessionData() {
   events.value = []
   agents.value = []
-  selectedAgentId.value = ''
   commands.value = []
   pendingPrompts.value = []
   runningAgents.value = new Set()
@@ -214,10 +228,8 @@ function resetSessionData() {
   resolvingPrompts.value = new Set()
   promptErrors.value = new Map()
   exposeFiles.value = null
-  input.value = ''
   sendError.value = ''
   sending.value = false
-  clearImages()
 }
 
 function connect() {
@@ -270,7 +282,7 @@ function switchSession(path: string, updateHistory = true) {
   if (narrowLayout.value && narrowPanel.value === 'sessions') narrowPanel.value = null
   if (path === currentSessionPath.value && socket && socket.readyState < WebSocket.CLOSING) return
   disconnect()
-  currentSessionPath.value = path
+  sessionBuffers.select(path)
   configureSession(path)
   resetSessionData()
   if (updateHistory) window.history.replaceState(null, '', chatUrl(path))
@@ -427,7 +439,7 @@ onBeforeUnmount(() => {
   window.clearInterval(sessionRefreshTimer)
   window.removeEventListener('resize', updateLayout)
   disconnect()
-  clearImages()
+  sessionBuffers.dispose()
 })
 </script>
 
@@ -533,7 +545,7 @@ onBeforeUnmount(() => {
     </main>
 
     <div v-if="narrowLayout && showFiles" class="mobile-scrim workspace-scrim" @click="closeFiles" />
-    <FileBrowser v-if="showFiles" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" @close="closeFiles" />
+    <FileBrowser v-if="showFiles" v-model:state="browserState" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" :session-key="currentSessionPath" @close="closeFiles" />
 
   </div>
 </template>
