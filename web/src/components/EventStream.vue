@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import ToolCalls from './ToolCalls.vue'
 import ConfirmPill from './ConfirmPill.vue'
@@ -84,6 +84,35 @@ const items = computed<StreamItem[]>(() => {
   return output.filter(item => item.kind !== 'turn' || item.steps.length > 0 || item.working)
 })
 
+// Render only a trailing window: mounting thousands of message components at
+// once is what made long sessions crawl.
+const INITIAL_WINDOW = 80
+const EARLIER_BATCH = 120
+
+const rendered = ref(INITIAL_WINDOW)
+const totalItems = computed(() => items.value.length)
+const startIndex = computed(() => Math.max(0, totalItems.value - rendered.value))
+const visibleItems = computed(() => items.value.slice(startIndex.value))
+const hasEarlier = computed(() => startIndex.value > 0)
+
+watch(totalItems, (total, previous) => {
+  if (previous === undefined) return
+  // Grow in place for live events; a shrink means the session was replaced.
+  rendered.value = total > previous ? rendered.value + (total - previous) : INITIAL_WINDOW
+})
+
+const root = ref<HTMLElement>()
+
+async function showEarlier() {
+  const container = root.value?.closest<HTMLElement>('.conversation') ?? null
+  const previousHeight = container?.scrollHeight ?? 0
+  const previousTop = container?.scrollTop ?? 0
+  rendered.value = Math.min(totalItems.value, rendered.value + EARLIER_BATCH)
+  await nextTick()
+  // Compensate scrollTop so prepended items don't shift the view.
+  if (container) container.scrollTo({ top: container.scrollHeight - previousHeight + previousTop, behavior: 'instant' })
+}
+
 type NoticeEvent = Extract<DisplayEvent, { name: 'InfoEvent' | 'WarningEvent' | 'ErrorEvent' }>
 
 function isPlainTextEvent(event: DisplayEvent): event is NoticeEvent {
@@ -128,8 +157,15 @@ async function copyMessage(key: string, event: DisplayEvent) {
 </script>
 
 <template>
-  <div class="stream">
-    <template v-for="item in items" :key="item.key">
+  <div ref="root" class="stream">
+    <div v-if="hasEarlier" class="stream-earlier">
+      <button type="button" @click="showEarlier">
+        <ArrowUp :size="13" />
+        {{ t('stream.loadEarlier') }}
+        <em>{{ t('stream.hiddenCount', { n: startIndex }) }}</em>
+      </button>
+    </div>
+    <template v-for="item in visibleItems" :key="item.key">
       <section v-if="item.kind === 'turn'" class="turn">
         <div class="turn-header">
           <span class="turn-agent">{{ item.agent.name }}</span>

@@ -96,6 +96,9 @@ export default {
     steps: '{n} step | {n} steps',
     jumpToLatest: 'Jump to latest',
     newCount: '{n} new',
+    loading: 'Loading conversation…',
+    loadEarlier: 'Load earlier messages',
+    hiddenCount: '{n} hidden',
   },
   confirm: {
     autoConfirmed: 'Auto-confirmed',

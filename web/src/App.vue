@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, Check, Globe, Languages, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type, Wifi, WifiOff } from 'lucide-vue-next'
+import { Bot, Check, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type, Wifi, WifiOff } from 'lucide-vue-next'
 import { api, appUrl, chatUrl, configureSession, formatTokens } from './api'
 import i18n, { resolveLocale, type Language } from './i18n'
 import InputComposer from './components/InputComposer.vue'
@@ -46,8 +46,11 @@ let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let sessionRefreshTimer: number | undefined
 let agentDataRequest = 0
-let syncing = false
+const syncing = ref(false)
 let queuedMessages: ServerMessage[] = []
+
+// The overlay's CSS-delayed fade-in (.stream-loading) hides it on fast loads:
+// unmounted before it ever paints, no JS timers, no flicker.
 
 const currentSessionPath = computed(() => sessionBuffers.currentPath)
 const input = computed({
@@ -236,10 +239,10 @@ function connect() {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
   const nextSocket = new WebSocket(`${protocol}://${location.host}${appUrl('/ws')}`)
   socket = nextSocket
+  syncing.value = true
   nextSocket.addEventListener('open', async () => {
     if (socket !== nextSocket) return
     connected.value = true
-    syncing = true
     let data: Awaited<ReturnType<typeof fetchInitialData>>
     try {
       data = await fetchInitialData()
@@ -249,20 +252,20 @@ function connect() {
     }
     if (socket !== nextSocket) return
     applyInitialData(data)
-    syncing = false
+    syncing.value = false
     queuedMessages.forEach(handleServerMessage)
     queuedMessages = []
   })
   nextSocket.addEventListener('message', message => {
     if (socket !== nextSocket) return
     const payload = JSON.parse(message.data) as ServerMessage
-    if (syncing) queuedMessages.push(payload)
+    if (syncing.value) queuedMessages.push(payload)
     else handleServerMessage(payload)
   })
   nextSocket.addEventListener('close', () => {
     if (socket !== nextSocket) return
     connected.value = false
-    syncing = false
+    syncing.value = false
     queuedMessages = []
     reconnectTimer = window.setTimeout(connect, 2500)
   })
@@ -273,7 +276,7 @@ function disconnect() {
   const previousSocket = socket
   socket = null
   connected.value = false
-  syncing = false
+  syncing.value = false
   queuedMessages = []
   previousSocket?.close()
 }
@@ -506,6 +509,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
+      <div class="stream-wrap">
       <StickyScroll ref="stream" :size="visibleEvents.length + visiblePrompts.length">
         <EventStream v-if="visibleEvents.length" :events="visibleEvents" :markdown="settings.markdown" />
         <div v-if="visiblePrompts.length" class="prompt-stream">
@@ -520,6 +524,11 @@ onBeforeUnmount(() => {
           />
         </div>
       </StickyScroll>
+      <div v-if="syncing && !events.length && !pendingPrompts.length" class="stream-loading" role="status" aria-live="polite">
+        <LoaderCircle :size="22" class="spinning" />
+        <span>{{ t('stream.loading') }}</span>
+      </div>
+      </div>
 
       <footer class="composer-area">
         <InputComposer

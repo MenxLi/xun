@@ -98,6 +98,9 @@ const zh: typeof en = {
     steps: '{n} 个步骤',
     jumpToLatest: '跳到最新',
     newCount: '{n} 条新消息',
+    loading: '正在加载会话……',
+    loadEarlier: '加载更早的消息',
+    hiddenCount: '已隐藏 {n} 条',
   },
   confirm: {
     autoConfirmed: '已自动确认',

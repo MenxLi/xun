@@ -72,6 +72,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .conversation { min-height: 0; flex: 1; overflow-y: auto; scroll-behavior: smooth; background-color: var(--canvas); background-image: linear-gradient(rgba(34, 41, 37, .028) 1px, transparent 1px); background-size: 100% 30px; }
 .stream-area { position: relative; min-height: 0; flex: 1; display: flex; }
 .stream-area .conversation { flex: 1; }
+.stream-wrap { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.stream-wrap .stream-area { flex: 1 1 0; }
+/* Delayed fade-in: fast loads unmount the overlay before it ever paints. */
+.stream-loading { position: absolute; inset: 0; z-index: 6; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); font-size: 11px; background: var(--canvas); opacity: 0; animation: stream-loading-in .18s ease 350ms forwards; }
+.stream-loading svg { color: var(--accent); }
+@keyframes stream-loading-in { to { opacity: 1; } }
+.stream-earlier { display: flex; justify-content: center; padding: 0 0 14px; }
+.stream-earlier button { height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 15px; color: var(--ink); background: var(--paper); font-size: 11px; font-weight: 600; cursor: pointer; }
+.stream-earlier button:hover { color: var(--accent); border-color: var(--accent); }
+.stream-earlier button svg { color: var(--accent); }
+.stream-earlier em { padding: 2px 6px; border-radius: 8px; color: var(--accent-dark); background: var(--accent-soft); font: 500 9px/1.4 'Fira Code', monospace; font-style: normal; }
 .jump-to-latest { position: absolute; right: 22px; bottom: 14px; z-index: 8; height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 15px; color: var(--ink); background: var(--paper); box-shadow: 0 6px 18px var(--shadow); font-size: 11px; font-weight: 600; cursor: pointer; }
 .jump-to-latest:hover { color: var(--accent); border-color: var(--accent); }
 .jump-to-latest svg { color: var(--accent); }
@@ -321,4 +332,4 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 @media (max-width: 899px) { .session-sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100% - 42px)); box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .file-browser { position: fixed; inset: 0 0 0 auto; width: min(330px, calc(100% - 42px)) !important; box-shadow: -18px 0 45px rgba(25, 33, 29, .18); } .resize-handle.horizontal { display: none; } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } }
 @media (max-width: 720px) { .agent-controls { margin-left: 10px; } .stream-filter span { display: none; } .stream-filter { padding: 0 5px; } .markdown-toggle { display: none; } .token-badge { display: none; } }
 @media (max-width: 600px) { .topbar { height: 56px; padding: 0 8px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; } .agent-controls { width: 100%; margin: 0; } .agent-controls select { min-width: 0; max-width: none; flex: 1; } .stream-filter { display: none; } .topbar-actions { gap: 2px; } .connection { display: none; } .settings-menu { position: fixed; top: 64px; right: 10px; left: 10px; width: auto; padding: 10px; } .stream { width: calc(100% - 24px); padding-top: 22px; } .message.user { max-width: 94%; } .composer-area { padding: 9px 9px 11px; } .composer-hint { display: none; } .command-menu button { grid-template-columns: 100px 1fr; } .command-line { grid-template-columns: 105px 1fr; } .tool-listing { grid-template-columns: 1fr; gap: 6px; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } .stream-loading { animation: none; opacity: 1; } }

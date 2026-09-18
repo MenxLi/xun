@@ -19,6 +19,7 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount
@@ -180,6 +181,30 @@ class WebDisplayService:
         self._socket: Optional[socket.socket] = None
         self._started = threading.Event()
         self.app = FastAPI(docs_url=None, redoc_url=None, lifespan=self._lifespan)
+        # Compress the large JSON event listing; skip small and already-
+        # compressed (images, zips, PDFs, ...) payloads.
+        self.app.add_middleware(
+            GZipMiddleware,
+            minimum_size=1024,
+            compresslevel=6,
+            exclude_content_types=(
+                "application/gzip",
+                "application/x-gzip",
+                "application/zip",
+                "application/octet-stream",
+                "application/pdf",
+                "audio/*",
+                "font/woff",
+                "font/woff2",
+                "image/avif",
+                "image/gif",
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+                "text/event-stream",
+                "video/*",
+            ),
+        )
         self._configure_login()
         self._configure_sessions()
         self._configure_chat(assets_dir)
