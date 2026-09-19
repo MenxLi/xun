@@ -207,18 +207,19 @@ def fs_copy(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     dst_resolved = resolve_path(ctx, dst)
     if not src_resolved.path.exists():
         raise FileNotFoundError("Source file/directory does not exist.")
+    if src_resolved.path.is_dir() and dst_resolved.path.is_file():
+        raise FileExistsError("Destination path exists as a file, cannot copy a directory onto a file.")
+    effective_dst = dst_resolved.path / src_resolved.path.name if dst_resolved.path.is_dir() else dst_resolved.path
+    # If the destination is in temp dir, we can be more lenient.
+    # Otherwise, copying onto an existing destination overwrites it, requiring explicit permission.
+    if effective_dst.exists() and not dst_resolved.in_tempdir:
+        if not get_policy(ctx).write_allowlist.has(effective_dst) and \
+            not ask_for_write_permission(ctx, effective_dst, f"Destination `{effective_dst}` already exists. Are you sure you want to copy `{src_resolved.path}` onto it?"):
+            raise RuntimeError(f"Operation rejected by user, `{src_resolved.path}` was not copied to `{effective_dst}` (existing destination).")
     if src_resolved.path.is_file():
-        if dst_resolved.path.exists() and dst_resolved.path.is_dir():
-            shutil.copy2(src_resolved.path, dst_resolved.path / src_resolved.path.name)
-        else:
-            shutil.copy2(src_resolved.path, dst_resolved.path)
+        shutil.copy2(src_resolved.path, effective_dst)
     elif src_resolved.path.is_dir():
-        if dst_resolved.path.exists() and dst_resolved.path.is_file():
-            raise FileExistsError("Destination path exists as a file, cannot copy a directory onto a file.")
-        elif dst_resolved.path.exists() and dst_resolved.path.is_dir():
-            shutil.copytree(src_resolved.path, dst_resolved.path / src_resolved.path.name)
-        else:
-            shutil.copytree(src_resolved.path, dst_resolved.path)
+        shutil.copytree(src_resolved.path, effective_dst)
     return "OK"
 
 @tool_attr(name="mkdir")
