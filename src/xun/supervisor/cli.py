@@ -57,7 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port-range", type=_parse_port_range, default=range(17960, 18959), metavar="START-END")
     serve.add_argument("--image", default="xun")
     serve.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list. Will always include XUN_*/_XUN_* by default.", default=[], nargs="+")
-    serve.add_argument("--interval", type=float, default=2.0, help=argparse.SUPPRESS)
+    serve.add_argument("--interval", type=float, default=5, help=argparse.SUPPRESS)
     return parser
 
 
