@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional, Callable, Any
+from typing import TYPE_CHECKING, Optional, Callable, Any, cast
 import inspect
 from .types import CancelledError
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ class Command:
         if isinstance(handler, CommandRegistry):
             self._run = lambda agent, args: self._dispatch(agent, handler, args)  # type: ignore[misc]
         else:
-            n_args_accepted = len(inspect.signature(handler).parameters)
+            n_args_accepted = len(inspect.signature(cast("Callable[..., Any]", handler)).parameters)
             if n_args_accepted == 1:
                 self._run = lambda agent, _arguments=None: handler(agent)  # type: ignore[misc]
             elif n_args_accepted == 2:
