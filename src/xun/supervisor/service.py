@@ -31,8 +31,10 @@ class Supervisor:
             )
             running = unchanged and await asyncio.to_thread(self.backend.is_running, container)
             if not running:
+                reason = "user removed" if user is None else "stale token or generation" if not unchanged else "container exited"
                 await asyncio.to_thread(self.backend.stop, container)
                 del self.active[name]
+                _console.print(f"[yellow]Stopped container for {name} ({reason}).[/yellow]")
 
         for name, user in users.items():
             if name in self.active:
@@ -42,14 +44,23 @@ class Supervisor:
                 if adopted is not None and (
                     adopted.token != user.token or adopted.generation != user.generation
                 ):
+                    _console.print(f"[yellow]Adopted container for {name} has a stale token or generation, recreating it.[/yellow]")
                     await asyncio.to_thread(self.backend.stop, adopted)
                     adopted = None
-                self.active[name] = adopted or await asyncio.to_thread(self.backend.start, user)
+                if adopted is not None:
+                    self.active[name] = adopted
+                    _console.print(f"[cyan]Adopted container {adopted.id} for {name}.[/cyan]")
+                else:
+                    container = await asyncio.to_thread(self.backend.start, user)
+                    self.active[name] = container
+                    _console.print(f"[green]Started container {container.id} for {name}.[/green]")
             except Exception as error:
                 _console.print(f"[red]Failed to start container for {name}: {error}[/red]")
 
         if not self.pruned:
-            await asyncio.to_thread(self.backend.prune, {c.id for c in self.active.values()})
+            keep = {c.id for c in self.active.values()}
+            await asyncio.to_thread(self.backend.prune, keep)
+            _console.print(f"[dim]Pruned stray containers (keeping {len(keep)} active).[/dim]")
             self.pruned = True
 
     async def run(self) -> None:
