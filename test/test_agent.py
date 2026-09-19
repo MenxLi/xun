@@ -129,7 +129,7 @@ class AgentLifecycleTest(unittest.TestCase):
         agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
         agent.config.auto_confirm = True
 
-        self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes"), "Yes")
+        self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes").choice, "Yes")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
         self.assertEqual(display.events[-1].payload.source, "auto")
         self.assertEqual(display.events[-1].payload.choices, ["Yes", "No"])
@@ -139,7 +139,7 @@ class AgentLifecycleTest(unittest.TestCase):
         display = _RecordingDisplay()
         agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
 
-        self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]), "No")
+        self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]).choice, "No")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
         self.assertEqual(display.events[-1].payload.source, "user")
         self.assertEqual(display.events[-1].payload.choices, ["Yes", "No"])

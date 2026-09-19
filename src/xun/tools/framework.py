@@ -29,7 +29,7 @@ def framework_ask_user_preference(
         default=default_choice,
         allow_extra=allow_extra, 
         _skip_auto_confirm=True,
-    )
+    ).choice
     return {
         "Q": question,
         "A": a,

@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Generic, Optional, TYPE_CHECKING, Protocol, Sequence, Annotated, Literal
+from typing import Generic, Optional, TYPE_CHECKING, Protocol, Sequence, Annotated, Literal, NoReturn
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
 from PIL.Image import Image
@@ -114,6 +115,16 @@ class ConfirmEvent(BaseModel):
     source: Literal["user", "auto"]
     prompt: str
     message: Optional[str] = None
+
+@dataclass(frozen=True)
+class ChoiceOutcome[T]:
+    """The chosen value from `get_choice` / `get_confirm`, plus its source."""
+    choice: T
+    source: Literal["user", "auto"]
+
+    def __bool__(self) -> NoReturn:
+        # `if agent.get_confirm(...)`, ignoring `.choice`. Fails loudly
+        raise TypeError("ChoiceOutcome has no truth value; test `.choice` explicitly")
 
 class WarningEvent(BaseModel):
     message: str
@@ -268,7 +279,7 @@ class AgentDisplayMixin(AgentDisplayProtocol):
         default: Optional[str] = None,
         allow_extra: bool = False,
         _skip_auto_confirm: bool = False,
-        ) -> str:
+        ) -> ChoiceOutcome[str]:
         """Ask the user to choose, honoring auto-confirm: return the default
         choice without prompting."""
         if self.config.auto_confirm and not _skip_auto_confirm:
@@ -280,14 +291,14 @@ class AgentDisplayMixin(AgentDisplayProtocol):
             else:
                 raise ValueError(f"No choices available for prompt {prompt!r}")
             self.display_event(ConfirmEvent(prompt=prompt, choices=choices, choice=choice, source="auto", message=message))
-            return choice
+            return ChoiceOutcome(choice=choice, source="auto")
         choice = self.display.get_choice(DisplayAbstract.ChoiceRequest(
             agent_info=AgentInfo.from_agent(self),
             prompt=prompt, choices=choices, message=message,
             title=title, subtitle=subtitle, default=default, allow_extra=allow_extra,
         ))
         self.display_event(ConfirmEvent(prompt=prompt, choices=choices, choice=choice, source="user", message=message))
-        return choice
+        return ChoiceOutcome(choice=choice, source="user")
 
     def get_confirm(
         self,
@@ -296,11 +307,11 @@ class AgentDisplayMixin(AgentDisplayProtocol):
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
         default: bool = True,
-        ) -> bool:
-        choice = self.get_choice(
+        ) -> ChoiceOutcome[bool]:
+        outcome = self.get_choice(
             prompt=prompt,
             choices=["Yes", "No"],
             message=message, title=title, subtitle=subtitle,
             default="Yes" if default else "No",
         )
-        return choice == "Yes"
+        return ChoiceOutcome(choice=outcome.choice == "Yes", source=outcome.source)

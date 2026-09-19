@@ -173,7 +173,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
 
         except Exception as e:
             agent.display_event(ErrorEvent(message=f"Error during chat completion: {e}."))
-            if n_completion_max_retries > 0 and agent.get_confirm("Retry?", default=True):
+            if n_completion_max_retries > 0 and agent.get_confirm("Retry?", default=True).choice:
                 n_completion_max_retries -= 1
                 continue
             else:

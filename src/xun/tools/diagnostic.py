@@ -120,7 +120,7 @@ def check_lint(
             subtitle=f"{ctx.agent.name} ({ctx.tool_name})",
             default=True,
         )
-        if confirm:
+        if confirm.choice:
             try:
                 result = subprocess.run(
                     [shutil.which("pip") or "pip", "install", "mypy"],

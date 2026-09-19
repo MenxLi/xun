@@ -409,7 +409,7 @@ def _confirm_command_execution(
         title="Command Confirmation" if agent_check_res.policy == 'unsure' else "Dangerous Command Confirmation",
         subtitle=ctx.agent.name,
         default=True if agent_check_res.policy == 'unsure' else False
-    ):
+    ).choice:
         raise RuntimeError(f"Command `{spec.command_line}` was rejected by confirmation. (risk assessment: {agent_check_res.reason})")
 
     return policy.allow_unlisted

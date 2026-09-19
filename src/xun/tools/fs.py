@@ -22,7 +22,7 @@ def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
     Returns True if the user confirms, False otherwise.
     """
     GRANT_WRITE_PERMISSION = "Allow, and grant this agent to write to this file/directory."
-    c =  ctx.agent.get_choice(
+    outcome = ctx.agent.get_choice(
         "Confirm Write Permission",
         choices = [
             GRANT_WRITE_PERMISSION, 
@@ -34,10 +34,11 @@ def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
         subtitle=f"{ctx.agent.name} ({ctx.tool_name})",
         default=GRANT_WRITE_PERMISSION
     )
-    if c == GRANT_WRITE_PERMISSION:
+    # Only a user pick may add a persistent allowlist entry.
+    if outcome.choice == GRANT_WRITE_PERMISSION and outcome.source == "user":
         get_policy(ctx).write_allowlist.add(path, is_dir=path.is_dir())
         return True
-    return c == "Allow once"
+    return outcome.choice != "Deny"
 
 @tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
