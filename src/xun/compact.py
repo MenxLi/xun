@@ -64,6 +64,7 @@ class SummaryCompactResult:
 
     status: Status
     message: str
+    """Human-readable message describing the result"""
     reclaimed_fraction: float = 0.0
 
     @property
@@ -106,7 +107,7 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) ->
             return None
         summary = result.unwrap()
         if summary:
-            agent.info(f"Conversation history condensed. Summary:\n{summary}")
+            agent.info(f"Conversation history condensed. (Summary chars: {len(summary)})")
             return summary
         else:
             # somehow may be ""...
