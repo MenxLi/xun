@@ -44,10 +44,15 @@ def matching_environment(
     }
 
 
-def copy_directory(source: str, container: DockerContainer, target: str) -> None:
+HOME_COPY_INCLUDE = {"config.json", "extensions"}
+"""What to copy from the host XUN_HOME into a container"""
+
+def copy_directory(source: str, container: DockerContainer, target: str, include: set[str] | None = None) -> None:
     with SpooledTemporaryFile() as archive:
         with tarfile.open(fileobj=archive, mode="w", dereference=True) as tar:
             for child in Path(source).iterdir():
+                if include is not None and child.name not in include:
+                    continue
                 tar.add(child, arcname=child.name)
         archive.seek(0)
         container.put_archive(target, archive)
@@ -183,7 +188,7 @@ class DockerManager:
                 },
             )
             if self.copy_home_from is not None and Path(self.copy_home_from).is_dir():
-                copy_directory(self.copy_home_from, container, "/.xun")
+                copy_directory(self.copy_home_from, container, "/.xun", include=HOME_COPY_INCLUDE)
             container.start()
             self._stream_logs(container, name)
             if not isinstance(container.id, str):

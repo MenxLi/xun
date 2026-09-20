@@ -4,7 +4,7 @@ import readline     # noqa
 import argparse, shlex, sys, hashlib, tempfile, uuid
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import Callable, Optional
 import docker
 from docker.errors import NotFound
 from pydantic import BaseModel
@@ -18,10 +18,10 @@ from .toolbox import ToolBox
 from .agent import Agent
 from .prompt import get_system_prompt
 from .command import Command
-from .types import CancelledError, Result
+from .types import CancelledError
 from .workspace import Workspace
 from .tools.common import default_tool_commands
-from .supervisor.runtime import copy_directory, matching_environment, start_attached
+from .supervisor.runtime import HOME_COPY_INCLUDE, copy_directory, matching_environment, start_attached
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -347,7 +347,7 @@ def main_container():
         if args.copy:
             copy_directory(mount, container, "/workspace")
         if (home := get_home_dir()).is_dir():
-            copy_directory(str(home), container, "/.xun")    # copy the host home in; start from an empty dir to skip
+            copy_directory(str(home), container, "/.xun", include=HOME_COPY_INCLUDE)    # copy the host home in; start from an empty dir to skip
         start_attached(container, interactive=True)
     except BaseException:
         if container is not None:
