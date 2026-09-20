@@ -86,6 +86,15 @@ class HookArgs:
         agent: "Agent[Agent.T.Init]"
         model_call_id: str
         content: str
+    
+    @dataclass
+    class AgentMessageArgs:
+        agent: "Agent[Agent.T.Init]"
+        message: str
+    
+    AgentInfoArgs = AgentMessageArgs
+    AgentWarningArgs = AgentMessageArgs
+    AgentErrorArgs = AgentMessageArgs
 
 @dataclass
 class Hooks:
@@ -119,3 +128,7 @@ class Hooks:
 
     model_reasoning_delta: HookRegistry[HookArgs.TextDelta] = field(default_factory=HookRegistry)
     """Called before the model reasoning delta is applied, allowing modification of the content. """
+
+    before_display_info: HookRegistry[HookArgs.AgentInfoArgs] = field(default_factory=HookRegistry)
+    before_display_warning: HookRegistry[HookArgs.AgentWarningArgs] = field(default_factory=HookRegistry)
+    before_display_error: HookRegistry[HookArgs.AgentErrorArgs] = field(default_factory=HookRegistry)

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, Optional, TYPE_CHECKING, Protocol, Sequence, Annotated, Literal, NoReturn
+from typing import Generic, Optional, TYPE_CHECKING, Protocol, Sequence, Annotated, Literal, NoReturn, cast
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -12,8 +12,9 @@ from .util import image_to_url
 from .conversation import Conversation
 from .types import TypeVar
 from .workspace import Workspace
+from .hooks import HookArgs, Hooks
 if TYPE_CHECKING:
-    from .agent import Agent
+    from .agent import Agent, T
     from .config import AgentConfig
     from .toolcall import Function
 
@@ -249,6 +250,7 @@ class AgentDisplayProtocol(Protocol):
     identifier: str
     workspace: Workspace
     display: DisplayAbstract
+    hooks: Hooks
     config: AgentConfig
 
 class AgentDisplayMixin(AgentDisplayProtocol):
@@ -261,13 +263,19 @@ class AgentDisplayMixin(AgentDisplayProtocol):
         ))
 
     def info(self, message: str) -> None:
-        self.display_event(InfoEvent(message=message))
+        args = HookArgs.AgentInfoArgs(agent=cast("Agent[Agent.T.Init]", self), message=message)
+        self.hooks.before_display_info.invoke(args)
+        self.display_event(InfoEvent(message=args.message))
 
     def warning(self, message: str) -> None:
-        self.display_event(WarningEvent(message=message))
+        args = HookArgs.AgentWarningArgs(agent=cast("Agent[Agent.T.Init]", self), message=message)
+        self.hooks.before_display_warning.invoke(args)
+        self.display_event(WarningEvent(message=args.message))
 
     def error(self, message: str) -> None:
-        self.display_event(ErrorEvent(message=message))
+        args = HookArgs.AgentErrorArgs(agent=cast("Agent[Agent.T.Init]", self), message=message)
+        self.hooks.before_display_error.invoke(args)
+        self.display_event(ErrorEvent(message=args.message))
 
     def get_choice(
         self,
