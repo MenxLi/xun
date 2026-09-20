@@ -151,7 +151,7 @@ xunc .              # bind mount the current directory as /workspace
 xunc --copy .       # copy the current directory into /workspace instead
 ```
 
-`xunc` runs `xuns --host 0.0.0.0` in the container and publishes port 18960 (bridge mode), so the web UI is reachable from the host at the tokenized URL printed at startup. Other options: `--exec CMD` (e.g. `--exec bash`), `--port LIST`, `--network host` (avoid on macOS — not reachable from a host browser), `--env PATTERNS` (extra env vars to forward; `XUN_*`/`_XUN_*` are always forwarded), `--image` / `--name`.
+`xunc` runs `xuns --host 0.0.0.0` in the container and publishes port 18960 (bridge mode), so the web UI is reachable from the host at the tokenized URL printed at startup. The image fixes `XUN_HOME=/.xun`, and the host xun home is always copied into it (following symlinks, so a `.xun/extensions` symlink into a repo `extensions/` dir is carried in) — start from an empty directory to run without one. Other options: `--exec CMD` (e.g. `--exec bash`), `--port LIST`, `--network host` (avoid on macOS — not reachable from a host browser), `--env PATTERNS` (extra env vars to forward; `XUN_*`/`_XUN_*` are always forwarded except `XUN_HOME`), `--image` / `--name`.
 
 ### Multiplexed server
 
@@ -170,7 +170,7 @@ Open `http://localhost:18960/alice?token=TOKEN`. Users live in `$XUN_HOME/x/xunx
 Containers outlive `serve` shutdown and are re-adopted (keeping in-container sessions alive) on the next start; containers left for deleted users are pruned then. 
 Containers are named `xunx-<instance>-<user>`, so use `docker ps` / `docker logs` to inspect them directly. 
 `xunx upgrade` only records intent — the running `serve` process recreates flagged containers on its next reconcile, and recreation discards in-container data (workspace, saved conversations). 
-`XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container.
+`XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container. The host xun home is copied into each container's `/.xun` (config, extensions; follows symlinks) — note this shares it across all users.
 
 <details>
 <summary>Frontend development</summary>
@@ -206,3 +206,24 @@ The config supports `${XUN_...}` placeholders which are substituted from environ
 | `model.name` | `${XUN_OPENAI_MODEL}` (empty) | Model identifier. If the resolved value is empty, available models are auto-detected from the API. |
 
 More configuration options are available; see the source code at [src/xun/config.py](src/xun/config.py).
+
+## Extensions
+
+Drop a Python file under `$XUN_HOME/extensions/` and every agent picks up its effects (tools, hooks, commands, config tweaks) at initialization — no wiring needed. Extensions are trusted code, like a shell rc file.
+
+Two source forms, each yielding an extension named `{name}`:
+
+- `extensions/{name}/setup_extension.py` — package form, supports relative imports of helper modules
+- `extensions/{name}.py` — flat single file, for the common few-lines-of-hooks case
+
+The entry function has a fixed name and receives the agent being initialized:
+
+```python
+"""Log every tool call."""
+from xun import ExtensionContext
+
+def setup_extension(ctx: ExtensionContext) -> None:
+    ctx.agent.hooks.before_tool_call.add(lambda args: print(args.tool_calls))
+```
+
+The module docstring (first line) becomes the extension's description, listed by the `/extensions` command. Failing extensions warn and never block startup. See [extensions/z_search](extensions/z_search) for a real example that overrides the built-in `web_search` tool. Set `config.enable_extensions = False` to opt out (internal helper agents do this automatically).

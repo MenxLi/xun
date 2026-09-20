@@ -9,6 +9,7 @@ from rich.table import Table
 from .runtime import DockerManager, instance_id
 from .service import Multiplexer, Supervisor
 from .users import UserStore
+from ..config import get_home_dir
 
 
 def _parse_port_range(value: str) -> range:
@@ -78,6 +79,7 @@ def main() -> None:
                 instance=instance_id(store.path),
                 excluded_ports={args.port},
                 env_patterns=env_patterns,
+                copy_home_from=str(get_home_dir()),
             )
             supervisor = Supervisor(store, containers, args.interval)
             web.run_app(Multiplexer(supervisor).app(), host=args.host, port=args.port)

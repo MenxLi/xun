@@ -10,6 +10,7 @@ from docker.errors import NotFound
 from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
+from .config import get_home_dir
 from .displays.display import Display
 from .displays.web_display import WebDisplay
 from .displays.web_service import WebDisplayService
@@ -322,7 +323,7 @@ def main_container():
     if args.copy and not requested_mount:
         parser.error("--copy requires a mount directory.")
     mount = str(Path(requested_mount).resolve()) if requested_mount else ""
-    envs = matching_environment(env_kw)
+    envs = matching_environment(env_kw, exclude={"XUN_HOME"})    # the image fixes XUN_HOME=/.xun
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
     exec_cmd = args.exec_cmd
     if exec_cmd is None:
@@ -345,6 +346,8 @@ def main_container():
         )
         if args.copy:
             copy_directory(mount, container, "/workspace")
+        if (home := get_home_dir()).is_dir():
+            copy_directory(str(home), container, "/.xun")    # copy the host home in; start from an empty dir to skip
         start_attached(container, interactive=True)
     except BaseException:
         if container is not None:

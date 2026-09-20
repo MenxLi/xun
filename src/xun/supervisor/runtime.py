@@ -46,7 +46,7 @@ def matching_environment(
 
 def copy_directory(source: str, container: DockerContainer, target: str) -> None:
     with SpooledTemporaryFile() as archive:
-        with tarfile.open(fileobj=archive, mode="w") as tar:
+        with tarfile.open(fileobj=archive, mode="w", dereference=True) as tar:
             for child in Path(source).iterdir():
                 tar.add(child, arcname=child.name)
         archive.seek(0)
@@ -107,6 +107,7 @@ class DockerManager:
         instance: str,
         excluded_ports: set[int] | None = None,
         env_patterns: list[str] | None = None,
+        copy_home_from: str | None = None,
         client: DockerClient | None = None,
     ) -> None:
         self.image = image
@@ -114,6 +115,7 @@ class DockerManager:
         self.instance = instance
         self.used_ports = set(excluded_ports or ())
         self.env_patterns = list(env_patterns or ())
+        self.copy_home_from = copy_home_from
         self.client = client or docker.from_env()
 
     @property
@@ -180,6 +182,8 @@ class DockerManager:
                     "xunx.token": user.token,
                 },
             )
+            if self.copy_home_from is not None and Path(self.copy_home_from).is_dir():
+                copy_directory(self.copy_home_from, container, "/.xun")
             container.start()
             self._stream_logs(container, name)
             if not isinstance(container.id, str):

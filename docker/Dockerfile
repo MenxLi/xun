@@ -91,8 +91,10 @@ COPY . /xun-src
 WORKDIR /xun-src
 RUN pip install .
 
-ENV _XUN_WARN_EXTRA_TOOL_REGISTRATION=1
 ENV _XUN_INFO_TOOL_OVERRIDE=1
 
-RUN mkdir -p /workspace
+# fixed xun home: xunc/xunx copy the host home in here at container creation (follows symlinks)
+ENV XUN_HOME=/.xun
+
+RUN mkdir -p /workspace /.xun
 WORKDIR /workspace

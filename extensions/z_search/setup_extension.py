@@ -1,27 +1,33 @@
-""" This is an experimental module for my personal vendor tools integration.  """
+"""Override web_search with ZhipuAI's Web Search tool.
 
-from typing import Literal, Callable
+Needs `pip install zai-sdk` and the `ZAI_API_KEY` environment variable;
+the extension skips itself (with a one-time warning) when unavailable.
+"""
+
 import rich
-from ..toolcall import tool_attr
-from ..config import get_internal_env_bool
 
-def _expose_z_search():
-    try:
-        from zai import ZhipuAiClient
-        z_client = ZhipuAiClient()
-    except Exception as e:
-        if get_internal_env_bool("WARN_EXTRA_TOOL_REGISTRATION"):
-            rich.print(f"[Warning] Failed to import ZhipuAiClient. Extra tool 'z_search' will not be available: {e}")
-        return []
+from xun import ExtensionContext, tool_attr
+
+try:
+    from zai import ZhipuAiClient
+    _client = ZhipuAiClient()
+except Exception as e:
+    _client = None
+    rich.print(f"[Extension warning] z_search disabled, ZhipuAiClient unavailable: {e}")
+
+
+def setup_extension(ctx: ExtensionContext) -> None:
+    if _client is None:
+        return
 
     @tool_attr(name="web_search", override=True)
     def z_search(
-        query: str, 
-        limit: int = 5, 
+        query: str,
+        limit: int = 5,
         max_content_length: int = 4096,
         ) -> list[dict]:
         """
-        Web search with ZhipuAI's Web Search tool. 
+        Web search with ZhipuAI's Web Search tool.
         Prefer this tools for web search tasks, get more accurate and comprehensive search results.
 
         The maximum content length (per result, in characters) can be controlled via the `max_content_length` parameter.
@@ -30,7 +36,8 @@ def _expose_z_search():
         # THE API IS REALLY BAD AT DOCUMENTING... ALSO UNPREDICTABLE BEHAVIOR
         # https://docs.bigmodel.cn/cn/guide/tools/web-search
 
-        response = z_client.web_search.web_search(
+        assert _client is not None
+        response = _client.web_search.web_search(
             search_engine="search_pro",
             search_query=query,
             count=limit,
@@ -58,11 +65,5 @@ def _expose_z_search():
         else:
             raise AssertionError("Unexpected response format from ZhipuAI Web Search tool: 'search_result' is missing or not a list.")
         return results
-    return [z_search]
 
-def expose_extra_tools() -> list[Callable]:
-    """
-    z_search: need to install zai-sdk and setup `ZAI_API_KEY` environment variable, 
-        or will not be available silently if not configured.
-    """
-    return _expose_z_search()
+    ctx.agent.toolbox.register(z_search)
