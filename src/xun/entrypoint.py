@@ -10,7 +10,7 @@ from docker.errors import NotFound
 from pydantic import BaseModel
 
 from .display_abstract import DisplayAbstract
-from .config import get_home_dir
+from .config import get_home_dir, HOME_COPY_INCLUDE
 from .displays.display import Display
 from .displays.web_display import WebDisplay
 from .displays.web_service import WebDisplayService
@@ -21,7 +21,8 @@ from .command import Command
 from .types import CancelledError
 from .workspace import Workspace
 from .tools.common import default_tool_commands
-from .supervisor.runtime import HOME_COPY_INCLUDE, copy_directory, matching_environment, start_attached
+from .supervisor.runtime import copy_directory, start_attached
+from .util import matching_environment
 
 from dotenv import load_dotenv
 load_dotenv()

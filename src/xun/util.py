@@ -2,6 +2,7 @@
 import os
 import base64
 import binascii
+import fnmatch
 import mimetypes
 from io import BytesIO
 from pathlib import Path
@@ -75,6 +76,18 @@ def fmt_size(size: int | float) -> str:
 def fmt_time(timestamp: float) -> str:
     dt = datetime.fromtimestamp(timestamp)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+def matching_environment(
+    patterns: list[str],
+    *,
+    exclude: set[str] | None = None,
+) -> dict[str, str]:
+    excluded = exclude or set()
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key not in excluded and any(fnmatch.fnmatch(key, pattern) for pattern in patterns)
+    }
 
 def parse_bool(name: str) -> bool | None:
     value = os.environ.get(name)

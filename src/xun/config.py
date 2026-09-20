@@ -22,6 +22,9 @@ def get_home_dir() -> Path:
     else:
         return Path.cwd() / f".{BRAND.lower()}"
 
+HOME_COPY_INCLUDE = {"config.json", "extensions"}
+"""What to copy from the host home dir into a container; skips x/ and conversation/."""
+
 def get_internal_env(key: str) -> str | None:
     return os.environ.get(f"_{BRAND}_{key}")
 def get_internal_env_bool(key: str) -> bool | None:

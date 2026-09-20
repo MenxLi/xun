@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import os
 import secrets
@@ -20,6 +19,8 @@ from docker.errors import NotFound
 from docker.models.containers import Container as DockerContainer
 from rich.console import Console
 
+from ..config import HOME_COPY_INCLUDE
+from ..util import matching_environment
 from .users import User
 
 _console = Console(stderr=True)
@@ -30,22 +31,6 @@ class _AttachStream(Protocol):
     def write(self, data: bytes) -> int: ...
     def close(self) -> None: ...
 
-
-def matching_environment(
-    patterns: list[str],
-    *,
-    exclude: set[str] | None = None,
-) -> dict[str, str]:
-    excluded = exclude or set()
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if key not in excluded and any(fnmatch.fnmatch(key, pattern) for pattern in patterns)
-    }
-
-
-HOME_COPY_INCLUDE = {"config.json", "extensions"}
-"""What to copy from the host XUN_HOME into a container"""
 
 def copy_directory(source: str, container: DockerContainer, target: str, include: set[str] | None = None) -> None:
     with SpooledTemporaryFile() as archive:
