@@ -13,8 +13,9 @@ from .conversation import Conversation
 from .types import TypeVar
 from .workspace import Workspace
 from .hooks import HookArgs, Hooks
+from .agent_state import T, StateT
 if TYPE_CHECKING:
-    from .agent import Agent, T
+    from .agent import Agent
     from .config import AgentConfig
     from .toolcall import Function
 
@@ -253,8 +254,13 @@ class AgentDisplayProtocol(Protocol):
     hooks: Hooks
     config: AgentConfig
 
-class AgentDisplayMixin(AgentDisplayProtocol):
-    """Display-facing helpers for Agent: event emission, messages and prompts.  """
+class AgentDisplayMixin(AgentDisplayProtocol, Generic[StateT]):
+    """Display-facing helpers for Agent: event emission, messages and prompts.
+
+    Generic over the agent lifecycle state: the hook-firing helpers (info /
+    warning / error / get_choice / get_confirm) require the Init state, so they
+    are only callable through `Agent[T.Init]` (the self annotations name this
+    mixin, not Agent, which keeps them valid supertypes of the class)."""
     def display_event(self, ev: DisplayEventType) -> None:
         self.display.on_event(DisplayEvent(
             name=ev.__class__.__name__,
@@ -262,23 +268,23 @@ class AgentDisplayMixin(AgentDisplayProtocol):
             payload=ev,
         ))
 
-    def info(self, message: str) -> None:
-        args = HookArgs.AgentInfoArgs(agent=cast("Agent[Agent.T.Init]", self), message=message)
+    def info(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
+        args = HookArgs.AgentInfoArgs(agent=cast("Agent[T.Init]", self), message=message)
         self.hooks.before_display_info.invoke(args)
         self.display_event(InfoEvent(message=args.message))
 
-    def warning(self, message: str) -> None:
-        args = HookArgs.AgentWarningArgs(agent=cast("Agent[Agent.T.Init]", self), message=message)
+    def warning(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
+        args = HookArgs.AgentWarningArgs(agent=cast("Agent[T.Init]", self), message=message)
         self.hooks.before_display_warning.invoke(args)
         self.display_event(WarningEvent(message=args.message))
 
-    def error(self, message: str) -> None:
-        args = HookArgs.AgentErrorArgs(agent=cast("Agent[Agent.T.Init]", self), message=message)
+    def error(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
+        args = HookArgs.AgentErrorArgs(agent=cast("Agent[T.Init]", self), message=message)
         self.hooks.before_display_error.invoke(args)
         self.display_event(ErrorEvent(message=args.message))
 
     def get_choice(
-        self,
+        self: "AgentDisplayMixin[T.Init]",
         prompt: str,
         choices: list[str],
         message: Optional[str] = None,
@@ -309,7 +315,7 @@ class AgentDisplayMixin(AgentDisplayProtocol):
         return ChoiceOutcome(choice=choice, source="user")
 
     def get_confirm(
-        self,
+        self: "AgentDisplayMixin[T.Init]",
         prompt: str,
         message: Optional[str] = None,
         title: Optional[str] = None,

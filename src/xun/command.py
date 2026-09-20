@@ -245,7 +245,7 @@ def default_commands() -> list[Command]:
         agent.execute()
 
     def _extensions_handler(agent: "Agent[Agent.T.Init]") -> None:
-        from .extensions import list_loaded_extensions
+        from .extension import list_loaded_extensions
         exts = list_loaded_extensions()
         if not exts:
             agent.info("No extensions loaded.")

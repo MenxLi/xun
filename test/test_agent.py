@@ -128,6 +128,7 @@ class AgentLifecycleTest(unittest.TestCase):
         display = _RecordingDisplay()
         agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
         agent.config.auto_confirm = True
+        agent = cast("Agent[Agent.T.Init]", agent)  # gated helpers need Init; runtime path is state-agnostic
 
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes").choice, "Yes")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
@@ -137,7 +138,8 @@ class AgentLifecycleTest(unittest.TestCase):
 
     def test_user_choice_emits_confirmation_event(self) -> None:
         display = _RecordingDisplay()
-        agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
+        agent = cast("Agent[Agent.T.Init]",
+                     Agent(display=display, workspace=Workspace(workdir=self.workdir)))
 
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]).choice, "No")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)

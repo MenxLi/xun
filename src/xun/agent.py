@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from PIL.Image import Image
 from threading import Semaphore
 
-from .types import TypeVar, CancelledError
+from .types import CancelledError
+from .agent_state import T, StateT, _Uninit, _Init, _Final, _ST
 from .display_abstract import *
 from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
@@ -23,7 +24,7 @@ from .command import CommandRegistry
 from .compact import AutoCompactor, CompactorAbstract
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
-from .extensions import apply_extensions
+from .extension import apply_extensions
 
 DEFAULT_MAX_ITERATIONS = 256
 DEFAULT_API_CALL_LIMIT = 3
@@ -44,29 +45,8 @@ def _warn_auto_confirm_once(agent: "Agent") -> None:
             ),
         )
 
-class _AgentState: v=0
-class _Uninit(_AgentState): v=1
-class _Init(_AgentState): v=2
-class _Final(_AgentState): v=3
-
-# covariant: an Agent[T.Init] is usable anywhere an Agent[T.Any] is expected, 
-# but not vice versa. default=_Uninit: a bare `Agent` denotes a freshly constructed agent,
-StateT = TypeVar("StateT", bound=_AgentState, covariant=True, default=_Uninit)
-_ST = TypeVar("_ST", bound=_AgentState, covariant=True)
-
-class T:
-    """
-    Namespace for type-level lifecycle states for annotations: 
-    `Agent[T.Uninit]` / `Agent[T.Init]` / ...
-    """
-    Uninit = _Uninit
-    Init = _Init
-    Final = _Final
-    Alive = _Uninit | _Init
-    Any = _AgentState
-
 @dataclass
-class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
+class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
 
     # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
     # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`

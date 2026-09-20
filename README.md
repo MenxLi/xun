@@ -211,19 +211,12 @@ More configuration options are available; see the source code at [src/xun/config
 
 Drop a Python file under `$XUN_HOME/extensions/` and every agent picks up its effects (tools, hooks, commands, config tweaks) at initialization — no wiring needed. Extensions are trusted code, like a shell rc file.
 
-Two source forms, each yielding an extension named `{name}`:
-
-- `extensions/{name}/setup_extension.py` — package form, supports relative imports of helper modules
-- `extensions/{name}.py` — flat single file, for the common few-lines-of-hooks case
-
-The entry function has a fixed name and receives the agent being initialized:
-
 ```python
-"""Log every tool call."""
+"""Log every tool call."""  # extensions/<name>.py
 from xun import ExtensionContext
 
 def setup_extension(ctx: ExtensionContext) -> None:
     ctx.agent.hooks.before_tool_call.add(lambda args: print(args.tool_calls))
 ```
 
-The module docstring (first line) becomes the extension's description, listed by the `/extensions` command. Failing extensions warn and never block startup. See [extensions/z_search](extensions/z_search) for a real example that overrides the built-in `web_search` tool. Set `config.enable_extensions = False` to opt out (internal helper agents do this automatically).
+See [extensions/README.md](extensions/README.md) for the full mechanics.

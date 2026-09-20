@@ -5,9 +5,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay, ToolBox, CommandRegistry
-from xun.extensions import list_loaded_extensions
+from xun.extension import list_loaded_extensions
 from xun.workspace import Workspace
-import xun.extensions as ext_mod
+import xun.extension as ext_mod
 
 
 def _write(path: Path, content: str) -> None:

@@ -13,6 +13,7 @@ from typing import Annotated, Any, AsyncGenerator, Callable, Literal, Optional, 
 
 from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, TypeAdapter
+import rich
 
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError, Result
@@ -225,6 +226,11 @@ class WebDisplay(DisplayAbstract):
             raise HTTPException(404, "Agent not found")
         return agent
 
+    @staticmethod
+    def _report_uninitialized(agent: "Agent[Agent.T.Any]") -> None:
+        # unreachable in practice: web agents are always bound initialized
+        rich.print(f"[bold red]Error: agent '{agent.name}' is not initialized[/bold red]")
+
     def _supports_vision(self, agent: "Agent[Agent.T.Init]") -> bool:
         return "vision" in agent.config.model.capabilities
 
@@ -244,7 +250,7 @@ class WebDisplay(DisplayAbstract):
             if not content and not message.images:
                 return
             if not Agent.is_initialized(agent):
-                agent.error("Agent is not initialized")
+                self._report_uninitialized(agent)
                 return
             if message.images and not self._supports_vision(agent):
                 agent.error("The configured model does not support image input")
@@ -256,7 +262,7 @@ class WebDisplay(DisplayAbstract):
             name = message.name.strip().lstrip("/")
             if name:
                 if not Agent.is_initialized(agent):
-                    agent.error("Agent is not initialized")
+                    self._report_uninitialized(agent)
                     return
                 self._enqueue(message.agent_id, self._execute_command, agent, name, message.arguments)
         elif isinstance(message, CancelMessage):

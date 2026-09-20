@@ -9,7 +9,7 @@ from .toolbox import ToolBox, ToolCallContext
 from .agent_factory import AgentGetterProtocol, AgentGetterParam
 from .toolcall import tool_attr
 from .config import AgentConfig
-from .extensions import ExtensionContext
+from .extension import ExtensionContext
 from .workspace import Workspace
 from .agent import Agent
 
