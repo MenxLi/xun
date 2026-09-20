@@ -170,7 +170,6 @@ export default {
     complete: 'Upload complete',
     failed: 'Upload failed',
     filesCount: '{n} file | {n} files',
-    moreFiles: '+{n} more file | +{n} more files',
     dismiss: 'Dismiss upload status',
   },
   errors: {

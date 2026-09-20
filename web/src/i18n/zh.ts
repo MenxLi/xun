@@ -172,7 +172,6 @@ const zh: typeof en = {
     complete: '上传完成',
     failed: '上传失败',
     filesCount: '{n} 个文件',
-    moreFiles: '还有 {n} 个',
     dismiss: '关闭上传状态',
   },
   errors: {

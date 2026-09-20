@@ -70,11 +70,10 @@ onBeforeUnmount(clearTimer)
 
       <div class="upload-notice-body">
         <div class="upload-file-list">
-          <div v-for="(name, index) in files.slice(0, 3)" :key="`${name}-${index}`" class="upload-file-row">
+          <div v-for="(name, index) in files" :key="`${name}-${index}`" class="upload-file-row">
             <File :size="14" aria-hidden="true" />
             <span class="upload-file-name" :title="name">{{ name }}</span>
           </div>
-          <div v-if="files.length > 3" class="upload-file-more">{{ t('upload.moreFiles', { n: files.length - 3 }) }}</div>
         </div>
         <small v-if="error" class="upload-error">{{ error }}</small>
       </div>
@@ -95,12 +94,11 @@ onBeforeUnmount(clearTimer)
 .upload-status-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; color: var(--accent-dark); background: var(--accent-soft); }
 .upload-status-icon.uploading svg { animation: upload-spin .8s linear infinite; }
 .upload-status-icon.failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--paper)); }
-.upload-file-list { min-width: 0; }
+.upload-file-list { min-width: 0; max-height: min(220px, 40vh); overflow-y: auto; overscroll-behavior: contain; }
 .upload-file-row { min-width: 0; height: 32px; padding: 0 8px; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: center; }
 .upload-file-row + .upload-file-row { border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent); }
 .upload-file-row svg { color: var(--muted); }
 .upload-file-name { overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.upload-file-more { height: 28px; padding: 0 8px 0 32px; display: flex; align-items: center; border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent); color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .upload-error { display: block; margin: 6px 8px 3px; color: var(--danger); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
 .upload-countdown { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; transform-origin: left; background: color-mix(in srgb, var(--accent) 45%, transparent); animation: upload-countdown linear forwards; }
 .upload-countdown.paused { animation-play-state: paused; }
