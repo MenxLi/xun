@@ -136,7 +136,7 @@ class WebDisplayTest(unittest.TestCase):
                 "expose_files": False,
             })
             self.assertEqual(client.get("/session/api/files/agent-1").status_code, 404)
-            self.assertEqual(client.post("/session/api/serve/agent-1", json={"path": ""}).status_code, 404)
+            self.assertEqual(client.post("/session/api/serve/agent-1/start", json={"path": ""}).status_code, 404)
 
         self.assertEqual(self.client.get("api/config").json(), {
             "expose_files": True,
@@ -169,7 +169,7 @@ class WebDisplayTest(unittest.TestCase):
     def test_upload_view_download_and_delete(self) -> None:
         response = self.client.post(
             "api/files/agent-1/upload",
-            params={"path": ""},
+            data={"path": ""},
             files=[("files", ("note.txt", b"hello web", "text/plain"))],
         )
         self.assertEqual(response.json(), {"uploaded": ["note.txt"]})
@@ -188,9 +188,9 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertEqual(download.content, b"hello web")
 
-        deleted = self.client.delete(
-            "api/files/agent-1",
-            params={"path": "note.txt"},
+        deleted = self.client.post(
+            "api/files/agent-1/delete",
+            json={"path": "note.txt"},
         )
         self.assertEqual(deleted.json(), {"deleted": True})
         self.assertFalse((self.root / "note.txt").exists())
@@ -199,17 +199,17 @@ class WebDisplayTest(unittest.TestCase):
         target.write_text("keep", encoding="utf-8")
         link = self.root / "link.txt"
         link.symlink_to(target)
-        self.client.delete(
-            "api/files/agent-1",
-            params={"path": "link.txt"},
+        self.client.post(
+            "api/files/agent-1/delete",
+            json={"path": "link.txt"},
         )
         self.assertFalse(link.exists())
         self.assertEqual(target.read_text(encoding="utf-8"), "keep")
 
     def test_create_directory_and_move_file(self) -> None:
         created = self.client.post(
-            "api/files/agent-1",
-            json={"action": "create-directory", "path": "notes"},
+            "api/files/agent-1/create-directory",
+            json={"path": "notes"},
         )
         self.assertEqual(created.status_code, 200)
         self.assertEqual(created.json(), {"path": "notes"})
@@ -218,8 +218,8 @@ class WebDisplayTest(unittest.TestCase):
         source = self.root / "draft.txt"
         source.write_text("draft", encoding="utf-8")
         moved = self.client.post(
-            "api/files/agent-1",
-            json={"action": "move", "path": "draft.txt", "destination": "notes/final.txt"},
+            "api/files/agent-1/move",
+            json={"path": "draft.txt", "destination": "notes/final.txt"},
         )
         self.assertEqual(moved.status_code, 200)
         self.assertEqual(moved.json(), {"path": "notes/final.txt"})
@@ -235,14 +235,14 @@ class WebDisplayTest(unittest.TestCase):
     def test_file_mutations_reject_conflicts_and_invalid_moves(self) -> None:
         (self.root / "existing").mkdir()
         duplicate = self.client.post(
-            "api/files/agent-1",
-            json={"action": "create-directory", "path": "existing"},
+            "api/files/agent-1/create-directory",
+            json={"path": "existing"},
         )
         self.assertEqual(duplicate.status_code, 409)
 
         invalid = self.client.post(
-            "api/files/agent-1",
-            json={"action": "move", "path": "existing", "destination": "existing/child"},
+            "api/files/agent-1/move",
+            json={"path": "existing", "destination": "existing/child"},
         )
         self.assertEqual(invalid.status_code, 400)
         self.assertTrue((self.root / "existing").is_dir())
@@ -257,12 +257,12 @@ class WebDisplayTest(unittest.TestCase):
             source.write_text("keep", encoding="utf-8")
 
             moved = self.client.post(
-                "api/files/agent-1",
-                json={"action": "move", "path": "source.txt", "destination": "escape/moved.txt"},
+                "api/files/agent-1/move",
+                json={"path": "source.txt", "destination": "escape/moved.txt"},
             )
-            deleted = self.client.delete(
-                "api/files/agent-1",
-                params={"path": "escape/secret.txt"},
+            deleted = self.client.post(
+                "api/files/agent-1/delete",
+                json={"path": "escape/secret.txt"},
             )
             listing = self.client.get("api/files/agent-1").json()
 
@@ -371,7 +371,7 @@ class WebDisplayTest(unittest.TestCase):
         (site / "index.html").write_text("<main>served</main>", encoding="utf-8")
         (site / "assets" / "app.css").write_text("body {}", encoding="utf-8")
 
-        started = self.client.post("api/serve/agent-1", json={"path": "site"})
+        started = self.client.post("api/serve/agent-1/start", json={"path": "site"})
         self.assertEqual(started.status_code, 200)
         server = started.json()
         self.assertEqual(server["path"], "site")
@@ -399,17 +399,17 @@ class WebDisplayTest(unittest.TestCase):
         listed = self.client.get("api/serve/agent-1").json()["servers"]
         self.assertEqual([entry["key"] for entry in listed], [server["key"]])
 
-        stopped = self.client.delete(f"api/serve/agent-1/{server['key']}")
+        stopped = self.client.post(f"api/serve/agent-1/{server['key']}/stop")
         self.assertEqual(stopped.json(), {"stopped": True})
         self.assertEqual(self.client.get(server["url"].lstrip("/")).status_code, 404)
         self.assertEqual(self.client.get("api/serve/agent-1").json()["servers"], [])
-        self.assertEqual(self.client.delete(f"api/serve/agent-1/{server['key']}").status_code, 404)
+        self.assertEqual(self.client.post(f"api/serve/agent-1/{server['key']}/stop").status_code, 404)
 
     def test_serve_stops_when_directory_removed(self) -> None:
         site = self.root / "site"
         site.mkdir()
         (site / "index.html").write_text("<main>served</main>", encoding="utf-8")
-        server = self.client.post("api/serve/agent-1", json={"path": "site"}).json()
+        server = self.client.post("api/serve/agent-1/start", json={"path": "site"}).json()
         self.assertEqual(self.client.get(server["url"].lstrip("/")).status_code, 200)
 
         # removing the directory outside the serve API retires the server
@@ -420,15 +420,15 @@ class WebDisplayTest(unittest.TestCase):
     def test_serve_rejects_bad_paths_and_too_many_servers(self) -> None:
         (self.root / "site").mkdir()
         (self.root / "file.txt").write_text("x", encoding="utf-8")
-        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": ""}).status_code, 400)
-        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "nope"}).status_code, 404)
-        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "file.txt"}).status_code, 404)
-        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "../etc"}).status_code, 400)
+        self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": ""}).status_code, 400)
+        self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "nope"}).status_code, 404)
+        self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "file.txt"}).status_code, 404)
+        self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "../etc"}).status_code, 400)
 
-        keys = [self.client.post("api/serve/agent-1", json={"path": "site"}).json()["key"] for _ in range(MAX_SERVE_SERVERS)]
-        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "site"}).status_code, 429)
+        keys = [self.client.post("api/serve/agent-1/start", json={"path": "site"}).json()["key"] for _ in range(MAX_SERVE_SERVERS)]
+        self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "site"}).status_code, 429)
         for key in keys:
-            self.assertTrue(self.client.delete(f"api/serve/agent-1/{key}").json()["stopped"])
+            self.assertTrue(self.client.post(f"api/serve/agent-1/{key}/stop").json()["stopped"])
 
     def test_websocket_dispatches_messages_and_commands_to_selected_agent(self) -> None:
         second_root = self.root / "second"
@@ -525,12 +525,12 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual({prompt["agent_id"] for prompt in prompts}, {"agent-1", "agent-2"})
         for prompt in prompts:
             response = self.client.post(
-                f"api/prompts/{prompt['id']}",
+                f"api/prompts/{prompt['id']}/resolve",
                 json={"type": "choice", "prompt_id": prompt["id"], "value": prompt["agent_id"]},
             )
             self.assertEqual(response.json(), {"resolved": True})
             duplicate = self.client.post(
-                f"api/prompts/{prompt['id']}",
+                f"api/prompts/{prompt['id']}/resolve",
                 json={"type": "choice", "prompt_id": prompt["id"], "value": "duplicate"},
             )
             self.assertEqual(duplicate.status_code, 409)
@@ -720,7 +720,7 @@ class WebDisplayTest(unittest.TestCase):
             main_display._pending.set("main-agent", {"prompt": "Continue?", "choices": ["Yes"]})
             self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "waiting")
 
-            created = client.post("/api/sessions", json={"name": "Research"})
+            created = client.post("/api/sessions/create", json={"name": "Research"})
             self.assertEqual(created.status_code, 201)
             self.assertEqual(created.json(), {
                 "path": "/sessions/new",
@@ -731,13 +731,13 @@ class WebDisplayTest(unittest.TestCase):
             self.assertEqual(config.status_code, 200)
             self.assertEqual(config.json(), {"expose_files": False})
 
-            deleted = client.delete("/api/sessions/sessions/new")
+            deleted = client.post("/api/sessions/remove", json={"path": "/sessions/new"})
             self.assertEqual(deleted.json(), {"removed": True})
             self.assertEqual(client.get("/session/sessions/new/api/config").status_code, 404)
-            recreated = client.post("/api/sessions", json={"name": "Research again"})
+            recreated = client.post("/api/sessions/create", json={"name": "Research again"})
             self.assertEqual(recreated.status_code, 201)
-            self.assertEqual(client.delete("/api/sessions/sessions/new").status_code, 200)
-            last = client.delete("/api/sessions/sessions/main")
+            self.assertEqual(client.post("/api/sessions/remove", json={"path": "/sessions/new"}).status_code, 200)
+            last = client.post("/api/sessions/remove", json={"path": "/sessions/main"})
             self.assertEqual(last.status_code, 409)
 
         self.assertEqual([path for path, _display in removed], ["/sessions/new", "/sessions/new"])
@@ -755,7 +755,7 @@ class WebDisplayTest(unittest.TestCase):
         service = WebDisplayService(token="service-token", session_manager=new_session)
         service.mount("/main", WebDisplay())
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
-            self.assertEqual(client.post("/api/sessions", json={}).status_code, 201)
+            self.assertEqual(client.post("/api/sessions/create", json={}).status_code, 201)
             self.assertFalse(closed.is_set())
 
         self.assertTrue(closed.is_set())
@@ -770,13 +770,13 @@ class WebDisplayTest(unittest.TestCase):
         service.mount("/", WebDisplay())
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
-            created = client.post("/api/sessions", json={"name": "New session"})
+            created = client.post("/api/sessions/create", json={"name": "New session"})
 
             self.assertEqual(created.status_code, 201)
             self.assertEqual(client.get("/session/sessions/new/api/config").status_code, 200)
 
     def test_session_management_is_disabled_without_manager(self) -> None:
-        response = self.client.post("http://testserver/api/sessions", json={"name": "New session"})
+        response = self.client.post("http://testserver/api/sessions/create", json={"name": "New session"})
 
         self.assertEqual(response.status_code, 405)
         self.assertFalse(self.client.get("http://testserver/api/sessions").json()["can_manage"])

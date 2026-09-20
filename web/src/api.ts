@@ -15,9 +15,8 @@ export function configureSession(path: string): void {
   displayBaseUrl = `${serviceRoot}/session${suffix ? `/${suffix}` : ''}`
 }
 
-function sessionUrl(path = ''): string {
-  const suffix = path.split('/').filter(Boolean).map(encodeURIComponent).join('/')
-  return `${serviceRoot}/api/sessions${suffix ? `/${suffix}` : ''}`
+function sessionUrl(): string {
+  return `${serviceRoot}/api/sessions`
 }
 
 export function chatUrl(sessionPath: string): string {
@@ -59,17 +58,21 @@ export function fullEventTime(event: { timestamp: number }): string {
 
 export const api = {
   sessions: () => request<SessionList>(sessionUrl()),
-  createSession: (name: string) => request<SessionInfo>(sessionUrl(), {
+  createSession: (name: string) => request<SessionInfo>(`${sessionUrl()}/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: name || null }),
   }),
-  removeSession: (path: string) => request<{ removed: boolean }>(sessionUrl(path), { method: 'DELETE' }),
+  removeSession: (path: string) => request<{ removed: boolean }>(`${sessionUrl()}/remove`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }),
   config: () => request<WebConfig>(appUrl('/api/config')),
   events: () => request<DisplayEvent[]>(appUrl('/api/events')),
   prompts: () => request<PendingPrompt[]>(appUrl('/api/prompts')),
   resolvePrompt: (promptId: string, value: string) => request<{ resolved: boolean }>(
-    appUrl(`/api/prompts/${encodeURIComponent(promptId)}`),
+    appUrl(`/api/prompts/${encodeURIComponent(promptId)}/resolve`),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -94,36 +97,41 @@ export const api = {
     appUrl(`/api/files/${encodeURIComponent(agentId)}/archive?${query({ path })}`),
   upload: (agentId: string, path: string, files: File[]) => {
     const body = new FormData()
+    body.append('path', path)
     files.forEach(file => body.append('files', file))
     return request<{ uploaded: string[] }>(
-      appUrl(`/api/files/${encodeURIComponent(agentId)}/upload?${query({ path })}`),
+      appUrl(`/api/files/${encodeURIComponent(agentId)}/upload`),
       { method: 'POST', body },
     )
   },
   createDirectory: (agentId: string, path: string) =>
-    request<{ path: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}`), {
+    request<{ path: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}/create-directory`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'create-directory', path }),
+      body: JSON.stringify({ path }),
     }),
   move: (agentId: string, path: string, destination: string) =>
-    request<{ path: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}`), {
+    request<{ path: string }>(appUrl(`/api/files/${encodeURIComponent(agentId)}/move`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'move', path, destination }),
+      body: JSON.stringify({ path, destination }),
     }),
   remove: (agentId: string, path: string) =>
-    request<{ deleted: boolean }>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`), { method: 'DELETE' }),
+    request<{ deleted: boolean }>(appUrl(`/api/files/${encodeURIComponent(agentId)}/delete`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }),
   serveServers: (agentId: string) =>
     request<{ servers: ServeServer[] }>(appUrl(`/api/serve/${encodeURIComponent(agentId)}`)),
   startServe: (agentId: string, path: string) =>
-    request<ServeServer>(appUrl(`/api/serve/${encodeURIComponent(agentId)}`), {
+    request<ServeServer>(appUrl(`/api/serve/${encodeURIComponent(agentId)}/start`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path }),
     }),
   stopServe: (agentId: string, key: string) =>
-    request<{ stopped: boolean }>(appUrl(`/api/serve/${encodeURIComponent(agentId)}/${encodeURIComponent(key)}`), { method: 'DELETE' }),
+    request<{ stopped: boolean }>(appUrl(`/api/serve/${encodeURIComponent(agentId)}/${encodeURIComponent(key)}/stop`), { method: 'POST' }),
   serveHref: (server: ServeServer) =>
     new URL(appUrl(server.url), location.origin).href,
 }

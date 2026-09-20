@@ -159,6 +159,10 @@ class SessionCreate(BaseModel):
     name: Optional[str] = Field(default=None, max_length=80)
 
 
+class SessionRemove(BaseModel):
+    path: str
+
+
 @dataclass
 class _DisplaySession:
     display: WebDisplay
@@ -247,7 +251,7 @@ class WebDisplayService:
                     raise HTTPException(404, "Session not found")
                 return self._session_info(mount_path)
 
-        @self.app.post(self.sessions_api_path, status_code=201)
+        @self.app.post(f"{self.sessions_api_path}/create", status_code=201)
         async def create_session(request: SessionCreate) -> SessionInfo:
             manager = self._session_manager
             if manager is None:
@@ -264,13 +268,13 @@ class WebDisplayService:
                 raise
             return self._session_info(mount_path)
 
-        @self.app.delete(f"{self.sessions_api_path}/{{session_path:path}}")
-        async def remove_session(session_path: str) -> dict[str, bool]:
+        @self.app.post(f"{self.sessions_api_path}/remove")
+        async def remove_session(request: SessionRemove) -> dict[str, bool]:
             if self._session_manager is None:
                 raise HTTPException(405, "Session management is disabled")
             if len(self._sessions) <= 1:
                 raise HTTPException(409, "The last session cannot be removed")
-            self.unmount(session_path)
+            self.unmount(request.path)
             return {"removed": True}
 
     def _configure_login(self) -> None:

@@ -348,7 +348,7 @@ class WebDisplay(DisplayAbstract):
         async def pending_prompts() -> list[dict[str, Any]]:
             return self._pending.list()
 
-        @router.post("/api/prompts/{prompt_id}")
+        @router.post("/api/prompts/{prompt_id}/resolve")
         async def respond_to_prompt(prompt_id: str, response: ChoiceMessage) -> dict[str, bool]:
             if response.prompt_id != prompt_id or not self._pending.respond(prompt_id, response.value):
                 raise HTTPException(409, "Prompt is no longer pending")

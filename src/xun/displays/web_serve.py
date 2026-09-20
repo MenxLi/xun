@@ -119,7 +119,7 @@ def build_serve_router(agent_getter: AgentGetter, manager: ServeManager) -> APIR
         agent_getter(agent_id)
         return {"servers": manager.list()}
 
-    @router.post("/api/serve/{agent_id}")
+    @router.post("/api/serve/{agent_id}/start")
     async def start_server(agent_id: str, request: ServeRequest) -> dict[str, Any]:
         agent = agent_getter(agent_id)
         target = resolve_path(agent, request.path)
@@ -129,7 +129,7 @@ def build_serve_router(agent_getter: AgentGetter, manager: ServeManager) -> APIR
             raise HTTPException(404, "Directory not found")
         return manager.start(request.path, target)
 
-    @router.delete("/api/serve/{agent_id}/{key}")
+    @router.post("/api/serve/{agent_id}/{key}/stop")
     async def stop_server(agent_id: str, key: str) -> dict[str, bool]:
         agent_getter(agent_id)
         if not manager.stop(key):
