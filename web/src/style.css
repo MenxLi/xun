@@ -262,6 +262,8 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-row:hover { background: var(--hover); }
 .file-name { min-width: 0; height: 100%; flex: 1; padding: 0 7px; display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--ink); cursor: pointer; text-align: left; }
 .file-name svg { flex: none; color: var(--muted); }
+.row-serve-badge { flex: none; display: inline-grid; place-items: center; color: var(--accent); }
+.row-serve-badge:hover { color: var(--accent); }
 .file-name span { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .inline-name { cursor: default; }
 .inline-name input { min-width: 0; height: 25px; flex: 1; padding: 0 5px; border: 1px solid var(--accent); border-radius: 3px; outline: none; color: var(--ink); background: var(--input); font: 11px/1 'Fira Code', monospace; }
@@ -276,6 +278,17 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-menu button:hover:not(:disabled), .file-menu a:hover { background: var(--hover); }
 .file-menu button:disabled { opacity: .4; cursor: default; }
 .file-menu .danger { color: var(--danger); }
+.serve-strip { flex: none; margin: 6px 6px 0; padding: 3px; display: grid; gap: 3px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 6px; background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.serve-row { min-width: 0; height: 26px; padding: 0 3px 0 6px; display: flex; align-items: center; gap: 5px; border-radius: 4px; background: color-mix(in srgb, var(--paper) 65%, transparent); }
+.serve-row.fresh { animation: serve-row-in .5s ease-out; }
+.serve-row > svg { flex: none; color: var(--accent); }
+.serve-path { min-width: 0; flex: 1; overflow: hidden; color: var(--accent-dark); font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+.serve-path:hover { text-decoration: underline; }
+.serve-expiry { flex: none; padding: 2px 5px; display: inline-flex; align-items: center; gap: 3px; border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--hover) 55%, transparent); font: 9px/1 'Fira Code', monospace; font-variant-numeric: tabular-nums; }
+.serve-expiry.soon { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.serve-row .icon-button { width: 22px; height: 22px; }
+.serve-row .icon-button.danger:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+@keyframes serve-row-in { from { background: color-mix(in srgb, var(--accent) 28%, transparent); } }
 .app-dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; overflow: auto; background: rgba(25, 33, 29, .38); z-index: 90; animation: dialog-backdrop-in .14s ease-out; }
 .app-dialog { width: min(420px, 100%); max-height: calc(100dvh - 36px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper); box-shadow: 0 18px 50px rgba(25, 33, 29, .2); animation: dialog-in .14s ease-out; }
 .app-dialog > header { height: 44px; padding: 0 8px 0 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }

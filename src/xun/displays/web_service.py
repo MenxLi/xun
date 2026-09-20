@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import re
 import secrets
 import socket
 import threading
@@ -36,10 +37,20 @@ _DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
 
 
 class _TokenAuthMiddleware:
-    def __init__(self, app: Any, token: str, base_path: str) -> None:
+    # '<session>/srv/<key>/...' urls are self-authenticating: the key is the
+    # credential and its mount vanishes on stop or expiry, so the prefix is
+    # safe to open as long as sessions may not be named 'srv' (see mount()).
+    def __init__(
+        self,
+        app: Any,
+        token: str,
+        base_path: str,
+        session_path: str,
+    ) -> None:
         self.app = app
         self.token = token
         self.base_path = base_path
+        self.serve_prefix = re.compile(rf"^{re.escape(session_path)}(?:/.*)?/srv/")
         self.chat_path = f"{base_path}/chat"
         self.login_path = f"{base_path}/login"
 
@@ -64,6 +75,10 @@ class _TokenAuthMiddleware:
         header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
         cookie_token = connection.cookies.get(_COOKIE_NAME, "")
         if _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token):
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and self.serve_prefix.match(request_path):
             await self.app(scope, receive, send)
             return
 
@@ -208,7 +223,12 @@ class WebDisplayService:
         self._configure_login()
         self._configure_sessions()
         self._configure_chat(assets_dir)
-        self.app.add_middleware(_TokenAuthMiddleware, token=self.token, base_path=self.base_path)
+        self.app.add_middleware(
+            _TokenAuthMiddleware,
+            token=self.token,
+            base_path=self.base_path,
+            session_path=self.session_path,
+        )
 
     def _configure_chat(self, assets_dir: Path) -> None:
         if assets_dir.is_dir():
@@ -308,6 +328,8 @@ class WebDisplayService:
 
     def mount(self, path: str, display: WebDisplay, *, name: Optional[str] = None) -> WebDisplayService:
         mount_path = _normalize_path(path)
+        if "srv" in mount_path.split("/"):
+            raise ValueError("Session paths cannot contain a 'srv' segment")  # see _TokenAuthMiddleware
         session_name = (name or "").strip() or mount_path.rsplit("/", 1)[-1] or "Session"
         with self._session_lock:
             if mount_path in self._sessions:

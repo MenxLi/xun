@@ -1,4 +1,4 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, SessionInfo, SessionList, WebConfig } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, ServeServer, SessionInfo, SessionList, WebConfig } from './types'
 import i18n from './i18n'
 
 const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
@@ -114,4 +114,16 @@ export const api = {
     }),
   remove: (agentId: string, path: string) =>
     request<{ deleted: boolean }>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`), { method: 'DELETE' }),
+  serveServers: (agentId: string) =>
+    request<{ servers: ServeServer[] }>(appUrl(`/api/serve/${encodeURIComponent(agentId)}`)),
+  startServe: (agentId: string, path: string) =>
+    request<ServeServer>(appUrl(`/api/serve/${encodeURIComponent(agentId)}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }),
+  stopServe: (agentId: string, key: string) =>
+    request<{ stopped: boolean }>(appUrl(`/api/serve/${encodeURIComponent(agentId)}/${encodeURIComponent(key)}`), { method: 'DELETE' }),
+  serveHref: (server: ServeServer) =>
+    new URL(appUrl(server.url), location.origin).href,
 }

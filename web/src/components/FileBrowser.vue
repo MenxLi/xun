@@ -2,13 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Download, File, Folder, FolderArchive, FolderPlus, Info, MoreHorizontal, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Check, Clock, Copy, Download, File, Folder, FolderArchive, FolderPlus, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import UploadNotice from './UploadNotice.vue'
 import { api } from '../api'
-import type { AgentInfo, FileEntry, FileInfo } from '../types'
+import { copyText } from '../clipboard'
+import type { AgentInfo, FileEntry, FileInfo, ServeServer } from '../types'
 import { useSettingsStore } from '../stores/settings'
 import type { BrowserState } from '../stores/sessionBuffers'
 
@@ -43,6 +44,12 @@ const activeMenu = ref<'toolbar' | 'entry' | null>(null)
 const activeEntry = ref<FileEntry | null>(null)
 const menuPosition = ref({ top: '0px', left: '0px' })
 const error = ref('')
+const servers = ref<ServeServer[]>([])
+const activeServers = computed(() => servers.value.filter(server => server.expires_at * 1000 > now.value))
+const serveBusy = ref(false)
+const copiedKey = ref('')
+const freshKey = ref('')
+const now = ref(Date.now())
 const fileInput = ref<HTMLInputElement>()
 const uploadNotice = ref<{
   files: string[]
@@ -52,6 +59,7 @@ const uploadNotice = ref<{
 let dragDepth = 0
 let listingRequest = 0
 let metadataRequest = 0
+let serveTimer: number | undefined
 const currentAgent = computed(() => props.agents.find(agent => agent.identifier === props.agentId))
 const parentPath = computed(() => path.value.split('/').slice(0, -1).join('/'))
 
@@ -86,7 +94,7 @@ function toggleMenu(kind: 'toolbar' | 'entry', event: MouseEvent, entry?: FileEn
   const rect = button.getBoundingClientRect()
   const margin = 6
   const width = 176
-  const height = kind === 'entry' ? 138 : 106
+  const height = kind === 'entry' ? (entry?.kind === 'directory' ? 170 : 138) : 106
   const top = rect.bottom + 4 + height <= window.innerHeight - margin
     ? rect.bottom + 4
     : rect.top - height - 4
@@ -106,10 +114,12 @@ function closeMenu() {
 onMounted(() => {
   window.addEventListener('resize', closeMenu)
   document.addEventListener('click', closeMenu)
+  serveTimer = window.setInterval(() => { now.value = Date.now(); void loadServers() }, 30_000)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', closeMenu)
   document.removeEventListener('click', closeMenu)
+  window.clearInterval(serveTimer)
 })
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -136,6 +146,7 @@ async function restoreBrowserState() {
   cancelInlineEdit(true)
   previewEntry.value = null
   infoEntry.value = null
+  void loadServers()
   await refresh()
   if (!previewPath || !props.available || !agentId || sessionKey !== props.sessionKey || agentId !== props.agentId) return
   const request = ++metadataRequest
@@ -280,6 +291,10 @@ async function submitDelete() {
   try {
     await api.remove(props.agentId, entry.path)
     if (previewEntry.value?.path === entry.path) setPreview(null)
+    // a server whose directory was just deleted can only 404; retire it
+    if (entry.kind === 'directory') {
+      await Promise.all(servers.value.filter(server => server.path === entry.path).map(server => stopServing(server)))
+    }
     dialogBusy.value = false
     closeDialog()
     await refresh()
@@ -348,6 +363,9 @@ async function submitInlineEdit() {
     if (action === 'move' && entry) {
       await api.move(props.agentId, entry.path, target)
       if (previewEntry.value?.path === entry.path) setPreview(null)
+      if (entry.kind === 'directory') {
+        await Promise.all(servers.value.filter(server => server.path === entry.path).map(server => stopServing(server)))
+      }
     }
     inlineBusy.value = false
     cancelInlineEdit()
@@ -367,6 +385,66 @@ function goUp() {
   path.value = parentPath.value
   setPreview(null)
   void refresh()
+}
+
+async function loadServers() {
+  if (!props.available || !props.agentId) {
+    servers.value = []
+    return
+  }
+  const agentId = props.agentId
+  try {
+    const listing = await api.serveServers(agentId)
+    if (props.agentId === agentId) servers.value = listing.servers
+  } catch {
+    servers.value = []
+  }
+}
+
+function servingFor(entry: FileEntry): ServeServer | undefined {
+  return activeServers.value.find(server => server.path === entry.path)
+}
+
+async function serveFolder(entry: FileEntry) {
+  closeMenu()
+  if (serveBusy.value || servingFor(entry)) return
+  const agentId = props.agentId
+  serveBusy.value = true
+  error.value = ''
+  try {
+    const server = await api.startServe(agentId, entry.path)
+    if (props.agentId !== agentId) return
+    servers.value = [...servers.value, server]
+    now.value = Date.now()
+    freshKey.value = server.key
+    window.setTimeout(() => { if (freshKey.value === server.key) freshKey.value = '' }, 4000)
+  } catch (reason) {
+    if (props.agentId === agentId) error.value = reason instanceof Error ? reason.message : t('files.serveFailed')
+  } finally {
+    serveBusy.value = false
+  }
+}
+
+async function stopServing(server: ServeServer) {
+  const agentId = props.agentId
+  try {
+    await api.stopServe(agentId, server.key)
+    if (props.agentId === agentId) servers.value = servers.value.filter(item => item.key !== server.key)
+  } catch (reason) {
+    if (props.agentId === agentId) error.value = reason instanceof Error ? reason.message : t('files.serveStopFailed')
+  }
+}
+
+async function copyServeUrl(server: ServeServer) {
+  await copyText(api.serveHref(server))
+  copiedKey.value = server.key
+  window.setTimeout(() => { if (copiedKey.value === server.key) copiedKey.value = '' }, 2000)
+}
+
+function serveRemaining(server: ServeServer): string {
+  const seconds = Math.max(0, Math.round(server.expires_at - now.value / 1000))
+  const minutes = Math.ceil(seconds / 60)
+  return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : minutes <= 1 ? '<1m' : `${minutes}m`
 }
 
 </script>
@@ -393,6 +471,20 @@ function goUp() {
     </div>
 
     <div v-if="error" class="file-error">{{ error }}</div>
+    <div v-if="activeServers.length" class="serve-strip">
+      <div v-for="server in activeServers" :key="server.key" class="serve-row" :class="{ fresh: server.key === freshKey }">
+        <Globe :size="13" />
+        <a class="serve-path" :href="api.serveHref(server)" target="_blank" rel="noopener" :title="`${server.path || '/'} — ${api.serveHref(server)}`">{{ server.path || '/' }}</a>
+        <span class="serve-expiry" :class="{ soon: server.expires_at * 1000 - now < 600_000 }" :title="t('files.serveExpires', { time: serveRemaining(server) })">
+          <Clock :size="10" />{{ serveRemaining(server) }}
+        </span>
+        <button class="icon-button" :title="copiedKey === server.key ? t('files.serveCopied') : t('files.serveCopy')" @click="copyServeUrl(server)">
+          <Check v-if="copiedKey === server.key" :size="13" />
+          <Copy v-else :size="13" />
+        </button>
+        <button class="icon-button danger" :title="t('files.serveStop')" @click="stopServing(server)"><Square :size="12" /></button>
+      </div>
+    </div>
     <div class="file-list" :aria-busy="loading || uploading" @scroll="closeMenu">
       <div v-if="available === false" class="file-empty">{{ t('files.accessDisabled') }}</div>
       <div v-else-if="available && agentId && !loading && !entries.length && inlineAction !== 'create'" class="file-empty">{{ t('files.emptyFolder') }}</div>
@@ -412,6 +504,7 @@ function goUp() {
           <Folder v-if="entry.kind === 'directory'" :size="16" />
           <File v-else :size="16" />
           <span>{{ entry.name }}</span>
+          <span v-if="servingFor(entry)" class="row-serve-badge" :title="t('files.serveRunning')"><Globe :size="11" /></span>
         </button>
         <div v-if="inlineEntry?.path !== entry.path" class="file-menu-wrap file-actions" :class="{ open: activeMenu === 'entry' && activeEntry?.path === entry.path }" @click.stop>
           <button class="icon-button" :title="t('files.fileActions')" :aria-expanded="activeMenu === 'entry' && activeEntry?.path === entry.path" @click="toggleMenu('entry', $event, entry)"><MoreHorizontal :size="15" /></button>
@@ -431,6 +524,7 @@ function goUp() {
           <button @click="startInlineEdit('move', activeEntry)"><Pencil :size="14" /><span>{{ t('files.renameOrMove') }}</span></button>
           <a v-if="activeEntry.kind === 'file'" :href="api.downloadUrl(agentId, activeEntry.path)" :download="activeEntry.name" @click="closeMenu"><Download :size="14" /><span>{{ t('files.download') }}</span></a>
           <a v-else :href="api.archiveUrl(agentId, activeEntry.path)" :download="archiveName(activeEntry.path)" @click="closeMenu"><FolderArchive :size="14" /><span>{{ t('files.downloadFolder') }}</span></a>
+          <button v-if="activeEntry.kind === 'directory'" :disabled="serveBusy || !available || !!servingFor(activeEntry)" @click="serveFolder(activeEntry)"><Globe :size="14" /><span>{{ servingFor(activeEntry) ? t('files.serveRunning') : t('files.serve') }}</span></button>
           <button class="danger" @click="openDeleteDialog(activeEntry)"><Trash2 :size="14" /><span>{{ t('common.delete') }}</span></button>
         </template>
       </div>

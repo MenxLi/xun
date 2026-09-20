@@ -18,6 +18,7 @@ import rich
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..types import CancelledError, Result
 from .web_file import build_file_router
+from .web_serve import ServeManager, build_serve_router
 from ..hooks import HookArgs
 
 if TYPE_CHECKING:
@@ -137,6 +138,7 @@ class WebDisplay(DisplayAbstract):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._executors: dict[str, ThreadPoolExecutor] = {}
         self._executor_lock = threading.Lock()
+        self._serve: Optional[ServeManager] = None
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
@@ -153,6 +155,8 @@ class WebDisplay(DisplayAbstract):
 
     def _detach(self) -> None:
         self._loop = None
+        if self._serve is not None:
+            self._serve.close()
         with self._executor_lock:
             executors = list(self._executors.values())
             self._executors.clear()
@@ -170,6 +174,7 @@ class WebDisplay(DisplayAbstract):
 
     def build_app(self) -> FastAPI:
         app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None, lifespan=self._lifespan)
+        self._serve = ServeManager(app)
         app.include_router(self.build_routes())
         return app
 
@@ -378,7 +383,9 @@ class WebDisplay(DisplayAbstract):
             return {"model": model.name, "capabilities": sorted(model.capabilities)}
 
         if self.expose_files:
+            assert self._serve is not None
             router.include_router(build_file_router(self._agent))
+            router.include_router(build_serve_router(self._agent, self._serve))
 
         return router
 

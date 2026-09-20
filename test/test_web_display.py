@@ -1,5 +1,6 @@
 import base64
 import shlex
+import shutil
 import threading
 import time
 import unittest
@@ -24,6 +25,7 @@ from xun.display_abstract import (
 from xun.running_state import AgentRunningStateMixin, ChainedEvent
 from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
+from xun.displays.web_serve import MAX_SERVE_SERVERS
 from xun.displays.null_display import NullDisplay
 from xun.types import CancelledError, ErrorInfo, Result
 from xun.workspace import Workspace
@@ -134,6 +136,7 @@ class WebDisplayTest(unittest.TestCase):
                 "expose_files": False,
             })
             self.assertEqual(client.get("/session/api/files/agent-1").status_code, 404)
+            self.assertEqual(client.post("/session/api/serve/agent-1", json={"path": ""}).status_code, 404)
 
         self.assertEqual(self.client.get("api/config").json(), {
             "expose_files": True,
@@ -361,6 +364,71 @@ class WebDisplayTest(unittest.TestCase):
             params={"path": "missing.txt"},
         )
         self.assertEqual(missing.status_code, 404)
+
+    def test_serve_directory_as_temporary_website(self) -> None:
+        site = self.root / "site"
+        (site / "assets").mkdir(parents=True)
+        (site / "index.html").write_text("<main>served</main>", encoding="utf-8")
+        (site / "assets" / "app.css").write_text("body {}", encoding="utf-8")
+
+        started = self.client.post("api/serve/agent-1", json={"path": "site"})
+        self.assertEqual(started.status_code, 200)
+        server = started.json()
+        self.assertEqual(server["path"], "site")
+        self.assertGreater(server["expires_at"], time.time())
+
+        # the url is display-relative; resolve it against the session mount
+        home = self.client.get(server["url"].lstrip("/"))
+        self.assertEqual(home.status_code, 200)
+        self.assertIn("served", home.text)
+        asset = self.client.get(server["url"].lstrip("/") + "assets/app.css")
+        self.assertEqual(asset.status_code, 200)
+        self.assertTrue(asset.headers["content-type"].startswith("text/css"))
+
+        # capability url: no token needed, so copied links open anywhere
+        anonymous = self.client.get(server["url"].lstrip("/"), headers={"Authorization": ""})
+        self.assertEqual(anonymous.status_code, 200)
+        self.assertIn("served", anonymous.text)
+        # the serve api itself still requires the token
+        self.assertEqual(self.client.get("api/serve/agent-1", headers={"Authorization": ""}).status_code, 401)
+        # an unknown key has no mount and simply does not exist
+        self.assertEqual(self.client.get("srv/not-a-real-key/index.html", headers={"Authorization": ""}).status_code, 404)
+        # the api underneath the serve prefix stays protected
+        self.assertEqual(self.client.get("srv/api/serve/agent-1", headers={"Authorization": ""}).status_code, 404)
+
+        listed = self.client.get("api/serve/agent-1").json()["servers"]
+        self.assertEqual([entry["key"] for entry in listed], [server["key"]])
+
+        stopped = self.client.delete(f"api/serve/agent-1/{server['key']}")
+        self.assertEqual(stopped.json(), {"stopped": True})
+        self.assertEqual(self.client.get(server["url"].lstrip("/")).status_code, 404)
+        self.assertEqual(self.client.get("api/serve/agent-1").json()["servers"], [])
+        self.assertEqual(self.client.delete(f"api/serve/agent-1/{server['key']}").status_code, 404)
+
+    def test_serve_stops_when_directory_removed(self) -> None:
+        site = self.root / "site"
+        site.mkdir()
+        (site / "index.html").write_text("<main>served</main>", encoding="utf-8")
+        server = self.client.post("api/serve/agent-1", json={"path": "site"}).json()
+        self.assertEqual(self.client.get(server["url"].lstrip("/")).status_code, 200)
+
+        # removing the directory outside the serve API retires the server
+        shutil.rmtree(site)
+        self.assertEqual(self.client.get("api/serve/agent-1").json()["servers"], [])
+        self.assertEqual(self.client.get(server["url"].lstrip("/")).status_code, 404)
+
+    def test_serve_rejects_bad_paths_and_too_many_servers(self) -> None:
+        (self.root / "site").mkdir()
+        (self.root / "file.txt").write_text("x", encoding="utf-8")
+        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": ""}).status_code, 400)
+        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "nope"}).status_code, 404)
+        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "file.txt"}).status_code, 404)
+        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "../etc"}).status_code, 400)
+
+        keys = [self.client.post("api/serve/agent-1", json={"path": "site"}).json()["key"] for _ in range(MAX_SERVE_SERVERS)]
+        self.assertEqual(self.client.post("api/serve/agent-1", json={"path": "site"}).status_code, 429)
+        for key in keys:
+            self.assertTrue(self.client.delete(f"api/serve/agent-1/{key}").json()["stopped"])
 
     def test_websocket_dispatches_messages_and_commands_to_selected_agent(self) -> None:
         second_root = self.root / "second"

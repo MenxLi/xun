@@ -89,6 +89,13 @@ export interface FileListing {
   entries: FileEntry[]
 }
 
+export interface ServeServer {
+  key: string
+  path: string
+  url: string
+  expires_at: number
+}
+
 export interface WebConfig {
   expose_files: boolean
 }
