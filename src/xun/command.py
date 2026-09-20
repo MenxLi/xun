@@ -244,6 +244,14 @@ def default_commands() -> list[Command]:
     def _continue_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.execute()
 
+    def _extensions_handler(agent: "Agent[Agent.T.Init]") -> None:
+        from .extensions import list_loaded_extensions
+        exts = list_loaded_extensions()
+        if not exts:
+            agent.info("No extensions loaded.")
+            return
+        agent.info("\n"+"\n".join(f"{e.name}: {e.description}" for e in exts))
+
     return [
         Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),
         Command(name="clear", description="Clear conversation history. Use 'clear all' to also remove temporary files.", handler=_clear_handler),
@@ -257,4 +265,5 @@ def default_commands() -> list[Command]:
         Command(name="compact", description="Condense conversation. Use 'compact toolcall' to only condense tool call history.", handler=_condense_handler),
         Command(name="yolo", description="Toggle global auto approve (You Only Look Once).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
+        Command(name="extensions", description="List loaded extensions.", handler=_extensions_handler),
     ]

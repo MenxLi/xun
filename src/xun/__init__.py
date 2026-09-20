@@ -9,13 +9,14 @@ from .toolbox import ToolBox, ToolCallContext
 from .agent_factory import AgentGetterProtocol, AgentGetterParam
 from .toolcall import tool_attr
 from .config import AgentConfig
+from .extensions import ExtensionContext
 from .workspace import Workspace
 from .agent import Agent
 
 __all__ = [
     "Agent", "AgentConfig",
     "Workspace", 
-    "tool_attr", "ToolBox", "ToolCallContext", 
+    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext",
     "AgentGetterProtocol", "AgentGetterParam", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",

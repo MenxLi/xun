@@ -22,6 +22,9 @@ class ChainedEvent:
         if self.parent:
             return self.event.is_set() or self.parent.is_set()
         return self.event.is_set()
+    
+    def derive(self) -> ChainedEvent:
+        return ChainedEvent(parent=self)
 
 
 class AgentRunningStateProtocol(Protocol):

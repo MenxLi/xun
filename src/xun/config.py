@@ -79,6 +79,8 @@ class ModelConfig(ConfigModel):
 FALLBACK_ENV = { f"{BRAND}_OPENAI_MODEL": "" }
 class AgentConfig(ConfigModel):
     auto_confirm: bool
+    enable_extensions: bool = True
+    """Run global extensions from `{XUN_HOME}/extensions` at initialization. Internal helper agents opt out."""
     auto_compact: AutoCompactionConfig
     provider: ProviderConfig
     model: ModelConfig
@@ -117,6 +119,7 @@ class AgentConfig(ConfigModel):
 def _default_config_template() -> AgentConfig:
     return AgentConfig(
         auto_confirm=False,
+        enable_extensions=True,
         auto_compact=AutoCompactionConfig(
             enabled=True,
             token_threshold=192_000,

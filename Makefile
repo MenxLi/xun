@@ -7,4 +7,4 @@ build-docker: build-web
 	docker build -t xun -f docker/Dockerfile .
 
 test:
-	uv run python -m unittest discover -s test -v
+	uv run python -m unittest discover -s test -t . -v

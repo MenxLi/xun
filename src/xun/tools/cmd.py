@@ -37,10 +37,11 @@ def agent_risk_access(
             ),
         api_call_semaphore=ctx.agent.api_call_semaphore, 
         workspace=ctx.agent.workspace,
+        cancel_event=ctx.agent.cancel_event.derive(),
     )
-    # inherit (not share) the parent's cancel event: the parent can cancel this
-    # agent, but clearing this agent's event on exit won't clear the parent's
-    base.cancel_event.parent = ctx.agent.cancel_event
+    # internal helper agent: no extensions (minimal privilege)
+    base.config.enable_extensions = False
+
     agent: "Agent[Agent.T.Init]" = base.system(
         "You are an agent that is responsible for accessing shell commands. "
         "The command will be run under given working directory. "

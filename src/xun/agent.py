@@ -23,6 +23,7 @@ from .command import CommandRegistry
 from .compact import AutoCompactor, CompactorAbstract
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
+from .extensions import apply_extensions
 
 DEFAULT_MAX_ITERATIONS = 256
 DEFAULT_API_CALL_LIMIT = 3
@@ -129,6 +130,8 @@ class Agent(AgentDisplayMixin, AgentRunningStateMixin, Generic[StateT]):
             raise RuntimeError(f"Agent '{self.name}' has been finalized; it cannot be re-initialized.")
         if self._lifecycle.v == T.Init.v:
             return cast(Agent[T.Init], self)
+
+        apply_extensions(self)    # may edit config; must run before model auto-detect
 
         if self.config.model.name == "":
             self.config.model._assign_primary_model(self.openai_client)

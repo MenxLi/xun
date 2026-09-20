@@ -94,8 +94,7 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) ->
             copy_command=False,
         )
         compactor.config.auto_compact.enabled = False
-        # summarizer runs headless (NullDisplay cannot prompt), so let the completion
-        # retry in _execute_step auto-confirm instead of raising on get_choice
+        compactor.config.enable_extensions = False
         compactor.config.auto_confirm = True
         compactor.conversation.messages = messages.copy()
 
