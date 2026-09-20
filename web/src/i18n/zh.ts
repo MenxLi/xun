@@ -123,6 +123,7 @@ const zh: typeof en = {
     emptyFolder: '此文件夹为空。',
     newFolder: '新建文件夹',
     uploadFiles: '上传文件',
+    uploadFolder: '上传文件夹',
     downloadFolder: '下载文件夹',
     info: '信息',
     renameOrMove: '重命名或移动',

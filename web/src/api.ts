@@ -29,7 +29,9 @@ async function fetchOk(url: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(url, options)
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { detail?: string } | null
-    throw new Error(body?.detail || i18n.global.t('errors.requestFailed', { status: response.status }))
+    const error = new Error(body?.detail || i18n.global.t('errors.requestFailed', { status: response.status })) as Error & { status?: number }
+    error.status = response.status
+    throw error
   }
   return response
 }

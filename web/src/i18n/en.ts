@@ -121,6 +121,7 @@ export default {
     emptyFolder: 'This folder is empty.',
     newFolder: 'New folder',
     uploadFiles: 'Upload files',
+    uploadFolder: 'Upload folder',
     downloadFolder: 'Download folder',
     info: 'Info',
     renameOrMove: 'Rename or move',

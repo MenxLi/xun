@@ -2,13 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Check, Clock, Copy, Download, File, Folder, FolderArchive, FolderPlus, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Check, Clock, Copy, Download, File, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import UploadNotice from './UploadNotice.vue'
 import { api } from '../api'
 import { copyText } from '../clipboard'
+import { useFileUpload } from '../upload'
 import type { AgentInfo, FileEntry, FileInfo, ServeServer } from '../types'
 import { useSettingsStore } from '../stores/settings'
 import type { BrowserState } from '../stores/sessionBuffers'
@@ -38,8 +39,6 @@ const inlineBusy = ref(false)
 const inlineError = ref('')
 const inlineInput = ref<HTMLInputElement>()
 const loading = ref(false)
-const uploading = ref(false)
-const dragActive = ref(false)
 const activeMenu = ref<'toolbar' | 'entry' | null>(null)
 const activeEntry = ref<FileEntry | null>(null)
 const menuPosition = ref({ top: '0px', left: '0px' })
@@ -50,13 +49,16 @@ const serveBusy = ref(false)
 const copiedKey = ref('')
 const freshKey = ref('')
 const now = ref(Date.now())
-const fileInput = ref<HTMLInputElement>()
-const uploadNotice = ref<{
-  files: string[]
-  status: 'uploading' | 'complete' | 'failed'
-  error?: string
-} | null>(null)
-let dragDepth = 0
+const {
+  setFileInput, browse, uploading, dragActive,
+  notice: uploadNotice, onPick, onDrop, onDragEnter, onDragLeave,
+} = useFileUpload({
+  agentId: () => props.agentId,
+  currentDir: () => path.value,
+  enabled: () => !!props.available && !!props.agentId,
+  onError: message => { error.value = message },
+  onUploaded: () => refresh(),
+})
 let listingRequest = 0
 let metadataRequest = 0
 let serveTimer: number | undefined
@@ -224,49 +226,6 @@ function formatSize(size: number | null) {
 
 function formatModified(timestamp: number) {
   return new Date(timestamp * 1000).toLocaleString()
-}
-
-async function upload(files: FileList | null) {
-  if (!props.available || !props.agentId || !files?.length || uploading.value) return
-  const selectedFiles = Array.from(files)
-  uploading.value = true
-  error.value = ''
-  uploadNotice.value = {
-    files: selectedFiles.map(file => file.name),
-    status: 'uploading',
-  }
-  try {
-    await api.upload(props.agentId, path.value, selectedFiles)
-    if (uploadNotice.value) uploadNotice.value.status = 'complete'
-    await refresh()
-  } catch (reason) {
-    const message = reason instanceof Error ? reason.message : t('files.uploadFailed')
-    error.value = message
-    if (uploadNotice.value) {
-      uploadNotice.value.status = 'failed'
-      uploadNotice.value.error = message
-    }
-  } finally {
-    uploading.value = false
-    if (fileInput.value) fileInput.value.value = ''
-  }
-}
-
-function dragEnter(event: DragEvent) {
-  if (!props.available || !props.agentId || !event.dataTransfer?.types.includes('Files')) return
-  dragDepth += 1
-  dragActive.value = true
-}
-
-function dragLeave() {
-  dragDepth = Math.max(0, dragDepth - 1)
-  if (!dragDepth) dragActive.value = false
-}
-
-function dropFiles(event: DragEvent) {
-  dragDepth = 0
-  dragActive.value = false
-  void upload(event.dataTransfer?.files ?? null)
 }
 
 function closeDialog() {
@@ -450,7 +409,7 @@ function serveRemaining(server: ServeServer): string {
 </script>
 
 <template>
-  <aside class="file-browser" :class="{ 'drag-active': dragActive }" :style="{ width: `${settings.filesWidth}px` }" @click="activeMenu = null" @keydown.esc="activeMenu = null" @dragenter.prevent="dragEnter" @dragover.prevent @dragleave.prevent="dragLeave" @drop.prevent="dropFiles">
+  <aside class="file-browser" :class="{ 'drag-active': dragActive }" :style="{ width: `${settings.filesWidth}px` }" @click="activeMenu = null" @keydown.esc="activeMenu = null" @dragenter.prevent="onDragEnter" @dragover.prevent @dragleave.prevent="onDragLeave" @drop.prevent="onDrop">
     <ResizeHandle orientation="horizontal" @drag="resizeWidth" @reset="settings.filesWidth = 310" />
     <header class="file-header">
       <div>
@@ -467,7 +426,7 @@ function serveRemaining(server: ServeServer): string {
       <div class="file-menu-wrap" @click.stop>
         <button class="icon-button" :title="t('files.fileActions')" :disabled="!available || !agentId" :aria-expanded="activeMenu === 'toolbar'" @click="toggleMenu('toolbar', $event)"><MoreHorizontal :size="17" /></button>
       </div>
-      <input ref="fileInput" hidden type="file" multiple @change="upload(($event.target as HTMLInputElement).files)">
+      <input :ref="setFileInput" hidden type="file" multiple @change="onPick">
     </div>
 
     <div v-if="error" class="file-error">{{ error }}</div>
@@ -516,7 +475,8 @@ function serveRemaining(server: ServeServer): string {
       <div v-if="activeMenu" class="file-menu" :style="menuPosition" @click.stop>
         <template v-if="activeMenu === 'toolbar'">
           <button @click="startInlineEdit('create')"><FolderPlus :size="14" /><span>{{ t('files.newFolder') }}</span></button>
-          <button :disabled="uploading" @click="fileInput?.click(); closeMenu()"><Upload :size="14" /><span>{{ t('files.uploadFiles') }}</span></button>
+          <button :disabled="uploading" @click="browse(false); closeMenu()"><Upload :size="14" /><span>{{ t('files.uploadFiles') }}</span></button>
+          <button :disabled="uploading" @click="browse(true); closeMenu()"><FolderUp :size="14" /><span>{{ t('files.uploadFolder') }}</span></button>
           <a :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" @click="closeMenu"><FolderArchive :size="14" /><span>{{ t('files.downloadFolder') }}</span></a>
         </template>
         <template v-else-if="activeEntry">
