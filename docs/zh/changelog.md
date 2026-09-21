@@ -1,56 +1,47 @@
 # 更新日志
 
-版本号以仓库 `pyproject.toml` 为准。1.0 之前的开发历史不在此记录。
+## 1.1
 
-## 1.1（进行中）
-
-自 1.0 起的变更集合，按主要模块分点。
+自 1.0（2026-09-15）以来的变更，按模块归类。
 
 ### 扩展系统（新增）
 
-- 全局扩展：`$XUN_HOME/extensions/` 下的包形式（`{name}/setup_extension.py`）与扁平形式（`{name}.py`）源文件，在每个智能体初始化时自动生效；导入或初始化失败只告警不阻断。
-- 新增 `ExtensionContext`、`/extensions` 命令与仓库内示例。
-- 配套新增显示层钩子 `before_display_info` / `before_display_warning` / `before_display_error`。
+- `$XUN_HOME/extensions/` 下的源文件在每个智能体初始化时自动加载，支持包形式 `{name}/setup_extension.py` 与扁平形式 `{name}.py`；入口 `setup_extension(ctx)` 收到 `ExtensionContext`。
+- 导入或初始化失败只告警，不阻断启动；配置项 `enable_extensions` 可关闭。
+- 新增显示层钩子 `before_display_info` / `before_display_warning` / `before_display_error`，可拦截智能体输出；新增 `/extensions` 命令与仓库内示例。
 
-### 架构与类型
+### 核心与工具
 
-- 生命周期状态独立为 `agent_state.py`；显示相关方法抽为 `AgentDisplayMixin` 并纳入类型状态约束（`info` / `get_choice` 等仅在 `Agent[T.Init]` 上可用）。
-- 扩展模块与文件命名统一。
+- 会话压缩分级：先回收旧工具结果，仍超标才转摘要压缩，摘要后仍超标可继续再压；摘要正文不再混入 info 消息。
+- 取消事件改为链式结构，父智能体取消级联到子智能体；Web 端等待输入时同样响应取消。
+- 生命周期状态独立为 `agent_state.py`；显示方法抽为 `AgentDisplayMixin` 并纳入类型状态约束。
+- 子智能体 getter 参数改为 dataclass `AgentGetterParam`。
+- `shell` 工具更名为 `bash`；`copy` 覆盖已存在目标需要确认。
+- `get_choice` / `get_confirm` 返回 `ChoiceOutcome`（选择值 + 来源）；自动确认不再写入命令与路径允许列表。
+- 修复工具调用参数被 JSON 修复后与历史不同步的问题。
 
-### 会话压缩与执行循环
+### 配置与提示词
 
-- 改进压缩与执行循环：超阈值时先回收旧工具结果、再按升级条件转摘要压缩，摘要后仍超标可递归再压。
-- 摘要正文不再混入 info 消息。
-
-### 取消与运行状态
-
-- 取消事件改为链式结构（`ChainedEvent`），父智能体取消可级联到子智能体。
-- Web 等待用户输入时会检查取消事件。
-
-### 工具与执行策略
-
-- `shell` 工具更名为 `bash`。
-- `copy` 覆盖已存在目标时需要确认。
-- `get_choice` / `get_confirm` 返回 `ChoiceOutcome`（含选择来源）；自动确认不再写入命令与路径允许列表。
-- 工具调用参数确保初始化为 dict；修复参数被 JSON 修复后与历史不同步的问题。
+- `auto_confirm` 支持环境变量 `XUN_AUTO_CONFIRM`。
+- 系统提示词要求先查看并遵循工作目录下的 `AGENTS.md`。
 
 ### Web 服务与前端
 
-- 文件能力：PDF 预览与全屏预览、文本预览语法高亮、内联编辑、文件列表与信息分列（扫描优化）、上传通知（自动消失、显示全部文件）、支持上传目录。
-- 新增静态目录托管接口（`/srv/`，带 TTL 与实例上限）。
-- 事件列表加载与传输优化；输入缓冲跨会话保持。
-- 界面 i18n（中/英）与对话框样式调整；请求路由风格统一。
+- 文件浏览：PDF 与全屏预览、文本预览语法高亮、行内编辑；列表与信息分列，扫描更快；窄屏下面板互斥。
+- 上传支持整个目录，结果通知列出全部文件并自动消失。
+- 新增静态目录托管 `/srv/`，可直接访问工作目录里的站点（默认 1 小时过期）。
+- 事件列表加载与传输优化；输入内容跨会话保持；界面文案中/英双语。
 
 ### 容器与多用户
 
-- 容器启动时把宿主 xun home 复制进容器 `/.xun`（只取 `config.json` 与 `extensions`，跟随符号链接）。
-- `xunx` 容器持久化：`serve` 重启后重新接管已有容器（保留会话），删除用户的容器在对账时清理。
-- 调长对账间隔；统一运行中的打印动作。
-- 容器启动支持环境变量赋值。
+- 容器启动时把宿主 xun home 复制进 `/.xun`（只取 `config.json` 与 `extensions`）。
+- `xunc --env` / `xunx serve --env` 支持 `NAME=VALUE` 赋值与通配转发宿主变量。
+- `xunx` 容器持久化：`serve` 重启后重新接管已有容器并保留会话，已删除用户的容器在对账时清理。
+- 新增 `xunx upgrade`，由运行中的 `serve` 在下一次对账时重建容器。
 
-### 子智能体
+### 文档
 
-- 子智能体 getter 参数改为 dataclass（`AgentGetterParam`：`tool_context` + `name`）。
+- 新增中英双语文档（MkDocs），Web 服务在 `/docs` 提供无需登录的访问。
 
 ## 1.0 — 2026-09-15
 
