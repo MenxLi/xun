@@ -79,7 +79,7 @@ class ModelConfig(ConfigModel):
                 raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model in the config.")
 
 # allow the model to stay unset, so it can be auto-detected from the provider
-FALLBACK_ENV = { f"{BRAND}_OPENAI_MODEL": "" }
+FALLBACK_ENV = { f"{BRAND}_OPENAI_MODEL": "", f"{BRAND}_AUTO_CONFIRM": "false" }
 class AgentConfig(ConfigModel):
     auto_confirm: bool
     enable_extensions: bool = True
@@ -108,33 +108,35 @@ class AgentConfig(ConfigModel):
                     f"Set it (e.g. in your .env file) or remove the placeholder."
                     )
             env_vars[placeholder] = env_var_value
-        config_json = template.safe_substitute(env_vars)
-        return cls.from_json(config_json)
+        # substituted placeholders are always strings; pydantic coerces them
+        # to bool/int/float in lax mode during validation
+        config_json = json.loads(template.safe_substitute(env_vars))
+        return cls.model_validate(config_json)
     
     @classmethod
     def default(cls) -> Self:
         return cls.from_template(
-            _default_config_template().to_json(),
+            json.dumps(_default_config_template()),
             fallback_env=FALLBACK_ENV
             )
 
-def _default_config_template() -> AgentConfig:
-    return AgentConfig(
-        auto_confirm=False,
-        enable_extensions=True,
-        auto_compact=AutoCompactionConfig(
-            enabled=True,
-            token_threshold=192_000,
-        ),
-        provider=ProviderConfig(
-            openai_base_url=r"${XUN_OPENAI_BASE_URL}",
-            openai_api_key=r"${XUN_OPENAI_API_KEY}",
-        ),
-        model=ModelConfig(
-            name=r"${XUN_OPENAI_MODEL}",
-            capabilities={'vision'},
-        ),
-    )
+def _default_config_template() -> dict:
+    return {
+        "auto_confirm": r"${XUN_AUTO_CONFIRM}",
+        "enable_extensions": True,
+        "auto_compact": {
+            "enabled": True,
+            "token_threshold": 192_000,
+        },
+        "provider": {
+            "openai_base_url": r"${XUN_OPENAI_BASE_URL}",
+            "openai_api_key": r"${XUN_OPENAI_API_KEY}",
+        },
+        "model": {
+            "name": r"${XUN_OPENAI_MODEL}",
+            "capabilities": ["vision"],
+        },
+    }
 
 def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge `override` into `base` (override wins).
@@ -164,7 +166,7 @@ def _load_config_file(config_path: Path) -> AgentConfig:
     if not isinstance(user_config, dict):
         raise RuntimeError(f"Config file {config_path} must contain a JSON object.")
     merged = _deep_merge(
-        json.loads(_default_config_template().to_json()),
+        _default_config_template(),
         user_config,
     )
     return AgentConfig.from_template(
