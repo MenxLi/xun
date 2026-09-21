@@ -604,13 +604,21 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("&token=", generated_service.access_url())
 
     def test_service_base_path_composes_with_outer_mount(self) -> None:
-        service = WebDisplayService(token="fixed-token", base_path="/alpha").mount("/", WebDisplay())
+        docs = self.root / "docs"
+        docs.mkdir()
+        (docs / "index.html").write_text("<main>Xun docs</main>", encoding="utf-8")
+        service = WebDisplayService(token="fixed-token", base_path="/alpha", docs_dir=docs).mount(
+            "/", WebDisplay()
+        )
         parent = FastAPI()
         parent.mount("/outer", service.app)
 
         with TestClient(parent) as client:
             root = client.get("/outer/alpha", follow_redirects=False)
             self.assertEqual(root.headers["location"], "/outer/alpha/chat/")
+            docs_redirect = client.get("/outer/alpha/docs", follow_redirects=False)
+            self.assertEqual(docs_redirect.headers["location"], "/outer/alpha/docs/")
+            self.assertIn("Xun docs", client.get(docs_redirect.headers["location"]).text)
             page = client.get("/outer/alpha/chat/?session=/", follow_redirects=False)
             self.assertEqual(page.status_code, 303)
             self.assertEqual(

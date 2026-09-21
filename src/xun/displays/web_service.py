@@ -259,6 +259,11 @@ class WebDisplayService:
 
     def _configure_docs(self, docs_dir: Path) -> None:
         if (docs_dir / "index.html").is_file():
+            @self.app.api_route(self.docs_path, methods=["GET", "HEAD"], include_in_schema=False)
+            async def docs_root(request: Request) -> RedirectResponse:
+                root_path = request.scope.get("root_path", "").rstrip("/")
+                return RedirectResponse(f"{root_path}{self.docs_path}/")
+
             self.app.mount(self.docs_path, StaticFiles(directory=docs_dir, html=True), name="docs")
 
     def _configure_sessions(self) -> None:
