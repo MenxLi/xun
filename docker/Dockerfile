@@ -86,6 +86,7 @@ RUN playwright install chromium --with-deps
 RUN pip install httpx[socks] 
 RUN pip install zai-sdk
 RUN pip install pymupdf matplotlib
+RUN pip install mkdocs mkdocs-material mkdocs-static-i18n
 
 COPY . /xun-src
 WORKDIR /xun-src

@@ -23,3 +23,6 @@ _test
 
 .vscode
 src/xun/assets/web
+
+/site/
+/mkdocs.yml
