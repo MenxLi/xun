@@ -57,8 +57,21 @@ pip install .
 ```
 </details>
 
-## Usage
+> **Documentation must be summoned locally.** Bring an installed package, Docker,
+> and a locally built `xun` image; then give the agent a little time to write the
+> bilingual MkDocs site. See
+> [Building Documentation](README-BUILD-DOCS.md).
 
+## Session Entrypoints
+
+| Command | Form | Use case |
+|---|---|---|
+| `xun` | Terminal session | Work interactively in the current directory. |
+| `xuns` | Web service | Use the managed browser experience. |
+| `xunc` | Container session | Run `xuns` in an isolated Docker container. |
+| `xunx` | Multiplexed service | Proxy persistent per-user containers through one server. |
+
+## API
 
 **Basic**: Quickly set up an agent with plain functions as tools — no decorators, no classes needed. 
 
@@ -112,31 +125,6 @@ from xun import web_session
 web_session(workdir=".", base_path="/xun", manage_sessions=True)
 ```
 
-`WebDisplay` provides lower-level access to the interactive web interface for custom service composition.
-It can be used as a chat-based web application, or as a backend for other applications.
-
-```python
-from xun import WebDisplay, WebDisplayService, setup_agent
-
-display = WebDisplay(expose_files=True)
-agent = setup_agent(display=display, default_tools=True)
-service = WebDisplayService().mount("/", display)
-service.start(blocking=True)
-```
-
-Open any tokenized URL printed at startup; the query token is exchanged for an HttpOnly cookie, so the browser reaches every mounted display without logging in again. API clients can use `Authorization: Bearer <token>`. File browsing, upload, download, and deletion require `expose_files=True`.
-
-Multiple displays can share one authenticated service, each keeping its own agents, event history, and file policy:
-
-```python
-service = WebDisplayService()
-service.mount("/research", research_display)
-service.mount("/coding", coding_display)
-service.start(blocking=True)
-```
-
-`display.build_routes()` and `display.build_app()` do not add authentication — use `WebDisplayService`, or provide your own in a custom ASGI host.
-
 ## Docker
 
 ```bash
@@ -151,26 +139,13 @@ xunc .              # bind mount the current directory as /workspace
 xunc --copy .       # copy the current directory into /workspace instead
 ```
 
-`xunc` runs `xuns --host 0.0.0.0` in the container and publishes port 18960 (bridge mode), so the web UI is reachable from the host at the tokenized URL printed at startup. The image fixes `XUN_HOME=/.xun`, and the host xun home is always copied into it (following symlinks, so a `.xun/extensions` symlink into a repo `extensions/` dir is carried in) — start from an empty directory to run without one. Other options: `--exec CMD` (e.g. `--exec bash`), `--port LIST`, `--network host` (avoid on macOS — not reachable from a host browser), `--env LIST` (comma-separated: `NAME=VALUE` sets a variable directly, `PATTERN` forwards host variables by wildcard; `XUN_*`/`_XUN_*` are always forwarded except `XUN_HOME`, which the image fixes and cannot be set), `--image` / `--name`.
-
-### Multiplexed server
-
-`xunx` runs one persistent container per registered user, proxied through one public server:
+`xunx` uses the same image to run one persistent container per user behind a
+single gateway:
 
 ```bash
-xunx user-add alice   # prints the access token
-xunx user-list
-xunx user-del alice   # the running container is stopped within one reconcile interval
-xunx serve --host 0.0.0.0 --port 18960 --port-range 20000-20100
-
-xunx upgrade alice    # recreate her container from the current image (or --all)
+xunx user-add alice
+xunx serve --host 0.0.0.0 --port 18960
 ```
-
-Open `http://localhost:18960/alice?token=TOKEN`. Users live in `$XUN_HOME/x/xunx.db`; container ports are drawn randomly from `--port-range` and bound to host loopback only. 
-Containers outlive `serve` shutdown and are re-adopted (keeping in-container sessions alive) on the next start; containers left for deleted users are pruned then. 
-Containers are named `xunx-<instance>-<user>`, so use `docker ps` / `docker logs` to inspect them directly. 
-`xunx upgrade` only records intent — the running `serve` process recreates flagged containers on its next reconcile, and recreation discards in-container data (workspace, saved conversations). 
-`XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container; `xunx serve --env` accepts the same `NAME=VALUE` / wildcard list as `xunc --env` (explicit assignments override forwarded values). The host xun home is copied into each container's `/.xun` (config, extensions; follows symlinks) — note this shares it across all users.
 
 <details>
 <summary>Frontend development</summary>
