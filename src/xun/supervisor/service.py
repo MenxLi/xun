@@ -191,6 +191,8 @@ class Multiplexer:
                     for key, value in upstream.headers.items()
                     if key.lower() not in _HOP_BY_HOP_HEADERS
                 ]
+                if not 200 <= upstream.status < 300:
+                    print(f"{request.method} {request.path} -> {upstream.status}")
                 response = web.StreamResponse(
                     status=upstream.status,
                     reason=upstream.reason,

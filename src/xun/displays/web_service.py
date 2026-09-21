@@ -24,6 +24,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount
+from starlette.types import Message
 
 from ..config import ASSET_DIR
 from .web_display import WebDisplay
@@ -62,6 +63,11 @@ class _TokenAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
+        async def log_non_success_response(message: Message) -> None:
+            if message["type"] == "http.response.start" and not 200 <= message["status"] < 300:
+                print(f"{scope.get('method', '')} {scope.get('path', '')} -> {message['status']}")
+            await send(message)
+
         connection = HTTPConnection(scope)
         root_path = scope.get("root_path", "").rstrip("/")
         request_path = connection.url.path
@@ -71,28 +77,28 @@ class _TokenAuthMiddleware:
         if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and mount_path == self.base_path:
             query = f"?{connection.url.query}" if connection.url.query else ""
             response = RedirectResponse(f"{root_path}{self.chat_path}/{query}")
-            await response(scope, receive, send)
+            await response(scope, receive, log_non_success_response)
             return
 
         bearer = connection.headers.get("authorization", "")
         header_token = bearer[7:] if bearer.lower().startswith("bearer ") else ""
         cookie_token = connection.cookies.get(_COOKIE_NAME, "")
         if _tokens_match(header_token, self.token) or _tokens_match(cookie_token, self.token):
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, log_non_success_response)
             return
 
         if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and self.serve_prefix.match(request_path):
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, log_non_success_response)
             return
 
         if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and (
             request_path == self.docs_path or request_path.startswith(f"{self.docs_path}/")
         ):
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, log_non_success_response)
             return
 
         if request_path == self.login_path:
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, log_non_success_response)
             return
         query_token = connection.query_params.get("token")
         if scope["type"] == "http" and mount_path == self.chat_path and _tokens_match(query_token or "", self.token):
@@ -113,7 +119,7 @@ class _TokenAuthMiddleware:
                 secure=connection.url.scheme == "https",
                 path=f"{root_path}{self.base_path}/" or "/",
             )
-            await response(scope, receive, send)
+            await response(scope, receive, log_non_success_response)
         elif scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
         elif self._is_display_page_request(scope, request_path):
@@ -122,10 +128,10 @@ class _TokenAuthMiddleware:
             if connection.url.query:
                 target = f"{target}?{connection.url.query}"
             response = RedirectResponse(f"{login_path}?{urlencode({'next': target})}", status_code=303)
-            await response(scope, receive, send)
+            await response(scope, receive, log_non_success_response)
         else:
             response = JSONResponse({"detail": "Not authenticated"}, status_code=401)
-            await response(scope, receive, send)
+            await response(scope, receive, log_non_success_response)
 
     def _is_display_page_request(
         self,
