@@ -144,15 +144,22 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_service_separates_chat_ui_from_session_apis(self) -> None:
         assets = self.root / "web"
+        docs = self.root / "docs"
         assets.mkdir()
+        docs.mkdir()
         (assets / "index.html").write_text("<main>Xun chat</main>", encoding="utf-8")
-        service = WebDisplayService(token="test-token", assets_dir=assets).mount("/", WebDisplay())
+        (docs / "index.html").write_text("<main>Xun docs</main>", encoding="utf-8")
+        service = WebDisplayService(token="test-token", assets_dir=assets, docs_dir=docs).mount("/", WebDisplay())
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
             self.assertEqual(client.get("/", follow_redirects=False).headers["location"], "/chat/")
             self.assertIn("Xun chat", client.get("/chat/").text)
             self.assertEqual(client.get("/session/api/config").status_code, 200)
             self.assertEqual(client.get("/api/config").status_code, 404)
+
+        with TestClient(service.app) as client:
+            self.assertIn("Xun docs", client.get("/docs/").text)
+            self.assertEqual(client.get("/chat/", follow_redirects=False).status_code, 303)
 
         with TestClient(service.app) as client:
             root = client.get("/?token=test-token", follow_redirects=False)

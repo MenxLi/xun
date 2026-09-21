@@ -34,6 +34,7 @@ LOGIN_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
 )
 _COOKIE_NAME = "xun_web_token"
 _DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
+_DEFAULT_DOCS_ASSETS = ASSET_DIR / "docs"
 
 
 class _TokenAuthMiddleware:
@@ -46,11 +47,13 @@ class _TokenAuthMiddleware:
         token: str,
         base_path: str,
         session_path: str,
+        docs_path: str,
     ) -> None:
         self.app = app
         self.token = token
         self.base_path = base_path
         self.serve_prefix = re.compile(rf"^{re.escape(session_path)}(?:/.*)?/srv/")
+        self.docs_path = docs_path
         self.chat_path = f"{base_path}/chat"
         self.login_path = f"{base_path}/login"
 
@@ -79,6 +82,12 @@ class _TokenAuthMiddleware:
             return
 
         if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and self.serve_prefix.match(request_path):
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and (
+            request_path == self.docs_path or request_path.startswith(f"{self.docs_path}/")
+        ):
             await self.app(scope, receive, send)
             return
 
@@ -181,6 +190,7 @@ class WebDisplayService:
         token: str = "",
         base_path: str = "",
         assets_dir: Path = _DEFAULT_WEB_ASSETS,
+        docs_dir: Path = _DEFAULT_DOCS_ASSETS,
         session_manager: Optional[Callable[[], AbstractContextManager[tuple[str, WebDisplay]]]] = None,
     ) -> None:
         self.host = host
@@ -188,6 +198,7 @@ class WebDisplayService:
         self.token = token or secrets.token_urlsafe(24)
         self.base_path = _normalize_path(base_path, "base_path")
         self.chat_path = f"{self.base_path}/chat"
+        self.docs_path = f"{self.base_path}/docs"
         self.session_path = f"{self.base_path}/session"
         self.sessions_api_path = f"{self.base_path}/api/sessions"
         self.login_path = f"{self.base_path}/login"
@@ -227,16 +238,22 @@ class WebDisplayService:
         self._configure_login()
         self._configure_sessions()
         self._configure_chat(assets_dir)
+        self._configure_docs(docs_dir)
         self.app.add_middleware(
             _TokenAuthMiddleware,
             token=self.token,
             base_path=self.base_path,
             session_path=self.session_path,
+            docs_path=self.docs_path,
         )
 
     def _configure_chat(self, assets_dir: Path) -> None:
         if assets_dir.is_dir():
             self.app.mount(self.chat_path, StaticFiles(directory=assets_dir, html=True), name="chat")
+
+    def _configure_docs(self, docs_dir: Path) -> None:
+        if (docs_dir / "index.html").is_file():
+            self.app.mount(self.docs_path, StaticFiles(directory=docs_dir, html=True), name="docs")
 
     def _configure_sessions(self) -> None:
         @self.app.get(self.sessions_api_path)
