@@ -16,7 +16,7 @@ from .display_abstract import *
 from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
 from .conversation import Conversation
-from .config import AgentConfig, load_config
+from .config import AgentConfig, load_config, get_internal_env
 from .error_catch import except_safe
 from .toolbox import ToolBox
 from .workspace import Workspace
@@ -26,7 +26,7 @@ from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
 from .extension import apply_extensions
 
-DEFAULT_MAX_ITERATIONS = 256
+DEFAULT_MAX_ITERATIONS = 256 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
 DEFAULT_API_CALL_LIMIT = 3
 
 _AUTO_CONFIRM_WARNED = False
