@@ -1,3 +1,4 @@
+import io
 import sqlite3
 import asyncio
 import unittest
@@ -12,6 +13,25 @@ from docker.errors import NotFound
 from xun.supervisor.runtime import DockerManager, ManagedContainer
 from xun.supervisor.service import Multiplexer, Supervisor
 from xun.supervisor.users import User, UserStore
+from xun.util import resolve_environment, parse_env_option
+
+
+class EnvOptionTest(unittest.TestCase):
+    def test_splits_patterns_and_assignments(self) -> None:
+        patterns, assignments = parse_env_option(["FOO*,BAR=1", " BAZ=x=y "])
+        self.assertEqual(patterns, ["FOO*"])
+        self.assertEqual(assignments, {"BAR": "1", "BAZ": "x=y"})
+
+    def test_rejects_assignment_without_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing a name"):
+            parse_env_option(["=nope"])
+
+    def test_assignments_override_forwarded_and_protected_is_warned(self) -> None:
+        with patch.dict("os.environ", {"FOO": "host", "XUN_HOME": "/host"}, clear=True), \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            environment = resolve_environment(["FOO", "XUN_*"], {"FOO": "set", "XUN_HOME": "/x"}, exclude={"XUN_HOME"})
+        self.assertEqual(environment, {"FOO": "set"})
+        self.assertIn("XUN_HOME", stderr.getvalue())
 
 
 class UserStoreTest(unittest.TestCase):
@@ -98,6 +118,26 @@ class DockerManagerTest(unittest.TestCase):
             ],
         )
         sdk_container.start.assert_called_once_with()
+
+    def test_explicit_env_assignment_overrides_forwarded_value(self) -> None:
+        client = Mock()
+        client.containers.create.return_value = Mock(id="container-id")
+        manager = DockerManager(
+            image="xun",
+            port_range=range(20000, 20002),
+            instance="instance-id",
+            env_patterns=["XUN_*", "_XUN_*", "FOO*"],
+            env_set={"FOO_SECRET": "set", "XUN_HOME": "/x"},
+            client=client,
+        )
+        with patch.dict("os.environ", {"FOO_SECRET": "host", "XUN_HOME": "/host"}, clear=True), \
+                patch("sys.stderr", new_callable=io.StringIO), \
+                patch("xun.supervisor.runtime.secrets.choice", return_value=20001):
+            manager.start(User("alice", "token"))
+
+        environment = client.containers.create.call_args.kwargs["environment"]
+        self.assertEqual(environment["FOO_SECRET"], "set")
+        self.assertNotIn("XUN_HOME", environment)
 
     def test_removes_created_container_when_start_fails(self) -> None:
         client = Mock()

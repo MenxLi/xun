@@ -151,7 +151,7 @@ xunc .              # bind mount the current directory as /workspace
 xunc --copy .       # copy the current directory into /workspace instead
 ```
 
-`xunc` runs `xuns --host 0.0.0.0` in the container and publishes port 18960 (bridge mode), so the web UI is reachable from the host at the tokenized URL printed at startup. The image fixes `XUN_HOME=/.xun`, and the host xun home is always copied into it (following symlinks, so a `.xun/extensions` symlink into a repo `extensions/` dir is carried in) — start from an empty directory to run without one. Other options: `--exec CMD` (e.g. `--exec bash`), `--port LIST`, `--network host` (avoid on macOS — not reachable from a host browser), `--env PATTERNS` (extra env vars to forward; `XUN_*`/`_XUN_*` are always forwarded except `XUN_HOME`), `--image` / `--name`.
+`xunc` runs `xuns --host 0.0.0.0` in the container and publishes port 18960 (bridge mode), so the web UI is reachable from the host at the tokenized URL printed at startup. The image fixes `XUN_HOME=/.xun`, and the host xun home is always copied into it (following symlinks, so a `.xun/extensions` symlink into a repo `extensions/` dir is carried in) — start from an empty directory to run without one. Other options: `--exec CMD` (e.g. `--exec bash`), `--port LIST`, `--network host` (avoid on macOS — not reachable from a host browser), `--env LIST` (comma-separated: `NAME=VALUE` sets a variable directly, `PATTERN` forwards host variables by wildcard; `XUN_*`/`_XUN_*` are always forwarded except `XUN_HOME`, which the image fixes and cannot be set), `--image` / `--name`.
 
 ### Multiplexed server
 
@@ -170,7 +170,7 @@ Open `http://localhost:18960/alice?token=TOKEN`. Users live in `$XUN_HOME/x/xunx
 Containers outlive `serve` shutdown and are re-adopted (keeping in-container sessions alive) on the next start; containers left for deleted users are pruned then. 
 Containers are named `xunx-<instance>-<user>`, so use `docker ps` / `docker logs` to inspect them directly. 
 `xunx upgrade` only records intent — the running `serve` process recreates flagged containers on its next reconcile, and recreation discards in-container data (workspace, saved conversations). 
-`XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container. The host xun home is copied into each container's `/.xun` (config, extensions; follows symlinks) — note this shares it across all users.
+`XUN_*`/`_XUN_*` env vars except `XUN_HOME` are forwarded into each container; `xunx serve --env` accepts the same `NAME=VALUE` / wildcard list as `xunc --env` (explicit assignments override forwarded values). The host xun home is copied into each container's `/.xun` (config, extensions; follows symlinks) — note this shares it across all users.
 
 <details>
 <summary>Frontend development</summary>

@@ -22,7 +22,7 @@ from .types import CancelledError
 from .workspace import Workspace
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
-from .util import matching_environment
+from .util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -310,21 +310,25 @@ def main_container():
     parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no host mount).", default="", nargs="?")
     parser.add_argument("--copy", action="store_true", help="Copy the mount directory into /workspace instead of bind mounting it.")
     parser.add_argument("--image", type=str, help="Docker image to use for the container.", default="xun")
-    parser.add_argument("--env", type=str, help="Environment variables to pass into the container, can be a comma-separated wildcard list. Will always include XUN_*/_XUN_* by default.", default=[], nargs="+")
+    parser.add_argument("--env", type=str, help="Pass into the container, comma-separated: NAME=VALUE sets it directly, otherwise it's forwarded from the host by wildcard pattern. XUN_*/_XUN_* are always forwarded.", default=[], nargs="+")
     parser.add_argument("--name", type=str, help="Name of the container.", default=None)
     parser.add_argument("--network", type=str, choices=["bridge", "host"], default="bridge", help="Docker network mode. bridge (default) publishes --port ports; host shares the host network namespace (on macOS this is the Docker VM's, not reachable from the host browser).")
     parser.add_argument("--port", type=str, help="Ports to publish to the host in bridge mode, can be a comma-separated list.", default=["18960"], nargs="+")
     parser.add_argument("--exec", dest="exec_cmd", type=str, help="Command to run in the container (default: xuns; empty string falls back to the image's default CMD).", default=None)
     args = parser.parse_args()
 
-    env_kw = ["XUN_*", "_XUN_*"] + [e.strip() for ev in args.env for e in ev.split(",")]
+    try:
+        env_kw, env_set = parse_env_option(args.env)
+    except ValueError as error:
+        parser.error(str(error))
+    env_kw = CONTAINER_ENV_PATTERNS + env_kw
     ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
 
     requested_mount = args.mount.strip()
     if args.copy and not requested_mount:
         parser.error("--copy requires a mount directory.")
     mount = str(Path(requested_mount).resolve()) if requested_mount else ""
-    envs = matching_environment(env_kw, exclude={"XUN_HOME"})    # the image fixes XUN_HOME=/.xun
+    envs = resolve_environment(env_kw, env_set, exclude={"XUN_HOME"})    # the image fixes XUN_HOME=/.xun
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
     exec_cmd = args.exec_cmd
     if exec_cmd is None:

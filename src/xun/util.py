@@ -1,5 +1,6 @@
 
 import os
+import sys
 import base64
 import binascii
 import fnmatch
@@ -88,6 +89,41 @@ def matching_environment(
         for key, value in os.environ.items()
         if key not in excluded and any(fnmatch.fnmatch(key, pattern) for pattern in patterns)
     }
+
+CONTAINER_ENV_PATTERNS = ["XUN_*", "_XUN_*"]
+
+def parse_env_option(values: Sequence[str]) -> tuple[list[str], dict[str, str]]:
+    """Split --env values into forwarding patterns and NAME=VALUE assignments (like docker -e)."""
+    patterns: list[str] = []
+    assignments: dict[str, str] = {}
+    for value in values:
+        for item in (part.strip() for part in value.split(",")):
+            if not item:
+                continue
+            name, sep, assigned = item.partition("=")
+            if not sep:
+                patterns.append(item)
+            elif not (name := name.strip()):
+                raise ValueError(f"environment assignment is missing a name: {item!r}")
+            else:
+                assignments[name] = assigned
+    return patterns, assignments
+
+def resolve_environment(
+    patterns: Sequence[str],
+    assignments: dict[str, str] | None = None,
+    *,
+    exclude: set[str] | None = None,
+) -> dict[str, str]:
+    """Forwarded variables with `assignments` on top; excluded names may not be assigned."""
+    excluded = exclude or set()
+    environment = matching_environment(list(patterns), exclude=excluded)
+    for name, value in (assignments or {}).items():
+        if name in excluded:
+            print(f"[warn] {name} is not assignable, ignoring {name}={value!r}", file=sys.stderr)
+            continue
+        environment[name] = value
+    return environment
 
 def parse_bool(name: str) -> bool | None:
     value = os.environ.get(name)

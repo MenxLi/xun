@@ -20,7 +20,7 @@ from docker.models.containers import Container as DockerContainer
 from rich.console import Console
 
 from ..config import HOME_COPY_INCLUDE
-from ..util import matching_environment
+from ..util import resolve_environment
 from .users import User
 
 _console = Console(stderr=True)
@@ -97,6 +97,7 @@ class DockerManager:
         instance: str,
         excluded_ports: set[int] | None = None,
         env_patterns: list[str] | None = None,
+        env_set: dict[str, str] | None = None,
         copy_home_from: str | None = None,
         client: DockerClient | None = None,
     ) -> None:
@@ -105,6 +106,7 @@ class DockerManager:
         self.instance = instance
         self.used_ports = set(excluded_ports or ())
         self.env_patterns = list(env_patterns or ())
+        self.env_set = dict(env_set or {})
         self.copy_home_from = copy_home_from
         self.client = client or docker.from_env()
 
@@ -164,7 +166,7 @@ class DockerManager:
                 name=name,
                 auto_remove=True,
                 ports={f"{port}/tcp": ("127.0.0.1", port)},
-                environment=matching_environment(self.env_patterns, exclude={"XUN_HOME"}),
+                environment=resolve_environment(self.env_patterns, self.env_set, exclude={"XUN_HOME"}),
                 labels={
                     "xunx.managed": "true",
                     "xunx.instance": self.instance,
