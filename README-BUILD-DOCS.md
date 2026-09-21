@@ -1,10 +1,9 @@
 # Building Documentation
 
-Documentation is generated locally by an agent, not included in the source tree
-or published package. Bootstrap creates the bilingual MkDocs source,
-configuration, and site, so it can take some time. Only
-[docs/AGENTS.md](docs/AGENTS.md) and the Chinese changelog are tracked; all
-other documentation files are generated output.
+Documentation is generated locally by an agent. The generated site is copied
+into the package assets before release, and `WebDisplayService` serves it at
+`/docs/`. Bootstrap creates the bilingual MkDocs source, configuration, and
+site, so it can take some time. 
 
 ## Prerequisites
 

@@ -57,10 +57,9 @@ pip install .
 ```
 </details>
 
-> **Documentation must be summoned locally.** Bring an installed package, Docker,
-> and a locally built `xun` image; then give the agent a little time to write the
-> bilingual MkDocs site. See
-> [Building Documentation](README-BUILD-DOCS.md).
+> **Documentation is included in PyPI releases.** Start `xuns/xunc/xunx` to browse the
+> bilingual site at `/docs/`. Need a refresh? Let Xun write its own bilingual
+> manual; see [Building Documentation](README-BUILD-DOCS.md).
 
 ## Session Entrypoints
 
