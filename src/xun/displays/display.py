@@ -1,13 +1,13 @@
-import hashlib, datetime
+import hashlib, datetime, re
 import readline     # noqa
 import threading
 import rich
 import rich.box
 import rich.table
 import rich.console
-import rich.prompt
 import rich.panel
 import rich.markdown
+import rich.text
 
 from ..display_abstract import *
 
@@ -39,7 +39,7 @@ class Display(DisplayAbstract):
                 n_choices=len(choices) + (1 if request.allow_extra else 0),
                 default=default_idx)
             if request.allow_extra and choice_idx == extra_choice_idx:
-                extra_choice = rich.prompt.Prompt.ask("Enter your choice")
+                extra_choice = _ask_text(self.console, "Enter your choice")
                 return extra_choice
             return choices[choice_idx - 1]
         
@@ -174,6 +174,21 @@ class Display(DisplayAbstract):
             pairs.append(f"[bold yellow]{k}[/bold yellow]: {v}")
         return ", ".join(pairs)
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+def _rl_prompt(console: rich.console.Console, markup: str) -> str:
+    """Render markup to an ANSI prompt for `input()`; escapes wrapped in \\001..\\002 so readline ignores their width."""
+    text = rich.text.Text.from_markup(markup)
+    rendered = "".join(
+        (seg.style.render(seg.text) if seg.style else seg.text)
+        for seg in console.render(text, options=console.options.update(no_wrap=True, justify=None))
+        if isinstance(seg.text, str)
+    ).rstrip("\n")
+    return _ANSI_RE.sub(lambda m: "\x01" + m.group(0) + "\x02", rendered)
+
+def _ask_text(console: rich.console.Console, prompt: str) -> str:
+    return input(_rl_prompt(console, prompt + " "))
+
 def _choose_from_int(
     console: rich.console.Console, 
     prompt: str, 
@@ -182,9 +197,16 @@ def _choose_from_int(
     ) -> int:
     if default is None:
         default = 1
-    ret = rich.prompt.Prompt.ask(prompt, choices=list(map(str, range(1, n_choices + 1))), default=str(default))
+    valid = {str(i) for i in range(1, n_choices + 1)}
+    choices_str = "/".join(sorted(valid, key=int))
+    prompt_str = _rl_prompt(console, f"{prompt} [bold magenta][{choices_str}][/bold magenta] [bold cyan]({default})[/bold cyan]: ")
+    while True:
+        answer = input(prompt_str).strip() or str(default)
+        if answer in valid:
+            break
+        console.print("[red]Please select one of the available options[/red]")
     console.print()
-    return int(ret)
+    return int(answer)
 
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)
