@@ -1,6 +1,6 @@
 [project]
 name = "xun-agent"
-version = "1.1.0"
+version = "1.1.1"
 description = "An autonomous mini LLM agent with tooling."
 readme = "README.md"
 keywords = ["agent", "llm", "llm-agent"]
