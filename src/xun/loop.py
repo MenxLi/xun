@@ -100,7 +100,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             with agent.api_call_semaphore:
                 stream = agent.openai_client.chat.completions.create(
                     stream=True,
-                    timeout=300,
+                    timeout=900,        # TTFT can be slow
                     stream_options={
                         "include_usage": True,
                     },
