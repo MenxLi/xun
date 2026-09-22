@@ -113,19 +113,19 @@ class DockerManagerTest(unittest.TestCase):
         )
         with patch.dict("os.environ", {"XUN_OPENAI_API_KEY": "secret", "XUN_HOME": "/host"}, clear=True), \
                 patch("xun.supervisor.runtime.secrets.choice", return_value=20001):
-            container = manager.start(User("alice", "user-token"))
+            container = manager.start(User("alice", "-user-token"))
 
-        self.assertEqual(container, ManagedContainer("container-id", 20001, "user-token", 0))
+        self.assertEqual(container, ManagedContainer("container-id", 20001, "-user-token", 0))
         options = client.containers.create.call_args.kwargs
         self.assertEqual(options["ports"], {"20001/tcp": ("127.0.0.1", 20001)})
-        self.assertEqual(options["labels"]["xunx.token"], "user-token")
+        self.assertEqual(options["labels"]["xunx.token"], "-user-token")
         self.assertEqual(options["environment"]["XUN_OPENAI_API_KEY"], "secret")
         self.assertNotIn("XUN_HOME", options["environment"])
         self.assertEqual(
             options["command"],
             [
                 "xuns", "", "--host", "0.0.0.0",
-                "--port", "20001", "--token", "user-token",
+                "--port", "20001", "--token=-user-token",
                 "--base-path", "/alice",
             ],
         )

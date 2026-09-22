@@ -164,7 +164,7 @@ class DockerManager:
                 image=self.image,
                 command=[
                     "xuns", "", "--host", "0.0.0.0", "--port", str(port),
-                    "--token", user.token, "--base-path", user.base_path,
+                    f"--token={user.token}", "--base-path", user.base_path,
                 ],
                 name=name,
                 auto_remove=True,
