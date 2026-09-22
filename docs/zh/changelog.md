@@ -1,12 +1,27 @@
 # 更新日志
 
-## 1.1
+## 1.1.1
 
-自 1.0（2026-09-15）以来的变更，按模块归类。
+### 容器与多用户
+
+- 修复 `xunc <目录>` 挂载后工作区不符的问题。
+- 新增 `xunx pause <user>` / `xunx resume <user>`：暂停或恢复某个用户的容器而不丢弃其状态。
+- 修复令牌以 `-` 开头时被 `xuns` 当作选项解析的问题，容器启动改用 `--token=<token>` 传参。
+
+### Web 服务与前端
+
+- 优化ws消息发送：消息与命令带上 `client_id`，收到服务端 `accepted` 回执后才清空输入框与附件；重连后自动重发，服务端按 `client_id` 去重以避免重复执行。
+- 文件信息中的体积改为按量级展示（B / KiB / MiB ...）。
+
+### 扩展系统
+
+- 启动时不再打印 `Loaded extensions:` 提示。
+
+## 1.1.0
 
 ### 扩展系统（新增）
 
-- `$XUN_HOME/extensions/` 下的源文件在每个智能体初始化时自动加载，支持包形式 `{name}/setup_extension.py` 与扁平形式 `{name}.py`；入口 `setup_extension(ctx)` 收到 `ExtensionContext`。
+- `$XUN_HOME/extensions/` 下的源文件在每个智能体初始化时自动加载，支持包形式 `{name}/setup_extension.py` 与扁平形式 `{name}.py`；入口 `setup_extension(ctx)` 。
 - 导入或初始化失败只告警，不阻断启动；配置项 `enable_extensions` 可关闭。
 - 新增显示层钩子 `before_display_info` / `before_display_warning` / `before_display_error`，可拦截智能体输出；新增 `/extensions` 命令与仓库内示例。
 
