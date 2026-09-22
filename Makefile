@@ -1,4 +1,4 @@
-.PHONY: build-web build-docker test doc doc-dist doc-clean
+.PHONY: build-web build-docker test doc doc-dist doc-clean doc-update
 
 DOC_PATH := src/xun/assets/docs
 

@@ -26,7 +26,7 @@ export XUN_OPENAI_MODEL=your-model
 `xunc` forwards them into the container; never put credentials in generated
 documentation.
 
-## Bootstrap or Update
+## Bootstrap
 
 Run the documentation agent in a container from the repository root:
 
@@ -36,6 +36,18 @@ make doc
 
 The agent follows [docs/AGENTS.md](docs/AGENTS.md) and builds the site into
 `site/`.
+
+## Update Existing Docs
+
+After the docs have been bootstrapped, refresh them against recent source
+changes:
+
+```bash
+make doc-update
+```
+
+The agent follows [docs/AGENTS.md](docs/AGENTS.md), reviews the latest source
+changes, updates the documentation accordingly, and rebuilds `site/`.
 
 ## Package the Site
 
