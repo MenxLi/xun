@@ -84,16 +84,31 @@ class WebSessionTest(unittest.TestCase):
 
         self.assertIsNone(_Service.instances[0].kwargs["session_manager"])
 
+    def test_initial_agent_can_be_disabled(self) -> None:
+        with patch("xun.entrypoint.WebDisplayService", _Service), \
+                patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
+            web_session(initial_agent=False)
+            service = _Service.instances[0]
+            self.assertEqual(self.agents, [])
+            with service.kwargs["session_manager"]():
+                pass
+
+        self.assertEqual(len(self.agents), 1)
+        self.assertEqual(service.mounts[0][0], "/")
+        self.assertTrue(service.started)
+        self.assertTrue(service.stopped)
+
 
 class EntrypointCliTest(unittest.TestCase):
     def test_xuns_accepts_one_workdir_and_session_management_flag(self) -> None:
         run = Mock()
-        with patch.object(sys, "argv", ["xuns", "/tmp/project", "--no-manage-sessions", "--base-path", "/alpha"]), \
+        with patch.object(sys, "argv", ["xuns", "/tmp/project", "--no-manage-sessions", "--no-initial-agent", "--base-path", "/alpha"]), \
                 patch("xun.entrypoint.web_session", run):
             main_serve()
 
         self.assertEqual(run.call_args.kwargs["workdir"], "/tmp/project")
         self.assertFalse(run.call_args.kwargs["manage_sessions"])
+        self.assertFalse(run.call_args.kwargs["initial_agent"])
         self.assertEqual(run.call_args.kwargs["base_path"], "/alpha")
 
     def test_xuns_rejects_multiple_workdirs(self) -> None:

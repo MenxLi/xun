@@ -45,6 +45,7 @@ xuns .
 
 `xuns` accepts at most one workspace directory: every session shares it, 
 or each session gets its own temporary workspace if omitted. 
+Use `xuns --no-initial-agent` to browse the documentation without configuring an LLM.
 
 <details>
 <summary>Installation from source</summary>

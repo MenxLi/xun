@@ -2,7 +2,7 @@
 import readline     # noqa
 
 import argparse, shlex, sys, hashlib, tempfile, uuid
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager, nullcontext, suppress
 from pathlib import Path
 from typing import Callable, Optional
 import docker
@@ -182,8 +182,9 @@ def web_session(
     token: str = "",
     base_path: str = "",
     manage_sessions: bool = True,
+    initial_agent: bool = True,
 ) -> None:
-    """Run a web service with one initial agent and optional dynamic sessions."""
+    """Run a web service with an optional initial agent and dynamic sessions."""
     fixed_workdir = Path(workdir) if workdir is not None else None
 
     def new_session():
@@ -193,10 +194,12 @@ def web_session(
             mount_path=mount_path,
         )
 
-    with _web_display_session(
-        fixed_workdir,
-        mount_path="/",
-    ) as (mount_path, display):
+    initial_session = (
+        _web_display_session(fixed_workdir, mount_path="/")
+        if initial_agent
+        else nullcontext(("/", WebDisplay(expose_files=True)))
+    )
+    with initial_session as (mount_path, display):
         service = WebDisplayService(
             host=host,
             port=port,
@@ -294,6 +297,7 @@ def main_serve():
     parser.add_argument("--token", type=str, default=None, help="Token for accessing the web interface (default: random token).")
     parser.add_argument("--base-path", type=str, default="", help="URL prefix for the web service (default: root).")
     parser.add_argument("--manage-sessions", action=argparse.BooleanOptionalAction, default=True, help="Allow sessions to be created and removed from the web interface (default: enabled).")
+    parser.add_argument("--initial-agent", action=argparse.BooleanOptionalAction, default=True, help="Create an initial agent at startup (default: enabled).")
     args = parser.parse_args()
     
     web_session(
@@ -303,6 +307,7 @@ def main_serve():
         token=args.token or "",
         base_path=args.base_path,
         manage_sessions=args.manage_sessions,
+        initial_agent=args.initial_agent,
     )
 
 def main_container():
