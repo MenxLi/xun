@@ -143,7 +143,8 @@ class EntrypointCliTest(unittest.TestCase):
             options["volumes"],
             {str(Path(directory).resolve()): {"bind": "/workspace", "mode": "rw"}},
         )
-        self.assertEqual(options["command"], ["xuns", "--host", "0.0.0.0"])
+        self.assertEqual(options["working_dir"], "/workspace")
+        self.assertEqual(options["command"], ["xuns", ".", "--host", "0.0.0.0"])
 
 
 if __name__ == "__main__":

@@ -332,7 +332,7 @@ def main_container():
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
     exec_cmd = args.exec_cmd
     if exec_cmd is None:
-        exec_cmd = "xuns --host 0.0.0.0" if mount else "xuns '' --host '0.0.0.0'"
+        exec_cmd = "xuns . --host 0.0.0.0" if mount else "xuns '' --host '0.0.0.0'"
     client = docker.from_env()
     container = None
     try:
