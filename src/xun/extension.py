@@ -123,8 +123,6 @@ def _scan_extensions(home_dir: Path) -> tuple[Extension, ...]:
         ext = _distill(name, packages[name] if name in packages else flats[name])
         if ext is not None:
             loaded.append(ext)
-    if loaded:
-        rich.print(f"[bold cyan]Loaded extensions:[/bold cyan] {', '.join(e.name for e in loaded)}")
     return tuple(loaded)
 
 _SCAN_LOCK = threading.Lock()
