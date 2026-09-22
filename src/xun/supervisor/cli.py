@@ -29,8 +29,9 @@ def _user_table(users: list) -> Table:
     table.add_column("USER", style="cyan", no_wrap=True)
     table.add_column("TOKEN", style="magenta")
     table.add_column("BASE PATH", style="green")
+    table.add_column("STATE")
     for user in users:
-        table.add_row(user.name, user.token, str(user.base_path))
+        table.add_row(user.name, user.token, str(user.base_path), "paused" if user.paused else "running")
     return table
 
 
@@ -45,6 +46,12 @@ def _build_parser() -> argparse.ArgumentParser:
     delete.add_argument("username")
 
     commands.add_parser("user-list", help="List users.")
+
+    pause = commands.add_parser("pause", help="Pause a user's container.")
+    pause.add_argument("username")
+
+    resume = commands.add_parser("resume", help="Resume a user's container.")
+    resume.add_argument("username")
 
     upgrade = commands.add_parser(
         "upgrade",
@@ -100,6 +107,13 @@ def main() -> None:
                 console.print("[dim]No users.[/dim]")
             else:
                 console.print(_user_table(users))
+        elif args.command in {"pause", "resume"}:
+            paused = args.command == "pause"
+            if store.set_paused(args.username, paused) is None:
+                parser.error(f"user does not exist: {args.username}")
+            action = "Paused" if paused else "Resumed"
+            console.print(f"[green]{action}[/green] [cyan]{args.username}[/cyan]")
+            console.print("[dim]The container state changes on the next serve reconciliation.[/dim]")
         elif args.command == "upgrade":
             names = [user.name for user in store.list()] if args.all else args.username
             if not names:

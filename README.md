@@ -146,6 +146,13 @@ xunx user-add alice
 xunx serve --host 0.0.0.0 --port 18960
 ```
 
+Pause a user's container without discarding its state, then resume it later:
+
+```bash
+xunx pause alice
+xunx resume alice
+```
+
 <details>
 <summary>Frontend development</summary>
 The frontend development command starts both the backend and Vite with Vue DevTools:

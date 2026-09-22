@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 from rich.console import Console
@@ -20,6 +21,17 @@ class Supervisor:
         self.active: dict[str, ManagedContainer] = {}
         self.pruned = False
 
+    async def _sync_paused(
+        self, name: str, container: ManagedContainer, paused: bool
+    ) -> ManagedContainer:
+        if container.paused == paused:
+            return container
+        action = self.backend.pause if paused else self.backend.resume
+        await asyncio.to_thread(action, container)
+        state = "Paused" if paused else "Resumed"
+        _console.print(f"[cyan]{state} container {container.id} for {name}.[/cyan]")
+        return replace(container, paused=paused)
+
     async def reconcile(self) -> None:
         users = {user.name: user for user in await asyncio.to_thread(self.store.list)}
         for name, container in list(self.active.items()):
@@ -35,6 +47,9 @@ class Supervisor:
                 await asyncio.to_thread(self.backend.stop, container)
                 del self.active[name]
                 _console.print(f"[yellow]Stopped container for {name} ({reason}).[/yellow]")
+            else:
+                assert user is not None
+                self.active[name] = await self._sync_paused(name, container, user.paused)
 
         for name, user in users.items():
             if name in self.active:
@@ -48,6 +63,7 @@ class Supervisor:
                     await asyncio.to_thread(self.backend.stop, adopted)
                     adopted = None
                 if adopted is not None:
+                    adopted = await self._sync_paused(name, adopted, user.paused)
                     self.active[name] = adopted
                     _console.print(f"[cyan]Adopted container {adopted.id} for {name}.[/cyan]")
                 else:
@@ -143,12 +159,31 @@ class Multiplexer:
             finally:
                 self.client = None
 
-    def _target(self, request: web.Request) -> str | None:
-        name = request.path.lstrip("/").split("/", 1)[0]
-        container = self.supervisor.active.get(name)
-        if container is None:
-            return None
-        return f"127.0.0.1:{container.port}{request.raw_path}"
+    @staticmethod
+    def _is_frontend_path(path: str) -> bool:
+        parts = path.strip("/").split("/", 1)
+        relative = parts[1] if len(parts) > 1 else ""
+        root = relative.split("/", 1)[0]
+        return relative in {"", "login"} or root in {"chat", "docs"}
+
+    @classmethod
+    def _paused_response(cls, request: web.Request) -> web.Response:
+        if cls._is_frontend_path(request.path):
+            return web.Response(
+                status=503,
+                content_type="text/html",
+                text=(
+                    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+                    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                    "<title>Temporarily unavailable</title></head><body>"
+                    "<main><h1>Temporarily unavailable</h1>"
+                    "<p>This service is paused. Please try again later or contact "
+                    "the administrator if you need assistance.</p></main>"
+                    "</body></html>"
+                ),
+                headers={"Retry-After": "60"},
+            )
+        return web.Response(status=503, text="Service paused", headers={"Retry-After": "60"})
 
     @staticmethod
     def _request_headers(request: web.Request, *, websocket: bool = False) -> list[tuple[str, str]]:
@@ -169,9 +204,13 @@ class Multiplexer:
         return headers
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
-        target = self._target(request)
-        if target is None:
+        name = request.path.lstrip("/").split("/", 1)[0]
+        container = self.supervisor.active.get(name)
+        if container is None:
             raise web.HTTPNotFound(text="User not found")
+        if container.paused:
+            return self._paused_response(request)
+        target = f"127.0.0.1:{container.port}{request.raw_path}"
         if request.headers.get("Upgrade", "").lower() == "websocket":
             return await self._websocket(request, f"ws://{target}")
         return await self._http(request, f"http://{target}")

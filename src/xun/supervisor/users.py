@@ -19,6 +19,7 @@ class User:
     token: str
     generation: int = 0
     """Bumped by `xunx upgrade`; containers are recreated once they lag behind it."""
+    paused: bool = False
 
     @property
     def base_path(self) -> str:
@@ -35,14 +36,18 @@ class UserStore:
                 "CREATE TABLE IF NOT EXISTS users ("
                 "name TEXT PRIMARY KEY, "
                 "token TEXT NOT NULL UNIQUE, "
-                "generation INTEGER NOT NULL DEFAULT 0"
+                "generation INTEGER NOT NULL DEFAULT 0, "
+                "paused INTEGER NOT NULL DEFAULT 0"
                 ")"
             )
-            # databases created before the upgrade feature have no generation
             columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
             if "generation" not in columns:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN generation INTEGER NOT NULL DEFAULT 0"
+                )
+            if "paused" not in columns:
+                connection.execute(
+                    "ALTER TABLE users ADD COLUMN paused INTEGER NOT NULL DEFAULT 0"
                 )
 
     @contextmanager
@@ -76,16 +81,26 @@ class UserStore:
     def get(self, name: str) -> User | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT name, token, generation FROM users WHERE name = ?", (name,)
+                "SELECT name, token, generation, paused FROM users WHERE name = ?", (name,)
             ).fetchone()
-        return User(name=row[0], token=row[1], generation=row[2]) if row else None
+        return User(name=row[0], token=row[1], generation=row[2], paused=bool(row[3])) if row else None
 
     def list(self) -> list[User]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT name, token, generation FROM users ORDER BY name"
+                "SELECT name, token, generation, paused FROM users ORDER BY name"
             ).fetchall()
-        return [User(name=name, token=token, generation=generation) for name, token, generation in rows]
+        return [
+            User(name=name, token=token, generation=generation, paused=bool(paused))
+            for name, token, generation, paused in rows
+        ]
+
+    def set_paused(self, name: str, paused: bool) -> User | None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE users SET paused = ? WHERE name = ?", (int(paused), name)
+            )
+        return self.get(name)
 
     def upgrade(self, name: str) -> User | None:
         """Mark one user's container for recreation on the next reconciliation."""

@@ -77,6 +77,7 @@ class ManagedContainer:
     token: str
     generation: int = 0
     """The user generation this container was created for; used to detect `xunx upgrade`."""
+    paused: bool = False
 
 
 class ContainerManager(Protocol):
@@ -84,6 +85,8 @@ class ContainerManager(Protocol):
     def adopt(self, user: User) -> ManagedContainer | None: ...
     def stop(self, container: ManagedContainer) -> None: ...
     def is_running(self, container: ManagedContainer) -> bool: ...
+    def pause(self, container: ManagedContainer) -> None: ...
+    def resume(self, container: ManagedContainer) -> None: ...
     def prune(self, keep_ids: set[str]) -> None: ...
     def close(self) -> None: ...
 
@@ -177,10 +180,18 @@ class DockerManager:
             if self.copy_home_from is not None and Path(self.copy_home_from).is_dir():
                 copy_directory(self.copy_home_from, container, "/.xun", include=HOME_COPY_INCLUDE)
             container.start()
+            if user.paused:
+                container.pause()
             self._stream_logs(container, name)
             if not isinstance(container.id, str):
                 raise RuntimeError("Docker SDK returned a container without an ID")
-            return ManagedContainer(id=container.id, port=port, token=user.token, generation=user.generation)
+            return ManagedContainer(
+                id=container.id,
+                port=port,
+                token=user.token,
+                generation=user.generation,
+                paused=user.paused,
+            )
         except BaseException:
             self.used_ports.discard(port)
             if container is not None:
@@ -195,7 +206,8 @@ class DockerManager:
         except NotFound:
             return None
         attrs = container.attrs
-        if attrs.get("State", {}).get("Status") != "running":
+        status = attrs.get("State", {}).get("Status")
+        if status not in {"running", "paused"}:
             return None
         port = _published_port(attrs)
         container_id = attrs.get("Id")
@@ -208,7 +220,11 @@ class DockerManager:
         generation = int(labels.get("xunx.gen", 0))
         self.used_ports.add(port)
         return ManagedContainer(
-            id=container_id, port=port, token=labels.get("xunx.token", ""), generation=generation,
+            id=container_id,
+            port=port,
+            token=labels.get("xunx.token", ""),
+            generation=generation,
+            paused=status == "paused",
         )
 
     def stop(self, container: ManagedContainer) -> None:
@@ -222,9 +238,15 @@ class DockerManager:
         try:
             target = self.client.containers.get(container.id)
             target.reload()
-            return target.status == "running"
+            return target.status in {"running", "paused"}
         except NotFound:
             return False
+
+    def pause(self, container: ManagedContainer) -> None:
+        self.client.containers.get(container.id).pause()
+
+    def resume(self, container: ManagedContainer) -> None:
+        self.client.containers.get(container.id).unpause()
 
     def prune(self, keep_ids: set[str]) -> None:
         """Remove managed containers of this instance that were not adopted."""

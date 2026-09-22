@@ -73,6 +73,18 @@ class UserStoreTest(unittest.TestCase):
             self.assertEqual(store.list(), [upgraded])
             self.assertIsNone(store.upgrade("nobody"))
 
+    def test_pause_and_resume_user(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            alice = store.add("alice")
+
+            paused = store.set_paused("alice", True)
+            self.assertEqual(paused, User(alice.name, alice.token, alice.generation, True))
+            self.assertEqual(store.get("alice"), paused)
+
+            self.assertEqual(store.set_paused("alice", False), alice)
+            self.assertIsNone(store.set_paused("nobody", True))
+
     def test_migrates_databases_without_generation(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "xunx.db"
@@ -84,7 +96,7 @@ class UserStoreTest(unittest.TestCase):
 
             store = UserStore(path)
 
-            self.assertEqual(store.get("alice"), User("alice", "tok", 0))
+            self.assertEqual(store.get("alice"), User("alice", "tok", 0, False))
 
 
 class DockerManagerTest(unittest.TestCase):
@@ -138,6 +150,23 @@ class DockerManagerTest(unittest.TestCase):
         environment = client.containers.create.call_args.kwargs["environment"]
         self.assertEqual(environment["FOO_SECRET"], "set")
         self.assertNotIn("XUN_HOME", environment)
+
+    def test_starts_paused_user_in_paused_state(self) -> None:
+        client = Mock()
+        sdk_container = Mock(id="container-id")
+        client.containers.create.return_value = sdk_container
+        manager = DockerManager(
+            image="xun",
+            port_range=range(20000, 20001),
+            instance="instance-id",
+            client=client,
+        )
+
+        container = manager.start(User("alice", "token", paused=True))
+
+        sdk_container.start.assert_called_once_with()
+        sdk_container.pause.assert_called_once_with()
+        self.assertTrue(container.paused)
 
     def test_removes_created_container_when_start_fails(self) -> None:
         client = Mock()
@@ -202,6 +231,16 @@ class DockerManagerTest(unittest.TestCase):
         client.containers.get.side_effect = NotFound("no such container")
         self.assertIsNone(manager.adopt(User("alice", "token")))
 
+    def test_pauses_and_resumes_container(self) -> None:
+        manager, client = self._adopt_manager({})
+        container = ManagedContainer("container-id", 21001, "token")
+
+        manager.pause(container)
+        manager.resume(container)
+
+        client.containers.get.return_value.pause.assert_called_once_with()
+        client.containers.get.return_value.unpause.assert_called_once_with()
+
 
 class _Docker:
     def __init__(self) -> None:
@@ -211,6 +250,8 @@ class _Docker:
         self.adopt_result: ManagedContainer | None = None
         self.adopted: list[User] = []
         self.pruned: list[set[str]] = []
+        self.paused: list[ManagedContainer] = []
+        self.resumed: list[ManagedContainer] = []
 
     def start(self, user: User) -> ManagedContainer:
         self.started.append(user)
@@ -226,6 +267,12 @@ class _Docker:
     def is_running(self, container: ManagedContainer) -> bool:
         del container
         return self.running
+
+    def pause(self, container: ManagedContainer) -> None:
+        self.paused.append(container)
+
+    def resume(self, container: ManagedContainer) -> None:
+        self.resumed.append(container)
 
     def prune(self, keep_ids: set[str]) -> None:
         self.pruned.append(keep_ids)
@@ -294,6 +341,42 @@ class SupervisorTest(unittest.IsolatedAsyncioTestCase):
             # pruning runs once per supervisor lifetime
             await supervisor.reconcile()
             self.assertEqual(len(docker.pruned), 1)
+
+    async def test_pause_and_resume_without_recreating_container(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            store.add("alice")
+            docker = _Docker()
+            supervisor = Supervisor(store, docker, interval=1)
+            await supervisor.reconcile()
+            original = supervisor.active["alice"]
+
+            store.set_paused("alice", True)
+            await supervisor.reconcile()
+            self.assertEqual(docker.paused, [original])
+            self.assertTrue(supervisor.active["alice"].paused)
+
+            paused = supervisor.active["alice"]
+            store.set_paused("alice", False)
+            await supervisor.reconcile()
+            self.assertEqual(docker.resumed, [paused])
+            self.assertFalse(supervisor.active["alice"].paused)
+            self.assertEqual(len(docker.started), 1)
+
+    async def test_adopted_container_syncs_persisted_pause_state(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            alice = store.add("alice")
+            store.set_paused("alice", True)
+            docker = _Docker()
+            running = ManagedContainer("old-container", 21500, alice.token, paused=False)
+            docker.adopt_result = running
+            supervisor = Supervisor(store, docker, interval=1)
+
+            await supervisor.reconcile()
+
+            self.assertEqual(docker.paused, [running])
+            self.assertTrue(supervisor.active["alice"].paused)
 
     async def test_adopted_container_with_rotated_token_is_recreated(self) -> None:
         with TemporaryDirectory() as directory:
@@ -384,6 +467,7 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
             manage_supervisor=False,
             websocket_heartbeat=0.05,
         ).app()
+        self.supervisor = supervisor
         self.client = TestClient(TestServer(proxy_app))
         await self.client.start_server()
 
@@ -398,6 +482,27 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
 
         missing = await self.client.get("/bob")
         self.assertEqual(missing.status, 404)
+
+    async def test_paused_frontend_returns_unavailable_html(self) -> None:
+        self.supervisor.active["alice"] = ManagedContainer("container", self.upstream.port, "token", paused=True)
+
+        for path in ("/alice", "/alice/chat/", "/alice/login", "/alice/docs/"):
+            response = await self.client.get(path)
+            self.assertEqual(response.status, 503)
+            self.assertEqual(response.content_type, "text/html")
+            text = (await response.text()).lower()
+            self.assertIn("temporarily unavailable", text)
+            self.assertIn("contact the administrator", text)
+
+    async def test_paused_child_routes_return_plain_503(self) -> None:
+        self.supervisor.active["alice"] = ManagedContainer("container", self.upstream.port, "token", paused=True)
+
+        response = await self.client.get("/alice/api/sessions")
+        self.assertEqual(response.status, 503)
+        self.assertNotEqual(response.content_type, "text/html")
+
+        websocket = await self.client.get("/alice/ws", headers={"Upgrade": "websocket"})
+        self.assertEqual(websocket.status, 503)
 
     async def test_proxies_websocket_without_removing_base_path(self) -> None:
         websocket = await self.client.ws_connect("/alice/socket")
