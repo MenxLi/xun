@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 class ChatMessage(BaseModel):
     type: Literal["message"]
+    client_id: Optional[str] = Field(default=None, max_length=128)
     agent_id: str
     content: str = ""
     images: list[UserMessageEvent.ImageDescriptor] = Field(default_factory=list, max_length=8)
@@ -34,6 +35,7 @@ class ChatMessage(BaseModel):
 
 class CommandMessage(BaseModel):
     type: Literal["command"]
+    client_id: Optional[str] = Field(default=None, max_length=128)
     agent_id: str
     name: str
     arguments: Optional[str] = None
@@ -138,6 +140,8 @@ class WebDisplay(DisplayAbstract):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._executors: dict[str, ThreadPoolExecutor] = {}
         self._executor_lock = threading.Lock()
+        self._accepted_client_ids: set[str] = set()
+        self._accepted_client_id_order: deque[str] = deque()
         self._serve: Optional[ServeManager] = None
 
     @asynccontextmanager
@@ -247,6 +251,12 @@ class WebDisplay(DisplayAbstract):
                 self._executors[agent_id] = executor
         executor.submit(function, *args)
 
+    def _remember_client_id(self, client_id: str) -> None:
+        if len(self._accepted_client_id_order) >= 2000:
+            self._accepted_client_ids.discard(self._accepted_client_id_order.popleft())
+        self._accepted_client_id_order.append(client_id)
+        self._accepted_client_ids.add(client_id)
+
     def _submit(self, message: WebMessage) -> None:
         from ..agent import Agent
         if isinstance(message, ChatMessage):
@@ -334,7 +344,14 @@ class WebDisplay(DisplayAbstract):
             self._clients.add(websocket)
             try:
                 while True:
-                    self._submit(WEB_MESSAGE_ADAPTER.validate_python(await websocket.receive_json()))
+                    message = WEB_MESSAGE_ADAPTER.validate_python(await websocket.receive_json())
+                    client_id = message.client_id if isinstance(message, (ChatMessage, CommandMessage)) else None
+                    if client_id is None or client_id not in self._accepted_client_ids:
+                        self._submit(message)
+                        if client_id is not None:
+                            self._remember_client_id(client_id)
+                    if client_id is not None:
+                        await websocket.send_json({"type": "accepted", "client_id": client_id})
             except WebSocketDisconnect:
                 pass
             finally:

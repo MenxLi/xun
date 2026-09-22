@@ -48,6 +48,13 @@ let sessionRefreshTimer: number | undefined
 let agentDataRequest = 0
 const syncing = ref(false)
 let queuedMessages: ServerMessage[] = []
+type Submission = {
+  payload: Extract<ClientMessage, { type: 'message' | 'command' }>
+  input: string
+  imageUrls: string[]
+  sessionPath: string
+}
+let pendingSubmission: Submission | null = null
 
 // The overlay's CSS-delayed fade-in (.stream-loading) hides it on fast loads:
 // unmounted before it ever paints, no JS timers, no flicker.
@@ -255,6 +262,7 @@ function connect() {
     syncing.value = false
     queuedMessages.forEach(handleServerMessage)
     queuedMessages = []
+    resendPendingSubmission()
   })
   nextSocket.addEventListener('message', message => {
     if (socket !== nextSocket) return
@@ -265,19 +273,21 @@ function connect() {
   nextSocket.addEventListener('close', () => {
     if (socket !== nextSocket) return
     connected.value = false
+    sending.value = pendingSubmission !== null
     syncing.value = false
     queuedMessages = []
     reconnectTimer = window.setTimeout(connect, 2500)
   })
 }
 
-function disconnect() {
+function disconnect(clearPending = true) {
   window.clearTimeout(reconnectTimer)
   const previousSocket = socket
   socket = null
   connected.value = false
   syncing.value = false
   queuedMessages = []
+  if (clearPending) pendingSubmission = null
   previousSocket?.close()
 }
 
@@ -293,7 +303,9 @@ function switchSession(path: string, updateHistory = true) {
 }
 
 function handleServerMessage(payload: ServerMessage) {
-  if (isPendingPrompt(payload)) {
+  if (isAccepted(payload)) {
+    acceptSubmission(payload.client_id)
+  } else if (isPendingPrompt(payload)) {
     pendingPrompts.value = [...pendingPrompts.value.filter(prompt => prompt.id !== payload.data.id), payload.data]
   } else if (isPromptResolved(payload)) {
     pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== payload.prompt_id)
@@ -327,10 +339,41 @@ function isExecutionState(payload: ServerMessage): payload is Extract<ServerMess
   return 'type' in payload && payload.type === 'execution_state'
 }
 
+function isAccepted(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'accepted' }> {
+  return 'type' in payload && payload.type === 'accepted'
+}
+
 function send(payload: ClientMessage) {
   if (socket?.readyState !== WebSocket.OPEN) return false
-  socket.send(JSON.stringify(payload))
-  return true
+  try {
+    socket.send(JSON.stringify(payload))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function resendPendingSubmission() {
+  if (!pendingSubmission || pendingSubmission.sessionPath !== currentSessionPath.value) return
+  sending.value = send(pendingSubmission.payload)
+}
+
+function acceptSubmission(clientId: string) {
+  const submission = pendingSubmission
+  if (!submission || submission.payload.client_id !== clientId) return
+  pendingSubmission = null
+  sending.value = false
+  inputHistory.add(submission.input.trim())
+  if (input.value === submission.input) input.value = ''
+  if (submission.imageUrls.length) {
+    const submitted = new Set(submission.imageUrls)
+    images.value = images.value.filter(image => {
+      if (!submitted.has(image.url)) return true
+      URL.revokeObjectURL(image.url)
+      return false
+    })
+  }
+  stream.value?.anchor()
 }
 
 function readImage(file: File): Promise<ImageDescriptor> {
@@ -344,35 +387,33 @@ function readImage(file: File): Promise<ImageDescriptor> {
 
 async function submit() {
   const value = input.value.trim()
-  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || sending.value || selectedAgentRunning.value) return
+  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || pendingSubmission || sending.value || selectedAgentRunning.value) return
   const targetSocket = socket
   const agentId = selectedAgentId.value
+  const inputSnapshot = input.value
+  const imageSnapshot = [...images.value]
+  const clientId = crypto.randomUUID()
   sendError.value = ''
+  sending.value = true
   if (value.startsWith('/')) {
     const [name, ...argumentsParts] = value.slice(1).split(/\s+/)
-    if (send({ type: 'command', agent_id: agentId, name, arguments: argumentsParts.join(' ') || null })) {
-      inputHistory.add(value)
-      stream.value?.anchor()
-    }
+    const payload = { type: 'command', client_id: clientId, agent_id: agentId, name, arguments: argumentsParts.join(' ') || null } as const
+    if (send(payload)) pendingSubmission = { payload, input: inputSnapshot, imageUrls: [], sessionPath: currentSessionPath.value }
+    else sending.value = false
   } else {
-    sending.value = true
     try {
-      const messageImages = await Promise.all(images.value.map(image => readImage(image.file)))
+      const messageImages = await Promise.all(imageSnapshot.map(image => readImage(image.file)))
       if (socket !== targetSocket) return
-      if (!send({ type: 'message', agent_id: agentId, content: value, images: messageImages })) return
-      inputHistory.add(value)
-      clearImages()
-      stream.value?.anchor()
+      const payload = { type: 'message', client_id: clientId, agent_id: agentId, content: value, images: messageImages } as const
+      if (send(payload)) pendingSubmission = { payload, input: inputSnapshot, imageUrls: imageSnapshot.map(image => image.url), sessionPath: currentSessionPath.value }
+      else sending.value = false
     } catch (error) {
       if (socket === targetSocket) {
         sendError.value = error instanceof Error ? error.message : t('composer.uploadError')
+        sending.value = false
       }
-      return
-    } finally {
-      if (socket === targetSocket) sending.value = false
     }
   }
-  input.value = ''
 }
 
 function cancelExecution() {

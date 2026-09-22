@@ -221,7 +221,10 @@ async function showInfo(entry: FileEntry) {
 
 function formatSize(size: number | null) {
   if (size === null) return '—'
-  return new Intl.NumberFormat(undefined, { style: 'unit', unit: 'byte', unitDisplay: 'short' }).format(size)
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  const unit = Math.min(Math.floor(Math.log(Math.max(size, 1)) / Math.log(1024)), units.length - 1)
+  const value = size / 1024 ** unit
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: unit === 0 ? 0 : 1 }).format(value)} ${units[unit]}`
 }
 
 function formatModified(timestamp: number) {

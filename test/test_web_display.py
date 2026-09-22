@@ -447,8 +447,18 @@ class WebDisplayTest(unittest.TestCase):
         second_agent.command.register(Command(name="sample", description="Sample command.", handler=lambda _agent, _args: command_called.set()))
 
         with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
-            websocket.send_json({"type": "message", "agent_id": "agent-2", "content": "hello"})
-            websocket.send_json({"type": "command", "agent_id": "agent-2", "name": "sample", "arguments": "value"})
+            def receive_accepted(client_id: str) -> dict:
+                while True:
+                    payload = websocket.receive_json()
+                    if payload.get("type") == "accepted" and payload.get("client_id") == client_id:
+                        return payload
+
+            websocket.send_json({"type": "message", "client_id": "message-1", "agent_id": "agent-2", "content": "hello"})
+            self.assertEqual(receive_accepted("message-1"), {"type": "accepted", "client_id": "message-1"})
+            websocket.send_json({"type": "message", "client_id": "message-1", "agent_id": "agent-2", "content": "hello"})
+            self.assertEqual(receive_accepted("message-1"), {"type": "accepted", "client_id": "message-1"})
+            websocket.send_json({"type": "command", "client_id": "command-1", "agent_id": "agent-2", "name": "sample", "arguments": "value"})
+            self.assertEqual(receive_accepted("command-1"), {"type": "accepted", "client_id": "command-1"})
 
         self.assertTrue(second_agent.instruction_called.wait(1))
         self.assertTrue(command_called.wait(1))

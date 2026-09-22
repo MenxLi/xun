@@ -122,8 +122,9 @@ export type ServerMessage = DisplayEvent
   | { type: 'pending_prompt'; data: PendingPrompt }
   | { type: 'prompt_resolved'; prompt_id: string }
   | { type: 'execution_state'; agent_id: string; running: boolean }
+  | { type: 'accepted'; client_id: string }
 
 export type ClientMessage =
-  | { type: 'message'; agent_id: string; content: string; images: ImageDescriptor[] }
-  | { type: 'command'; agent_id: string; name: string; arguments: string | null }
+  | { type: 'message'; client_id: string; agent_id: string; content: string; images: ImageDescriptor[] }
+  | { type: 'command'; client_id: string; agent_id: string; name: string; arguments: string | null }
   | { type: 'cancel'; agent_id: string }
