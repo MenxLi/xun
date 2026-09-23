@@ -23,8 +23,7 @@ export XUN_OPENAI_BASE_URL=https://api.example.com/v1
 export XUN_OPENAI_MODEL=your-model
 ```
 
-`xunc` forwards them into the container; never put credentials in generated
-documentation.
+`xunc` forwards them into the container. 
 
 ## Bootstrap
 
