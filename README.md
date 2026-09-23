@@ -43,10 +43,6 @@ xun
 xuns .
 ```
 
-`xuns` accepts at most one workspace directory: every session shares it, 
-or each session gets its own temporary workspace if omitted. 
-Use `xuns --no-initial-agent` to browse the documentation without configuring an LLM.
-
 <details>
 <summary>Installation from source</summary>
 
@@ -58,18 +54,31 @@ pip install .
 ```
 </details>
 
-> **Documentation is included in PyPI releases.** Start `xuns/xunc/xunx` to browse the
+## Documentation
+
+Current documentation can be accessed through the web interface provided by `xuns`.
+
+Opens the web application without LLM configured (If you don't want to set up LLM):
+```sh
+xuns --no-initial-agent
+```
+
+Then visit: `http://localhost:18960/docs/`
+
+> **Documentation is included in PyPI releases.** Start `xuns/xunc` to browse the
 > bilingual site at `/docs/`. Need a refresh? Let Xun write its own bilingual
 > manual; see [Building Documentation](README-BUILD-DOCS.md).
 
 ## Session Entrypoints
+
+As mentioned above, Xun provides multiple entrypoints for different usage scenarios: 
 
 | Command | Form | Use case |
 |---|---|---|
 | `xun` | Terminal session | Work interactively in the current directory. |
 | `xuns` | Web service | Use the managed browser experience. |
 | `xunc` | Container session | Run `xuns` in an isolated Docker container. |
-| `xunx` | Multiplexed service | Proxy persistent per-user containers through one server. |
+| `xunx` | Multiplexed service | Proxy per-user containers through one server. |
 
 ## API
 
@@ -98,11 +107,12 @@ Additional features are shown in [demo.ipynb](demo.ipynb), including:
 - Lifecycle hooks
 - ...
 
-Do check out [demo.ipynb](demo.ipynb) for detailed examples. 
+**Do check out [demo.ipynb](demo.ipynb) for detailed examples.**
 
 ## CLI
 
 Run `xun` in your terminal to start an interactive session.
+The current workspace is used as the working directory.
 You can also pass a prompt as an argument to begin with a specific instruction.
 ```bash
 xun "Write a hello world python script and save it to hello.py"
@@ -117,15 +127,24 @@ Input `/help` to see the full list of commands.
 
 ## Web
 
-`web_session` starts the same managed web experience available through `xuns`:
+`xuns` starts the managed web service for Xun, providing a browser-based interface to interact with the system.
 
-```python
-from xun import web_session
+If no arguments are provided, `xuns` will start the web service with a temporary workspace.
+Otherwise, the first argument is treated as the path to the workspace directory.
 
-web_session(workdir=".", base_path="/xun", manage_sessions=True)
+```sh
+xuns        # start with a temporary workspace
+xuns .      # start with the current directory as the workspace
 ```
+The url with access token will be displayed in the terminal after starting the web service.
+
+Inside web interface, you can manage sessions. 
+`xuns` accepts at most one workspace directory: every session shares it, 
+or each session gets its own temporary workspace if omitted. 
 
 ## Docker
+
+To use `xunc` and `xunx`, you need to build the Docker image first.
 
 ```bash
 # first clone the repository
@@ -137,6 +156,7 @@ make build-docker   # builds the web frontend, then the `xun` image
 xunc                # sandbox: temporary workspace inside the container
 xunc .              # bind mount the current directory as /workspace
 xunc --copy .       # copy the current directory into /workspace instead
+xunc --exec "xun"   # starting the `xun` cli session instead of web
 ```
 
 `xunx` uses the same image to run one persistent container per user behind a
@@ -153,6 +173,10 @@ Pause a user's container without discarding its state, then resume it later:
 xunx pause alice
 xunx resume alice
 ```
+
+> Note that `xunx` starts container as temporary per-user instances.
+> Stopping `xunx` won't stop the container, 
+> but if you do `xunx upgrade <username>` or restart docker daemon, the temporary containers will be removed.
 
 <details>
 <summary>Frontend development</summary>
