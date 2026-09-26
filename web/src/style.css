@@ -194,8 +194,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .reasoning > summary { padding: 2px 0; opacity: .65; font: 400 10px/1.4 'Manrope', sans-serif; }
 .reasoning > summary:hover { opacity: 1; }
 .reasoning .markdown, .reasoning .plain-text { margin: 3px 0 0 14px; color: var(--muted); font-size: 11px; line-height: 1.55; opacity: .8; }
-.command-result, .tools-result, .history-result { margin: 0 0 22px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--paper) 72%, transparent); overflow: hidden; }
-.command-result > header, .tools-result > header, .history-result > header { height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
+.command-result, .tools-result, .history-result, .html-info-result { margin: 0 0 22px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--paper) 72%, transparent); overflow: hidden; }
+.command-result > header, .tools-result > header, .history-result > header, .html-info-result > header { height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
+.html-info-result > .html-content { padding: 10px 12px; font-size: 13px; }
 .tools-result > header span { margin-left: auto; color: var(--muted); font: 9px/1 'Fira Code', monospace; }
 .command-line { min-height: 38px; padding: 8px 12px; display: grid; grid-template-columns: 130px 1fr; gap: 12px; border-bottom: 1px solid var(--line); font-size: 11px; }
 .command-line:last-child { border-bottom: 0; }

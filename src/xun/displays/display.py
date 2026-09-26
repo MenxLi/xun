@@ -7,6 +7,7 @@ import rich.table
 import rich.console
 import rich.panel
 import rich.markdown
+import rich.markup
 import rich.text
 
 from ..display_abstract import *
@@ -54,6 +55,7 @@ class Display(DisplayAbstract):
             case ModelMessageEvent(): self._show_model_message(event)
             case ToolResultEvent(): self._show_tool_result(event)
             case InfoEvent(): self._show_info(event)
+            case HTMLInfoEvent(): self._show_html_info(event)
             case ConfirmEvent(): self._show_confirm(event)
             case WarningEvent(): self._show_warning(event)
             case ErrorEvent(): self._show_error(event)
@@ -136,6 +138,14 @@ class Display(DisplayAbstract):
 
     def _show_info(self, event: DisplayEvent[InfoEvent]) -> None:
         self._print(f":information_source: {event.payload.message}")
+
+    def _show_html_info(self, event: DisplayEvent[HTMLInfoEvent]) -> None:
+        ev = event.payload
+        text = rich.markup.escape(ev.to_text())
+        if ev.title:
+            self._print(rich.panel.Panel(text, title=ev.title, border_style="cyan", box=rich.box.ROUNDED, padding=(0, 1)))
+        else:
+            self._print(f":information_source: {text}")
 
     def _show_confirm(self, event: DisplayEvent[ConfirmEvent]) -> None:
         if event.payload.source == "user":

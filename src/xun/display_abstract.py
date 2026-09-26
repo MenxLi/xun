@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import Generic, Optional, TYPE_CHECKING, Protocol, Sequence, Annotated, Literal, NoReturn, cast
+import re
 import time
+from html import unescape
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pydantic import BaseModel, Field, PlainSerializer
@@ -111,6 +113,21 @@ class UserMessageEvent(BaseModel):
 class InfoEvent(BaseModel):
     message: str
 
+_HTML_BREAK_RE = re.compile(r"<\s*(?:br\s*/?|/(?:p|div|h[1-6]|li|tr|ul|ol|table|section))\s*>", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]*>", re.DOTALL)
+
+class HTMLInfoEvent(BaseModel):
+    """Custom HTML info message; non-HTML displays fall back to `to_text()`. """
+    html: str
+
+    title: Optional[str] = None
+
+    def to_text(self) -> str:
+        text = _HTML_BREAK_RE.sub("\n", self.html)
+        text = _HTML_TAG_RE.sub("", text)
+        text = "\n".join(line.strip() for line in unescape(text).splitlines())
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
+
 class ConfirmEvent(BaseModel):
     choice: str
     choices: list[str]
@@ -153,6 +170,7 @@ DisplayEventType = (
     | ToolCallEvent
     | ToolResultEvent
     | InfoEvent
+    | HTMLInfoEvent
     | ConfirmEvent
     | WarningEvent
     | ErrorEvent

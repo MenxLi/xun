@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
+import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
 import ConfirmPill from './ConfirmPill.vue'
 import { eventTime, formatTokens, fullEventTime } from '../api'
@@ -122,6 +123,7 @@ function isPlainTextEvent(event: DisplayEvent): event is NoticeEvent {
 function text(event: DisplayEvent): string {
   if (event.name === 'UserMessageEvent') return event.payload.content
   if (event.name === 'ModelMessageEvent') return event.payload.content
+  if (event.name === 'HTMLInfoEvent') return event.payload.html
   if (isPlainTextEvent(event)) return event.payload.message
   return JSON.stringify(event.payload, null, 2)
 }
@@ -130,6 +132,7 @@ function label(event: DisplayEvent): string {
   if (event.name === 'ModelMessageEvent') return event.agent.name
   if (event.name === 'UserCommandEvent') return t('stream.command')
   if (event.name === 'InfoEvent') return t('stream.info')
+  if (event.name === 'HTMLInfoEvent') return event.payload.title || t('stream.info')
   if (event.name === 'WarningEvent') return t('stream.warning')
   if (event.name === 'ErrorEvent') return t('stream.error')
   return event.name.replace(/Event$/, '').replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -237,6 +240,11 @@ async function copyMessage(key: string, event: DisplayEvent) {
         <div v-else-if="item.data.name === 'UserCommandEvent'" class="command-invocation">
           <Terminal :size="13" /> /{{ item.data.payload.name }}<span v-if="item.data.payload.arguments"> {{ item.data.payload.arguments }}</span>
         </div>
+
+        <section v-else-if="item.data.name === 'HTMLInfoEvent'" class="html-info-result">
+          <header v-if="item.data.payload.title">{{ item.data.payload.title }}</header>
+          <HtmlText :content="item.data.payload.html" />
+        </section>
 
         <article v-else class="message" :class="{
           user: isUser(item.data),
