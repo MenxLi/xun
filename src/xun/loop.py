@@ -21,33 +21,37 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
 
     agent.hooks.before_execution.invoke(params)
 
-    result = ""
-    finished = False
-    if params.schema is not None:
-        # keep the in-prompt schema as a fallback: some backends/models have
-        # poor support for response_format (structured outputs)
-        agent.conversation.append_user_message(
-            "\n---\n"
-            "Please respond in JSON format without any additional text. "
-            "The JSON should conform to the following schema:\n"
-            f"{params.schema.model_json_schema()}\n"
-        )
-    for iteration in range(params.max_iterations):
-        agent.check_cancel()
-        agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
-        model_call_id = str(uuid.uuid4())
-        agent.display_event(ModelWorkingEvent(
-            model_call_id=model_call_id,
-            remaining_iterations=params.max_iterations - iteration
-            ))
-        should_continue, result = _execute_step(params, model_call_id)
-        if not should_continue:
-            finished = True
-            break
+    if params.takeover_result is not None:
+        # skip the loop entirely, before the schema fallback message is added to the conversation
+        result = params.takeover_result
+    else:
+        result = ""
+        finished = False
+        if params.schema is not None:
+            # keep the in-prompt schema as a fallback: some backends/models have
+            # poor support for response_format (structured outputs)
+            agent.conversation.append_user_message(
+                "\n---\n"
+                "Please respond in JSON format without any additional text. "
+                "The JSON should conform to the following schema:\n"
+                f"{params.schema.model_json_schema()}\n"
+            )
+        for iteration in range(params.max_iterations):
+            agent.check_cancel()
+            agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
+            model_call_id = str(uuid.uuid4())
+            agent.display_event(ModelWorkingEvent(
+                model_call_id=model_call_id,
+                remaining_iterations=params.max_iterations - iteration
+                ))
+            should_continue, result = _execute_step(params, model_call_id)
+            if not should_continue:
+                finished = True
+                break
 
-    if not finished:
-        agent.display_event(ErrorEvent(message="Maximum tool call iterations exceeded."))
-        raise RuntimeError("Maximum tool call iterations exceeded.")
+        if not finished:
+            agent.display_event(ErrorEvent(message="Maximum tool call iterations exceeded."))
+            raise RuntimeError("Maximum tool call iterations exceeded.")
 
     if params.schema is not None:
         try:

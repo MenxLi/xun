@@ -45,6 +45,15 @@ class HookArgs:
         schema: Optional[type[BaseModel]]
         max_iterations: int
         context_value: Any = None
+        takeover_result: None | str = None
+        """
+        If set to a string, indicates that this execution loop should be taken over by the hook handler, 
+        returning directly this string (if schema is None, otherwise it will be validated against the schema,
+        failing the run if invalid),
+        - the execution step won't be executed by the agent, 
+        - no emission of further hooks / events inside execution,
+        - no conversation history appended.
+        """
 
     @dataclass
     class CommandArgs:
