@@ -5,16 +5,16 @@ import { ChevronRight, Clock3 } from 'lucide-vue-next'
 import { eventTime, fullEventTime } from '../api'
 import type { ToolItem } from '../types'
 
-const props = defineProps<{ tools: ToolItem[]; standalone?: boolean }>()
+const props = defineProps<{ tools: ToolItem[] }>()
 const { t } = useI18n()
 
 const running = computed(() => props.tools.some(tool => !tool.result))
 </script>
 
 <template>
-  <details v-if="tools.length === 1" class="tool-row" :class="{ 'tool-single': standalone }">
+  <details v-if="tools.length === 1" class="tool-row">
     <summary>
-      <ChevronRight :size="standalone ? 14 : 13" class="chevron" />
+      <ChevronRight :size="13" class="chevron" />
       <span>{{ tools[0].call.payload.tool_name || t('stream.tool') }}</span>
       <span v-if="!tools[0].result" class="tool-state">
         <Clock3 :size="12" />
@@ -30,8 +30,8 @@ const running = computed(() => props.tools.some(tool => !tool.result))
 
   <details v-else class="activity-group">
     <summary>
-      <ChevronRight :size="standalone ? 14 : 13" class="chevron" />
-      <span>{{ standalone ? t('stream.activity') + ' · ' : '' }}{{ t('stream.steps', { n: tools.length }) }}</span>
+      <ChevronRight :size="13" class="chevron" />
+      <span>{{ t('stream.toolCalls', { n: tools.length }) }}</span>
       <span v-if="running" class="tool-state">
         <Clock3 :size="12" />
         {{ t('stream.running') }}

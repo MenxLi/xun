@@ -26,7 +26,7 @@ from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
 from .extension import default_loader, ExtensionLoader
 
-DEFAULT_MAX_ITERATIONS = 256 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
+DEFAULT_MAX_ITERATIONS = 512 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
 DEFAULT_API_CALL_LIMIT = 3
 
 _AUTO_CONFIRM_WARNED = False

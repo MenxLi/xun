@@ -1,89 +1,150 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Puzzle, Terminal, Wrench } from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Puzzle, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
 import ConfirmPill from './ConfirmPill.vue'
 import { eventTime, formatTokens, fullEventTime } from '../api'
 import { copyText } from '../clipboard'
-import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolItem } from '../types'
+import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolCallDisplayEvent, ToolItem } from '../types'
 
-const props = defineProps<{ events: DisplayEvent[]; markdown: boolean }>()
+const props = defineProps<{ events: DisplayEvent[]; markdown: boolean; runningAgents: Set<string> }>()
 const { t } = useI18n()
 
 type TurnStep =
   | { kind: 'reason'; key: string; event: ModelMessageDisplayEvent }
   | { kind: 'tools'; key: string; tools: ToolItem[] }
   | { kind: 'confirm'; key: string; event: ConfirmDisplayEvent }
+  | { kind: 'message'; key: string; event: ModelMessageDisplayEvent }
 
-// One working stretch of a single agent: consecutive reasoning-only turns, tool calls,
-// and confirmations share one header (agent · tokens · time) and a thread line.
-type TurnItem = { kind: 'turn'; key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number; last: DisplayEvent; working: boolean }
+type AgentActivity = { key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number | null; autoApprovals: number; last: DisplayEvent; lastTool: string | null; working: boolean }
+type BatchItem = { kind: 'batch'; key: string; agents: AgentActivity[]; last: DisplayEvent }
+type ToolOwner = { activity: AgentActivity; batch: BatchItem; name: string }
 
 type StreamItem =
   | { kind: 'event'; key: string; data: DisplayEvent }
-  | { kind: 'tool'; key: string; tool: ToolItem }
-  | { kind: 'activity'; key: string; tools: ToolItem[] }
-  | TurnItem
+  | BatchItem
 
 const items = computed<StreamItem[]>(() => {
   const output: StreamItem[] = []
   const toolItems = new Map<string, ToolItem>()
-  let turn: TurnItem | null = null
+  const toolOwners = new Map<string, ToolOwner>()
+  const latestActivities = new Map<string, AgentActivity>()
+  let batch: BatchItem | null = null
+  let rootAgent = ''
+
+  function ensureActivity(data: DisplayEvent, index: number): AgentActivity {
+    if (!batch) {
+      batch = { kind: 'batch', key: `batch-${index}`, agents: [], last: data }
+      output.push(batch)
+    }
+    batch.last = data
+    let activity = batch.agents.find(item => item.agent.identifier === data.agent.identifier)
+    if (!activity) {
+      activity = { key: `${batch.key}-${data.agent.identifier}`, agent: data.agent, steps: [], tokens: null, autoApprovals: 0, last: data, lastTool: null, working: false }
+      batch.agents.push(activity)
+    }
+    activity.lastTool = null
+    latestActivities.set(data.agent.identifier, activity)
+    return activity
+  }
 
   props.events.forEach((data, index) => {
-    if (data.name === 'ToolResultEvent') {
+    if (data.name === 'UserMessageEvent' || data.name === 'UserCommandEvent') {
+      batch = null
+      rootAgent = data.agent.identifier
+      latestActivities.clear()
+      output.push({ kind: 'event', key: `${data.name}-${index}`, data })
+    } else if (data.name === 'ToolResultEvent') {
       // Results attach to their call in place; they never appear as their own item.
       const tool = toolItems.get(data.payload.tool_call_id)
       if (!tool) return
       tool.result = data
-      if (turn?.agent.identifier === data.agent.identifier) turn.last = data
-    } else if (data.name === 'ModelWorkingEvent') {
-      // Only the trailing one matters; it becomes the live indicator on the last turn below.
-    } else if (data.name === 'ModelMessageEvent' && !data.payload.content.trim()) {
-      // Tool-only iteration: fold its reasoning (and token count) into a turn, not a full message block.
-      if (!turn || turn.agent.identifier !== data.agent.identifier) {
-        turn = { kind: 'turn', key: `turn-${index}`, agent: data.agent, steps: [], tokens: data.payload.total_tokens, last: data, working: false }
-        output.push(turn)
+      const owner = toolOwners.get(data.payload.tool_call_id)
+      if (owner) {
+        owner.activity.last = data
+        owner.activity.lastTool = owner.name
+        owner.batch.last = data
       }
-      turn.tokens = data.payload.total_tokens
-      turn.last = data
-      if (data.payload.reasoning?.trim()) turn.steps.push({ kind: 'reason', key: `reason-${index}`, event: data })
+    } else if (data.name === 'ModelWorkingEvent') {
+      ensureActivity(data, index).last = data
+    } else if (data.name === 'ModelMessageEvent' && (data.agent.identifier !== rootAgent || !data.payload.content.trim())) {
+      const current = ensureActivity(data, index)
+      current.tokens = data.payload.total_tokens
+      current.last = data
+      if (data.payload.reasoning?.trim()) current.steps.push({ kind: 'reason', key: `reason-${index}`, event: data })
+      if (data.payload.content.trim()) current.steps.push({ kind: 'message', key: `message-${index}`, event: data })
     } else if (data.name === 'ToolCallEvent') {
       const item: ToolItem = { key: data.payload.tool_call_id || `tool-${index}`, call: data }
       if (data.payload.tool_call_id) toolItems.set(data.payload.tool_call_id, item)
-      if (turn?.agent.identifier === data.agent.identifier) {
-        const last = turn.steps.at(-1)
-        if (last?.kind === 'tools') last.tools.push(item)
-        else turn.steps.push({ kind: 'tools', key: `steps-${item.key}`, tools: [item] })
-        turn.last = data
-      } else {
-        turn = null
-        // Tool calls outside a turn: a lone call renders on its own, consecutive 2+ merge into an activity group.
-        const previous = output.at(-1)
-        if (previous?.kind === 'tool') output[output.length - 1] = { kind: 'activity', key: `activity-${previous.key}`, tools: [previous.tool, item] }
-        else if (previous?.kind === 'activity') previous.tools.push(item)
-        else output.push({ kind: 'tool', key: `tool-${item.key}`, tool: item })
-      }
-    } else if (data.name === 'ConfirmEvent' && turn?.agent.identifier === data.agent.identifier) {
-      turn.steps.push({ kind: 'confirm', key: `confirm-${index}`, event: data })
-      turn.last = data
+      const current = ensureActivity(data, index)
+      current.lastTool = toolSummary(data)
+      if (data.payload.tool_call_id) toolOwners.set(data.payload.tool_call_id, { activity: current, batch: batch!, name: current.lastTool })
+      const last = current.steps.at(-1)
+      if (last?.kind === 'tools') last.tools.push(item)
+      else current.steps.push({ kind: 'tools', key: `steps-${item.key}`, tools: [item] })
+      current.last = data
+    } else if (data.name === 'ConfirmEvent' && data.payload.source === 'auto') {
+      const current = ensureActivity(data, index)
+      current.autoApprovals += 1
+      current.last = data
+    } else if (data.name === 'ConfirmEvent') {
+      const current = ensureActivity(data, index)
+      current.steps.push({ kind: 'confirm', key: `confirm-${index}`, event: data })
+      current.last = data
+    } else if (data.name === 'AgentBindEvent' || data.name === 'AgentUnbindEvent') {
+      return
     } else {
-      turn = null
+      batch = null
+      latestActivities.delete(data.agent.identifier)
       output.push({ kind: 'event', key: `${data.name}-${index}`, data })
     }
   })
 
-  const live = props.events.at(-1)
-  if (live?.name === 'ModelWorkingEvent') {
-    const tail = output.at(-1)
-    if (tail?.kind === 'turn' && tail.agent.identifier === live.agent.identifier) tail.working = true
-    else output.push({ kind: 'event', key: `event-${props.events.length - 1}`, data: live })
-  }
-  return output.filter(item => item.kind !== 'turn' || item.steps.length > 0 || item.working)
+  latestActivities.forEach(activity => { activity.working = props.runningAgents.has(activity.agent.identifier) })
+  output.forEach(item => {
+    if (item.kind === 'batch') {
+      item.agents = item.agents.filter(activity => activity.steps.length || activity.autoApprovals || activity.working)
+    }
+  })
+  return output.filter(item => item.kind !== 'batch' || item.agents.length)
 })
+
+function toolSummary(event: ToolCallDisplayEvent): string {
+  const detail = Object.values(event.payload.args).find(value => typeof value === 'string' && value.trim())
+  if (typeof detail !== 'string') return event.payload.tool_name
+  return `${event.payload.tool_name} · ${detail.replace(/\s+/g, ' ').trim().slice(0, 120)}`
+}
+
+function detailCount(activity: AgentActivity): number {
+  return activity.steps.reduce((total, step) => total + (step.kind === 'tools' ? step.tools.length : 1), 0)
+}
+
+function batchDetailCount(batch: BatchItem): number {
+  return batch.agents.reduce((total, agent) => total + detailCount(agent), 0)
+}
+
+const latestBatchKey = computed(() => {
+  for (let index = items.value.length - 1; index >= 0; index--) {
+    if (items.value[index].kind === 'batch') return items.value[index].key
+  }
+  return null
+})
+
+function batchSummary(batch: BatchItem): string {
+  const activity = batch.agents.reduce((latest, item) => item.last.timestamp > latest.last.timestamp ? item : latest)
+  const event = activity.last
+  let action = ''
+  if (event.name === 'ModelWorkingEvent') action = t('stream.generating')
+  else if (event.name === 'ModelMessageEvent') action = event.payload.content || event.payload.reasoning || ''
+  else if (event.name === 'ToolCallEvent') action = activity.lastTool || event.payload.tool_name
+  else if (event.name === 'ToolResultEvent') action = `${activity.lastTool || t('stream.tool')} · ${t('stream.completed')}`
+  else if (event.name === 'ConfirmEvent') action = event.payload.prompt
+  const detail = action.replace(/\s+/g, ' ').trim().slice(0, 160) || t('stream.generating')
+  return `${activity.agent.name} · ${detail}`
+}
 
 // Render only a trailing window: mounting thousands of message components at
 // once is what made long sessions crawl.
@@ -98,8 +159,9 @@ const hasEarlier = computed(() => startIndex.value > 0)
 
 watch(totalItems, (total, previous) => {
   if (previous === undefined) return
-  // Grow in place for live events; a shrink means the session was replaced.
-  rendered.value = total > previous ? rendered.value + (total - previous) : INITIAL_WINDOW
+  // Keep an explicitly expanded history visible as live placeholders come and go.
+  const minimum = Math.min(INITIAL_WINDOW, total)
+  rendered.value = Math.min(total, Math.max(minimum, rendered.value + total - previous))
 })
 
 const root = ref<HTMLElement>()
@@ -111,7 +173,7 @@ async function showEarlier() {
   rendered.value = Math.min(totalItems.value, rendered.value + EARLIER_BATCH)
   await nextTick()
   // Compensate scrollTop so prepended items don't shift the view.
-  if (container) container.scrollTo({ top: container.scrollHeight - previousHeight + previousTop, behavior: 'instant' })
+  if (container) container.scrollTop = container.scrollHeight - previousHeight + previousTop
 }
 
 type NoticeEvent = Extract<DisplayEvent, { name: 'InfoEvent' | 'WarningEvent' | 'ErrorEvent' }>
@@ -169,42 +231,51 @@ async function copyMessage(key: string, event: DisplayEvent) {
       </button>
     </div>
     <template v-for="item in visibleItems" :key="item.key">
-      <section v-if="item.kind === 'turn'" class="turn">
-        <div class="turn-header">
-          <span class="turn-agent">{{ item.agent.name }}</span>
-          <span class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.tokens) }} {{ t('app.tokens') }}</span>
-          <span v-if="item.working" class="tool-state">
+      <details v-if="item.kind === 'batch'" class="activity-batch">
+        <summary class="batch-header">
+          <ChevronRight :size="12" class="chevron" />
+          <span class="batch-title">{{ t('stream.agentActivity') }}</span>
+          <span class="batch-meta">· {{ t('stream.agents', { n: item.agents.length }) }}</span>
+          <span v-if="batchDetailCount(item)" class="batch-meta">· {{ t('stream.details', { n: batchDetailCount(item) }) }}</span>
+          <span v-if="item.key === latestBatchKey" class="batch-summary" :title="batchSummary(item)">
+            <Transition name="activity-update">
+              <span :key="batchSummary(item)" class="batch-summary-text">{{ batchSummary(item) }}</span>
+            </Transition>
+          </span>
+          <span v-if="item.agents.some(agent => agent.working)" class="tool-state">
             <Clock3 :size="12" />
             {{ t('stream.running') }}
           </span>
           <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
+        </summary>
+        <div class="batch-agents">
+          <details v-for="agent in item.agents" :key="agent.key" class="turn">
+            <summary class="turn-header">
+              <ChevronRight :size="12" class="chevron" />
+              <span class="turn-agent">{{ agent.agent.name }}</span>
+              <span v-if="detailCount(agent)">· {{ t('stream.details', { n: detailCount(agent) }) }}</span>
+              <span v-if="agent.autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ agent.autoApprovals }}</span>
+              <span v-if="agent.tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(agent.tokens) }} {{ t('app.tokens') }}</span>
+              <span v-if="agent.working" class="tool-state"><Clock3 :size="12" />{{ t('stream.running') }}</span>
+              <time :title="fullEventTime(agent.last)">{{ eventTime(agent.last) }}</time>
+            </summary>
+            <div class="turn-steps">
+              <template v-for="step in agent.steps" :key="step.key">
+                <details v-if="step.kind === 'reason'" class="reasoning">
+                  <summary><ChevronRight :size="11" class="chevron" />{{ t('stream.reasoning') }}</summary>
+                  <MarkdownText :content="step.event.payload.reasoning!" :enabled="markdown" />
+                </details>
+                <ToolCalls v-else-if="step.kind === 'tools'" :tools="step.tools" />
+                <ConfirmPill v-else-if="step.kind === 'confirm'" :event="step.event" />
+                <MarkdownText v-else :content="step.event.payload.content" :enabled="markdown" />
+              </template>
+            </div>
+          </details>
         </div>
-        <div class="turn-steps">
-          <template v-for="step in item.steps" :key="step.key">
-            <details v-if="step.kind === 'reason'" class="reasoning">
-              <summary><ChevronRight :size="11" class="chevron" />{{ t('stream.reasoning') }}</summary>
-              <MarkdownText :content="step.event.payload.reasoning!" :enabled="markdown" />
-            </details>
-            <ToolCalls v-else-if="step.kind === 'tools'" :tools="step.tools" />
-            <ConfirmPill v-else :event="step.event" />
-          </template>
-        </div>
-      </section>
-
-      <ToolCalls v-else-if="item.kind === 'tool'" :tools="[item.tool]" standalone />
-
-      <ToolCalls v-else-if="item.kind === 'activity'" :tools="item.tools" standalone />
+      </details>
 
       <template v-else>
-        <div v-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'" class="agent-lifecycle">
-          <Link2 v-if="item.data.name === 'AgentBindEvent'" :size="12" />
-          <Link2Off v-else :size="12" />
-          <span>{{ item.data.agent.name }}</span>
-          {{ item.data.name === 'AgentBindEvent' ? t('stream.joined') : t('stream.left') }}
-          <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
-        </div>
-
-        <div v-else-if="item.data.name === 'ModelWorkingEvent'" class="working">
+        <div v-if="item.data.name === 'ModelWorkingEvent'" class="working">
           <span class="working-dot" /> {{ t('stream.working', { name: item.data.agent.name }) }}
         </div>
 

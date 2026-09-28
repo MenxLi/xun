@@ -90,6 +90,8 @@ const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.valu
   ? pendingPrompts.value.filter(prompt => prompt.agent_id === selectedAgentId.value)
   : pendingPrompts.value,
 )
+const streamSize = computed(() => visibleEvents.value.filter(event => event.name !== 'AgentBindEvent' && event.name !== 'AgentUnbindEvent').length + visiblePrompts.value.length)
+const streamViewKey = computed(() => `${currentSessionPath.value}:${selectedOnly.value ? selectedAgentId.value : '*'}`)
 const selectedAgentTokens = computed(() => {
   for (let i = events.value.length - 1; i >= 0; i--) {
     const event = events.value[i]
@@ -588,8 +590,8 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="stream-wrap">
-      <StickyScroll ref="stream" :size="visibleEvents.length + visiblePrompts.length">
-        <EventStream v-if="visibleEvents.length" :events="visibleEvents" :markdown="settings.markdown" />
+      <StickyScroll :key="currentSessionPath" ref="stream" :size="streamSize">
+        <EventStream v-if="visibleEvents.length" :key="streamViewKey" :events="visibleEvents" :markdown="settings.markdown" :running-agents="runningAgents" />
         <div v-if="visiblePrompts.length" class="prompt-stream">
           <PromptCard
             v-for="prompt in visiblePrompts"

@@ -24,7 +24,8 @@ function scrollToEnd(behavior: ScrollBehavior = 'instant') {
   // Ignore scroll events fired by our own scroll calls so they are not
   // mistaken for the user detaching from the bottom.
   ignoreScrollUntil = performance.now() + (behavior === 'smooth' ? 500 : 100)
-  el.scrollTo({ top: el.scrollHeight, behavior })
+  if (behavior === 'smooth') el.scrollTo({ top: el.scrollHeight, behavior })
+  else el.scrollTop = el.scrollHeight
   follow.value = true
   unseen.value = 0
 }
