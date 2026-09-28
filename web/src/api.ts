@@ -65,6 +65,11 @@ export const api = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: name || null }),
   }),
+  renameSession: (path: string, name: string) => request<SessionInfo>(`${sessionUrl()}/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, name }),
+  }),
   removeSession: (path: string) => request<{ removed: boolean }>(`${sessionUrl()}/remove`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

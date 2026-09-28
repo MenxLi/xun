@@ -286,7 +286,7 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
         try:
             import requests
             from io import BytesIO
-            response = requests.get(src)
+            response = requests.get(src, timeout=30)
             response.raise_for_status()
             image = Image.open(BytesIO(response.content))
         except Exception as e:

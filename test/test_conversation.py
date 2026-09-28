@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -22,8 +23,13 @@ class ConversationImageInputTest(unittest.TestCase):
         conversation = Conversation()
         agent = SimpleNamespace(hooks=Hooks(), conversation=conversation)
         context = ToolCallContext(agent, "request_image", None)
+        output = BytesIO()
+        Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
+        response = SimpleNamespace(content=output.getvalue(), raise_for_status=lambda: None)
 
-        self.assertEqual(fs_request_image(context, "https://example.com/chart.png"), "OK")
+        with patch("requests.get", return_value=response) as request:
+            self.assertEqual(fs_request_image(context, "https://example.com/chart.png"), "OK")
+        request.assert_called_once_with("https://example.com/chart.png", timeout=30)
         self.assertEqual(conversation.messages, [])
 
         conversation.add_tool_result("call_1", Result.Ok("OK"))

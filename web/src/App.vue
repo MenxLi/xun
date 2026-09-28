@@ -187,6 +187,19 @@ async function createSession(name: string) {
   }
 }
 
+async function renameSession(session: SessionInfo, name: string) {
+  sessionBusy.value = true
+  sessionError.value = ''
+  try {
+    const renamed = await api.renameSession(session.path, name)
+    sessions.value = sessions.value.map(item => item.path === renamed.path ? renamed : item)
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : t('sessions.renameError')
+  } finally {
+    sessionBusy.value = false
+  }
+}
+
 async function removeSession(session: SessionInfo) {
   sessionBusy.value = true
   sessionError.value = ''
@@ -522,6 +535,7 @@ onBeforeUnmount(() => {
       :error="sessionError"
       @close="closeSessions"
       @create="createSession"
+      @rename="renameSession"
       @remove="removeSession"
       @select="switchSession"
     />

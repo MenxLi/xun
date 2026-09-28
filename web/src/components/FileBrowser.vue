@@ -473,7 +473,7 @@ function serveRemaining(server: ServeServer): string {
     </div>
 
     <Teleport to="body">
-      <div v-if="activeMenu" class="file-menu" :style="menuPosition" @click.stop>
+      <div v-if="activeMenu" class="action-menu" :style="menuPosition" @click.stop>
         <template v-if="activeMenu === 'toolbar'">
           <button @click="startInlineEdit('create')"><FolderPlus :size="14" /><span>{{ t('files.newFolder') }}</span></button>
           <button :disabled="uploading" @click="browse(false); closeMenu()"><Upload :size="14" /><span>{{ t('files.uploadFiles') }}</span></button>

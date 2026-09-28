@@ -178,6 +178,11 @@ class SessionRemove(BaseModel):
     path: str
 
 
+class SessionRename(BaseModel):
+    path: str
+    name: str = Field(max_length=80)
+
+
 @dataclass
 class _DisplaySession:
     display: WebDisplay
@@ -305,6 +310,12 @@ class WebDisplayService:
             self.unmount(request.path)
             return {"removed": True}
 
+        @self.app.post(f"{self.sessions_api_path}/rename")
+        async def rename_session(request: SessionRename) -> SessionInfo:
+            if self._session_manager is None:
+                raise HTTPException(405, "Session management is disabled")
+            return self.rename(request.path, request.name)
+
     def _configure_login(self) -> None:
         @self.app.get(self.login_path, response_class=HTMLResponse)
         async def login_page(request: Request, next: str = "/") -> HTMLResponse:
@@ -405,6 +416,18 @@ class WebDisplayService:
                 session.display._detach()
         if session.context is not None:
             session.context.close()
+
+    def rename(self, path: str, name: str) -> SessionInfo:
+        mount_path = _normalize_path(path)
+        session_name = name.strip()
+        if not session_name:
+            raise HTTPException(422, "Session name cannot be empty")
+        with self._session_lock:
+            session = self._sessions.get(mount_path)
+            if session is None:
+                raise HTTPException(404, "Session not found")
+            session.name = session_name
+            return self._session_info(mount_path)
 
     def list_sessions(self) -> list[SessionInfo]:
         with self._session_lock:

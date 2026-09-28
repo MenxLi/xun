@@ -777,6 +777,21 @@ class WebDisplayTest(unittest.TestCase):
             self.assertEqual(config.status_code, 200)
             self.assertEqual(config.json(), {"expose_files": False})
 
+            renamed = client.post(
+                "/api/sessions/rename",
+                json={"path": "/sessions/new", "name": "  Investigation  "},
+            )
+            self.assertEqual(renamed.status_code, 200)
+            self.assertEqual(renamed.json()["name"], "Investigation")
+            self.assertEqual(client.get("/api/sessions").json()["sessions"][1]["name"], "Investigation")
+            self.assertEqual(
+                client.post(
+                    "/api/sessions/rename",
+                    json={"path": "/sessions/new", "name": "   "},
+                ).status_code,
+                422,
+            )
+
             deleted = client.post("/api/sessions/remove", json={"path": "/sessions/new"})
             self.assertEqual(deleted.json(), {"removed": True})
             self.assertEqual(client.get("/session/sessions/new/api/config").status_code, 404)
@@ -823,8 +838,13 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_session_management_is_disabled_without_manager(self) -> None:
         response = self.client.post("http://testserver/api/sessions/create", json={"name": "New session"})
+        renamed = self.client.post(
+            "http://testserver/api/sessions/rename",
+            json={"path": "/", "name": "Renamed"},
+        )
 
         self.assertEqual(response.status_code, 405)
+        self.assertEqual(renamed.status_code, 405)
         self.assertFalse(self.client.get("http://testserver/api/sessions").json()["can_manage"])
 
 
