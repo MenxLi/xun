@@ -24,7 +24,7 @@ from .command import CommandRegistry
 from .compact import AutoCompactor, CompactorAbstract
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
-from .extension import apply_extensions
+from .extension import default_loader, ExtensionLoader
 
 DEFAULT_MAX_ITERATIONS = 256 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
 DEFAULT_API_CALL_LIMIT = 3
@@ -65,6 +65,8 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
     # below auto inherit
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
     api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
+    extension_loader: ExtensionLoader = default_loader
+    """Shared by reference, all agents replay the same scanned modules."""
 
     # below does not inherit
     state: dict[str, Any] = field(default_factory=dict)
@@ -111,7 +113,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
         if self._lifecycle.v == T.Init.v:
             return cast(Agent[T.Init], self)
 
-        apply_extensions(self)    # may edit config; must run before model auto-detect
+        self.extension_loader.apply(self)
 
         if self.config.model.name == "":
             self.config.model._assign_primary_model(self.openai_client)
@@ -163,6 +165,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
             # auto inherit
             config = parent_agent.config.clone(),
             api_call_semaphore=parent_agent.api_call_semaphore,
+            extension_loader=parent_agent.extension_loader,
             display=parent_agent.display if share_display else NullDisplay(),
         )
         if share_workspace:

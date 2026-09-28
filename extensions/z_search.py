@@ -63,6 +63,6 @@ def z_search(
 
 def setup_extension(ctx: ExtensionContext) -> None:
     if _client is None:
-        return
+        raise RuntimeError("ZhipuAiClient unavailable, z_search extension cannot be set up.")
 
     ctx.agent.toolbox.register(z_search)

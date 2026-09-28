@@ -7,35 +7,59 @@ Two source forms, each yielding an extension named `{name}`:
 - flat form:    `extensions/{name}.py` (zero ceremony; no relative imports)
 """
 from __future__ import annotations
-import functools
 import importlib.util
 import inspect
 import sys
 import threading
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
 import rich
 from .config import get_home_dir
-from .types import CancelledError
+from .types import CancelledError, Result
 if TYPE_CHECKING:
     from .agent import Agent
 
 ENTRY_MODULE = "setup_extension"
-"""Fixed entry function (and package-form file) name."""
 ENTRY_FILE = f"{ENTRY_MODULE}.py"
+
+class ExtensionStatus(str, Enum):
+    """str-Enum so pydantic/JSON treat it as a string."""
+    UNINITIALIZED = 'uninitialized'
+    """Setup has not run (yet), or was interrupted."""
+    LOADED = 'loaded'
+    FAILED = 'failed'
+
+@dataclass(frozen=True)
+class ExtensionFailure:
+    """An extension that failed to import."""
+    name: str
+    path: Path
+    reason: str
+
+@dataclass(frozen=True)
+class ExtensionInfo:
+    """Presentation snapshot of one discovered extension, success or failure."""
+    name: str
+    description: str
+    path: Path
+    status: ExtensionStatus
+    error: str | None = None
+    """Only when FAILED."""
+
+    @classmethod
+    def from_failure(cls, failure: ExtensionFailure) -> "ExtensionInfo":
+        return cls(name=failure.name, description="", path=failure.path,
+                   status=ExtensionStatus.FAILED, error=failure.reason)
 
 @dataclass(frozen=True)
 class Extension:
     name: str
-    """Defaults to the extension's directory / file name."""
     description: str
-    """Defaults to the module docstring."""
     setup: Callable[["ExtensionContext"], None]
-    """The setup_extension function to initialize the extension."""
     path: Path
-    """The setup_extension.py (or flat .py) it came from."""
 
 @dataclass(frozen=True)
 class ExtensionContext:
@@ -47,13 +71,14 @@ class ExtensionContext:
     def name(self) -> str:
         return self._ext.name
 
+type ScanItem = Result[Extension, ExtensionFailure]
+
 def _warn(msg: str) -> None:
     rich.print(f"[bold yellow]Extension warning:[/bold yellow] {msg}")
 
-def _import_ext_module(name: str, location: Path) -> ModuleType | None:
-    """Import one extension source as module `{pkg}.setup_extension` (package) or `{pkg}` (flat),
-    returning the module holding the entry function. sys.modules entries inserted here are kept
-    alive on success (sub-agent replay relies on them); removed on failure."""
+def _import_ext_module(name: str, location: Path) -> ModuleType:
+    """Import one extension source. Its sys.modules entry stays on success
+    (sub-agent replay relies on it), removed before re-raising."""
     pkg_name = f"xun_ext_{name}"
     inserted: list[str] = []
     try:
@@ -75,74 +100,137 @@ def _import_ext_module(name: str, location: Path) -> ModuleType | None:
         inserted.append(module_name)
         spec.loader.exec_module(mod)
         return mod
-    except Exception as e:
+    except Exception:
         for key in inserted:
             for k in [k for k in sys.modules if k == key or k.startswith(f"{key}.")]:
                 del sys.modules[k]
-        _warn(f"extension '{name}' failed to import, skipped: {e}")
-        return None
+        raise
 
-def _distill(name: str, location: Path) -> Extension | None:
-    mod = _import_ext_module(name, location)
-    if mod is None:
-        return None
-    setup = getattr(mod, ENTRY_MODULE, None)
-    if not callable(setup):
-        _warn(f"extension '{name}' has no callable '{ENTRY_MODULE}()', skipped")
-        return None
-    doc = inspect.getdoc(mod) or ""
-    return Extension(
-        name=name,
-        description=doc.splitlines()[0] if doc else "",
-        setup=cast("Callable[[ExtensionContext], None]", setup),
-        path=location if location.is_file() else location / ENTRY_FILE,
-    )
+def _distill(name: str, location: Path) -> ScanItem:
+    """Import one extension and extract its metadata."""
+    path = location if location.is_file() else location / ENTRY_FILE
+    def err(reason: str) -> ScanItem:
+        return Result.Err(ExtensionFailure(name=name, path=path, reason=reason))
+    try:
+        mod = _import_ext_module(name, location)
+        setup = getattr(mod, ENTRY_MODULE, None)
+        if not callable(setup):
+            return err(f"has no callable '{ENTRY_MODULE}()'")
+        doc = inspect.getdoc(mod) or ""
+        return Result.Ok(Extension(
+            name=name,
+            description=doc.splitlines()[0] if doc else "",
+            setup=cast("Callable[[ExtensionContext], None]", setup),
+            path=path,
+        ))
+    except (KeyboardInterrupt, CancelledError):
+        raise
+    except Exception as e:
+        return err(f"failed to import: {e}")
 
-@functools.lru_cache(maxsize=16)
-def _scan_extensions(home_dir: Path) -> tuple[Extension, ...]:
-    """Scan + import once per home dir / process; sorted by name (deterministic across forms)."""
-    ext_root = home_dir / "extensions"
-    if not ext_root.is_dir():
-        return ()
-    packages: dict[str, Path] = {}
-    flats: dict[str, Path] = {}
-    for loc in sorted(ext_root.iterdir()):
-        if loc.name.startswith((".", "__")):
-            continue
-        if loc.is_dir():
-            if (loc / ENTRY_FILE).is_file():
-                packages[loc.name] = loc
+@dataclass(frozen=True)
+class _SetupOutcome:
+    """How the latest setup_extension run ended for an extension."""
+    status: ExtensionStatus
+    error: str | None = None
+
+_UNINITIALIZED_OUTCOME = _SetupOutcome(ExtensionStatus.UNINITIALIZED)
+
+class ExtensionLoader:
+    """Discovers, imports and applies the extensions of one dir.
+    `default_loader` below serves `{XUN_HOME}` process-wide."""
+
+    def __init__(self, get_extension_dir: Callable[[], Path] = lambda: get_home_dir() / "extensions") -> None:
+        self._get_extension_dir = get_extension_dir
+        self._scan_lock = threading.Lock()
+        self._scans: dict[Path, tuple[ScanItem, ...]] = {}
+        self._status_lock = threading.Lock()
+        # scan results are cached and frozen, so setup outcomes live here
+        self._setup_outcomes: dict[Path, _SetupOutcome] = {}
+
+    def scan(self) -> tuple[ScanItem, ...]:
+        """One Result per candidate, sorted by name; cached per dir."""
+        with self._scan_lock:
+            ext_dir = self._get_extension_dir()
+            if ext_dir not in self._scans:
+                self._scans[ext_dir] = self._import_all(ext_dir)
+            return self._scans[ext_dir]
+
+    def clear_scan_cache(self) -> None:
+        """Force the next scan to re-import; outcomes are kept."""
+        with self._scan_lock:
+            self._scans.clear()
+
+    def imported(self) -> list[Extension]:
+        """Extensions that imported successfully."""
+        return [item.unwrap() for item in self.scan() if item.is_ok()]
+
+    def infos(self) -> list[ExtensionInfo]:
+        """Every discovered extension with its current status."""
+        infos: list[ExtensionInfo] = []
+        for item in self.scan():
+            if item.is_err():
+                infos.append(ExtensionInfo.from_failure(item.unwrap_err()))
+                continue
+            ext = item.unwrap()
+            with self._status_lock:
+                outcome = self._setup_outcomes.get(ext.path, _UNINITIALIZED_OUTCOME)
+            infos.append(ExtensionInfo(
+                name = ext.name, 
+                description = ext.description, 
+                path = ext.path, 
+                status = outcome.status, 
+                error = outcome.error
+                ))
+        return infos
+
+    def apply(self, agent: "Agent[Agent.T.Uninit]") -> None:
+        """Run each extension's setup on an uninitialized agent;
+        failures warn and never block startup."""
+        if not agent.config.enable_extensions:
+            return
+        for item in self.scan():
+            if item.is_err():
+                continue  # already warned during the scan
+            ext = item.unwrap()
+            try:
+                ext.setup(ExtensionContext(_ext=ext, agent=agent))
+            except (KeyboardInterrupt, CancelledError):
+                raise  # an interrupt is not a failure
+            except Exception as e:
+                _warn(f"extension '{ext.name}' setup failed (agent startup continues): {e}")
+                self._record(ext.path, ExtensionStatus.FAILED, str(e))
             else:
-                _warn(f"extension directory '{loc.name}' has no {ENTRY_MODULE}.py, skipped")
-        elif loc.suffix == ".py":
-            flats[loc.stem] = loc
-    loaded: list[Extension] = []
-    for name in sorted(set(packages) | set(flats)):
-        if name in flats and name in packages:
-            _warn(f"'{name}.py' is shadowed by package '{name}/', skipped")
-        ext = _distill(name, packages[name] if name in packages else flats[name])
-        if ext is not None:
-            loaded.append(ext)
-    return tuple(loaded)
+                self._record(ext.path, ExtensionStatus.LOADED)
 
-_SCAN_LOCK = threading.Lock()
-def _load_extensions() -> tuple[Extension, ...]:
-    with _SCAN_LOCK:
-        return _scan_extensions(get_home_dir())
+    def _record(self, path: Path, status: ExtensionStatus, error: str | None = None) -> None:
+        with self._status_lock:
+            self._setup_outcomes[path] = _SetupOutcome(status, error)
 
-def list_loaded_extensions() -> list[Extension]:
-    """All loaded extensions, in application order. Triggers the (cached) scan if needed."""
-    return list(_load_extensions())
+    def _import_all(self, ext_root: Path) -> tuple[ScanItem, ...]:
+        if not ext_root.is_dir():
+            return ()
+        packages: dict[str, Path] = {}
+        flats: dict[str, Path] = {}
+        for loc in sorted(ext_root.iterdir()):
+            if loc.name.startswith((".", "__")):
+                continue
+            if loc.is_dir():
+                if (loc / ENTRY_FILE).is_file():
+                    packages[loc.name] = loc
+                else:
+                    _warn(f"extension directory '{loc.name}' has no {ENTRY_MODULE}.py, skipped")
+            elif loc.suffix == ".py":
+                flats[loc.stem] = loc
+        items: list[ScanItem] = []
+        for name in sorted(set(packages) | set(flats)):
+            if name in flats and name in packages:
+                _warn(f"'{name}.py' is shadowed by package '{name}/', skipped")
+            item = _distill(name, packages[name] if name in packages else flats[name])
+            if item.is_err():
+                failure = item.unwrap_err()
+                _warn(f"extension '{failure.name}' {failure.reason}, skipped")
+            items.append(item)
+        return tuple(items)
 
-def apply_extensions(agent: "Agent[Agent.T.Uninit]") -> None:
-    """Gate on config, then invoke each cached extension's setup with a fresh ctx.
-    A failing extension warns and never blocks the rest or agent startup."""
-    if not agent.config.enable_extensions:
-        return
-    for ext in _load_extensions():
-        try:
-            ext.setup(ExtensionContext(_ext=ext, agent=agent))
-        except (KeyboardInterrupt, CancelledError):
-            raise
-        except Exception as e:
-            _warn(f"extension '{ext.name}' setup failed (agent startup continues): {e}")
+default_loader = ExtensionLoader()

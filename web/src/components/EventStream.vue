@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Terminal, Wrench } from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Link2, Link2Off, Puzzle, Terminal, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
@@ -226,6 +226,21 @@ async function copyMessage(key: string, event: DisplayEvent) {
               <span v-for="capability in tool.required_capabilities" :key="capability" class="capability-chip">{{ capability }}</span>
             </div>
             <p>{{ tool.description || t('stream.noDescription') }}</p>
+          </div>
+        </section>
+
+        <section v-else-if="item.data.name === 'ShowExtensionsEvent'" class="extensions-result">
+          <header><Puzzle :size="15" /> {{ t('stream.extensions') }} <span>{{ item.data.payload.extensions.length }}</span></header>
+          <div v-if="!item.data.payload.extensions.length" class="tools-empty">{{ t('stream.noExtensions') }}</div>
+          <div v-for="ext in item.data.payload.extensions" v-else :key="ext.name" class="tool-listing">
+            <div class="tool-listing-name">
+              <code>{{ ext.name }}</code>
+              <span class="extension-chip" :class="ext.status">{{ ext.status }}</span>
+            </div>
+            <div>
+              <p>{{ ext.description || t('stream.noDescription') }}</p>
+              <p v-if="ext.error" class="extension-error">{{ ext.error }}</p>
+            </div>
           </div>
         </section>
 

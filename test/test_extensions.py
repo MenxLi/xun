@@ -5,7 +5,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay, ToolBox, CommandRegistry
-from xun.extension import list_loaded_extensions
+from xun.display_abstract import ShowExtensionsEvent
+from xun.extension import default_loader, ExtensionInfo, ExtensionStatus
 from xun.workspace import Workspace
 import xun.extension as ext_mod
 
@@ -24,10 +25,10 @@ class _ExtensionsTestBase(unittest.TestCase):
         self.ext_root = self.home / "extensions"
         self._home_patch = patch.dict(os.environ, {"XUN_HOME": str(self.home)})
         self._home_patch.start()
-        ext_mod._scan_extensions.cache_clear()
+        ext_mod.default_loader.clear_scan_cache()
 
     def tearDown(self) -> None:
-        ext_mod._scan_extensions.cache_clear()
+        ext_mod.default_loader.clear_scan_cache()
         self._home_patch.stop()
         self._tmp.cleanup()
 
@@ -46,34 +47,34 @@ class DiscoveryTest(_ExtensionsTestBase):
     def test_both_forms_sorted_by_name(self) -> None:
         self._write_ext("beta", '"""Beta ext."""\ndef setup_extension(ctx): pass\n')
         self._write_ext("alpha", '"""Alpha ext. Long tail ignored."""\ndef setup_extension(ctx): pass\n', package=True)
-        loaded = list_loaded_extensions()
-        self.assertEqual([e.name for e in loaded], ["alpha", "beta"])
-        self.assertEqual(loaded[0].description, "Alpha ext. Long tail ignored.")
+        imported = default_loader.imported()
+        self.assertEqual([e.name for e in imported], ["alpha", "beta"])
+        self.assertEqual(imported[0].description, "Alpha ext. Long tail ignored.")
 
     def test_description_defaults_to_first_docstring_line(self) -> None:
         self._write_ext("doc", '"""Line one.\nLine two."""\ndef setup_extension(ctx): pass\n')
-        self.assertEqual(list_loaded_extensions()[0].description, "Line one.")
+        self.assertEqual(default_loader.imported()[0].description, "Line one.")
 
     def test_no_docstring_empty_description(self) -> None:
         self._write_ext("nodoc", "def setup_extension(ctx): pass\n")
-        self.assertEqual(list_loaded_extensions()[0].description, "")
+        self.assertEqual(default_loader.imported()[0].description, "")
 
     def test_missing_entry_function_skipped(self) -> None:
         self._write_ext("broken", '"""no entry fn here."""\nx = 1\n')
-        self.assertEqual(list_loaded_extensions(), [])
+        self.assertEqual(default_loader.imported(), [])
 
     def test_name_collision_package_wins(self) -> None:
         self._write_ext("dup", "def setup_extension(ctx): ctx.agent.state['dup']='flat'\n")
         self._write_ext("dup", "def setup_extension(ctx): ctx.agent.state['dup']='pkg'\n", package=True)
-        loaded = list_loaded_extensions()
-        self.assertEqual(len(loaded), 1)
-        self.assertTrue(str(loaded[0].path).endswith("setup_extension.py"))
+        imported = default_loader.imported()
+        self.assertEqual(len(imported), 1)
+        self.assertTrue(str(imported[0].path).endswith("setup_extension.py"))
         agent = self._new_agent().initialize()
         self.assertEqual(agent.state["dup"], "pkg")
 
     def test_directory_without_entry_ignored(self) -> None:
         _write(self.ext_root / "notanext" / "other.py", "x = 1\n")
-        self.assertEqual(list_loaded_extensions(), [])
+        self.assertEqual(default_loader.imported(), [])
 
 
 class ImportModelTest(_ExtensionsTestBase):
@@ -97,8 +98,8 @@ class ImportModelTest(_ExtensionsTestBase):
     def test_import_error_isolated(self) -> None:
         self._write_ext("boom", "raise RuntimeError('kaboom')\ndef setup_extension(ctx): pass\n")
         self._write_ext("fine", "def setup_extension(ctx): ctx.agent.state['fine'] = True\n")
-        loaded = list_loaded_extensions()
-        self.assertEqual([e.name for e in loaded], ["fine"])
+        imported = default_loader.imported()
+        self.assertEqual([e.name for e in imported], ["fine"])
         agent = self._new_agent().initialize()
         self.assertTrue(agent.state["fine"])
         # half-dead module must not linger in sys.modules
@@ -108,6 +109,52 @@ class ImportModelTest(_ExtensionsTestBase):
 def sys_modules_names() -> list[str]:
     import sys
     return list(sys.modules)
+
+
+class ExtensionStatusTest(_ExtensionsTestBase):
+    def _infos(self) -> dict[str, ExtensionInfo]:
+        return {info.name: info for info in default_loader.infos()}
+
+    def test_uninitialized_before_setup(self) -> None:
+        self._write_ext("idle", '"""Idle."""\ndef setup_extension(ctx): pass\n')
+        info = self._infos()["idle"]
+        self.assertEqual(info.status, ExtensionStatus.UNINITIALIZED)
+        self.assertIsNone(info.error)
+
+    def test_loaded_after_setup(self) -> None:
+        self._write_ext("good", '"""Good."""\ndef setup_extension(ctx): pass\n')
+        self._new_agent().initialize()
+        info = self._infos()["good"]
+        self.assertEqual(info.status, ExtensionStatus.LOADED)
+        self.assertIsNone(info.error)
+
+    def test_setup_failure_records_status_and_error(self) -> None:
+        self._write_ext("bad", "def setup_extension(ctx): raise RuntimeError('boom')\n")
+        self._new_agent().initialize()
+        info = self._infos()["bad"]
+        self.assertEqual(info.status, ExtensionStatus.FAILED)
+        self.assertIn("boom", info.error)
+
+    def test_import_failure_listed_as_failed(self) -> None:
+        self._write_ext("broken", '"""no entry fn."""\nx = 1\n')
+        info = self._infos()["broken"]
+        self.assertEqual(info.status, ExtensionStatus.FAILED)
+        self.assertIn("setup_extension", info.error)
+
+    def test_import_error_listed_as_failed(self) -> None:
+        self._write_ext("boom", "raise RuntimeError('kaboom')\n")
+        info = self._infos()["boom"]
+        self.assertEqual(info.status, ExtensionStatus.FAILED)
+        self.assertIn("kaboom", info.error)
+
+    def test_setup_error_survives_later_success(self) -> None:
+        # a FAILED status must not be erased by unrelated later runs
+        self._write_ext("bad", "def setup_extension(ctx): raise RuntimeError('boom')\n")
+        self._new_agent().initialize()
+        self._write_ext("good", "def setup_extension(ctx): pass\n")
+        ext_mod.default_loader.clear_scan_cache()
+        self._new_agent().initialize()
+        self.assertEqual(self._infos()["bad"].status, ExtensionStatus.FAILED)
 
 
 class ApplyTest(_ExtensionsTestBase):
@@ -174,23 +221,33 @@ def setup_extension(ctx):
 class ExtensionsCommandTest(_ExtensionsTestBase):
     class _CapturingAgent:
         def __init__(self) -> None:
-            self.messages: list[str] = []
+            self.events: list[object] = []
+            # mirror the Agent field's default
+            self.extension_loader = default_loader
 
-        def info(self, message: str) -> None:
-            self.messages.append(message)
+        def display_event(self, event: object) -> None:
+            self.events.append(event)
 
-    def _run_command(self) -> list[str]:
+    def _run_command(self) -> ShowExtensionsEvent:
         agent = self._CapturingAgent()
         CommandRegistry().with_defaults().get("extensions").invoke(agent)  # type: ignore[arg-type]
-        return agent.messages
+        self.assertEqual(len(agent.events), 1)
+        event = agent.events[0]
+        self.assertIsInstance(event, ShowExtensionsEvent)
+        assert isinstance(event, ShowExtensionsEvent)
+        return event
 
-    def test_lists_loaded_extensions(self) -> None:
+    def test_emits_status_records(self) -> None:
         self._write_ext("shown", '"""Show me."""\ndef setup_extension(ctx): pass\n')
-        msgs = self._run_command()
-        self.assertEqual(msgs, ["\nshown: Show me."])
+        self._write_ext("broken", '"""no entry fn."""\nx = 1\n')
+        event = self._run_command()
+        self.assertEqual(event.model_dump(), {"extensions": [
+            {"name": "broken", "description": "", "status": "failed", "error": "has no callable 'setup_extension()'"},
+            {"name": "shown", "description": "Show me.", "status": "uninitialized", "error": None},
+        ]})
 
     def test_empty_listing(self) -> None:
-        self.assertEqual(self._run_command(), ["No extensions loaded."])
+        self.assertEqual(self._run_command().model_dump(), {"extensions": []})
 
     def test_command_registered_by_default(self) -> None:
         self.assertIsNotNone(CommandRegistry().with_defaults().get("extensions"))

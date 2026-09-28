@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
 from PIL.Image import Image
 from .command import Command
+from .extension import ExtensionStatus
 from .types import JsonType, ModelCapabilityType
 from .util import image_to_url
 from .conversation import Conversation
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     from .agent import Agent
     from .config import AgentConfig
     from .toolcall import Function
+    from .extension import ExtensionInfo
 
 class ModelWorkingEvent(BaseModel):
     model_call_id: str
@@ -43,6 +45,28 @@ class ToolResultEvent(BaseModel):
 
 class ShowHistoryEvent(BaseModel):
     history: list[Conversation.MessageRecord]
+
+class ShowExtensionsEvent(BaseModel):
+    class ExtensionRecord(BaseModel):
+        name: str
+        description: str
+        status: ExtensionStatus
+        error: Optional[str] = None
+        """Failure detail; set only for `FAILED` extensions."""
+
+    extensions: list[ExtensionRecord] = Field(default_factory=list)
+
+    @classmethod
+    def from_infos(cls, infos: Sequence["ExtensionInfo"]) -> "ShowExtensionsEvent":
+        return cls(extensions=[
+            cls.ExtensionRecord(
+                name=info.name,
+                description=info.description,
+                status=info.status,
+                error=info.error,
+            )
+            for info in infos
+        ])
 
 class ShowHelpEvent(BaseModel):
     class _HelpCommand(BaseModel):
@@ -160,11 +184,12 @@ class AgentUnbindEvent(BaseModel):
 DisplayEventType = (
     ShowHelpEvent
     | ShowToolsEvent
+    | ShowHistoryEvent
+    | ShowExtensionsEvent
     | AgentBindEvent
     | AgentUnbindEvent
     | UserCommandEvent
     | UserMessageEvent
-    | ShowHistoryEvent
     | ModelWorkingEvent
     | ModelMessageEvent
     | ToolCallEvent

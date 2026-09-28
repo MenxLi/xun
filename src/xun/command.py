@@ -137,7 +137,7 @@ class CommandRegistry:
 def default_commands() -> list[Command]:
     from .store import Store
     from .compact import compact_conversation
-    from .display_abstract import ShowHistoryEvent, ShowToolsEvent
+    from .display_abstract import ShowExtensionsEvent, ShowHistoryEvent, ShowToolsEvent
     
     def _token_query_handler(agent: "Agent[Agent.T.Init]") -> None:
         token = agent.conversation.total_tokens
@@ -245,12 +245,7 @@ def default_commands() -> list[Command]:
         agent.execute()
 
     def _extensions_handler(agent: "Agent[Agent.T.Init]") -> None:
-        from .extension import list_loaded_extensions
-        exts = list_loaded_extensions()
-        if not exts:
-            agent.info("No extensions loaded.")
-            return
-        agent.info("\n"+"\n".join(f"{e.name}: {e.description}" for e in exts))
+        agent.display_event(ShowExtensionsEvent.from_infos(agent.extension_loader.infos()))
 
     return [
         Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),
@@ -265,5 +260,5 @@ def default_commands() -> list[Command]:
         Command(name="compact", description="Condense conversation. Use 'compact toolcall' to only condense tool call history.", handler=_condense_handler),
         Command(name="yolo", description="Toggle global auto approve (You Only Look Once).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
-        Command(name="extensions", description="List loaded extensions.", handler=_extensions_handler),
+        Command(name="extensions", description="List discovered extensions with their status.", handler=_extensions_handler),
     ]

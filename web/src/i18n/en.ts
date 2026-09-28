@@ -83,6 +83,8 @@ export default {
     availableCommands: 'Available commands',
     tools: 'Tools',
     noTools: 'No tools registered.',
+    extensions: 'Extensions',
+    noExtensions: 'No extensions found.',
     noDescription: 'No description provided.',
     conversationHistory: 'Conversation history',
     copyMessage: 'Copy message',

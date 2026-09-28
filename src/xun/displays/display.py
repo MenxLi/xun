@@ -49,6 +49,7 @@ class Display(DisplayAbstract):
         match event.payload:
             case ShowHelpEvent(): self._show_help(event)
             case ShowToolsEvent(): self._show_tools(event)
+            case ShowExtensionsEvent(): self._show_extensions(event)
             case ShowHistoryEvent(): self._show_history(event)
             case ToolCallEvent(): self._show_tool_call(event)
             case ModelWorkingEvent(): self._show_model_working(event)
@@ -89,6 +90,28 @@ class Display(DisplayAbstract):
                 tool.description or "[dim]No description provided.[/dim]",
                 ", ".join(tool.required_capabilities) or "—",
             )
+        self._print(table)
+
+    def _show_extensions(self, event: DisplayEvent[ShowExtensionsEvent]) -> None:
+        exts = event.payload.extensions
+        if not exts:
+            self._print(rich.panel.Panel("[dim]No extensions found.[/dim]", title="Extensions", border_style="green", box=rich.box.ROUNDED))
+            return
+        table = rich.table.Table(title="Extensions", box=rich.box.SIMPLE_HEAD, header_style="bold green", expand=True)
+        table.add_column("Name", style="bold cyan", no_wrap=True)
+        table.add_column("Description", ratio=1)
+        table.add_column("Status", no_wrap=True)
+        for ext in exts:
+            if ext.status == "failed":
+                status = "[red]failed[/red]"
+            elif ext.status == "loaded":
+                status = "[green]loaded[/green]"
+            else:
+                status = "[dim]uninitialized[/dim]"
+            description = ext.description or "[dim]No description provided.[/dim]"
+            if ext.error:
+                description = f"{description}\n[red]{rich.markup.escape(ext.error)}[/red]"
+            table.add_row(ext.name, description, status)
         self._print(table)
 
     def _show_history(self, event: DisplayEvent[ShowHistoryEvent]) -> None:
