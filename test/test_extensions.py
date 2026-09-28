@@ -119,33 +119,33 @@ class ExtensionStatusTest(_ExtensionsTestBase):
         self._write_ext("idle", '"""Idle."""\ndef setup_extension(ctx): pass\n')
         info = self._infos()["idle"]
         self.assertEqual(info.status, ExtensionStatus.UNINITIALIZED)
-        self.assertIsNone(info.error)
+        self.assertIsNone(info.reason)
 
     def test_loaded_after_setup(self) -> None:
         self._write_ext("good", '"""Good."""\ndef setup_extension(ctx): pass\n')
         self._new_agent().initialize()
         info = self._infos()["good"]
         self.assertEqual(info.status, ExtensionStatus.LOADED)
-        self.assertIsNone(info.error)
+        self.assertIsNone(info.reason)
 
     def test_setup_failure_records_status_and_error(self) -> None:
         self._write_ext("bad", "def setup_extension(ctx): raise RuntimeError('boom')\n")
         self._new_agent().initialize()
         info = self._infos()["bad"]
         self.assertEqual(info.status, ExtensionStatus.FAILED)
-        self.assertIn("boom", info.error)
+        self.assertIn("boom", info.reason)
 
     def test_import_failure_listed_as_failed(self) -> None:
         self._write_ext("broken", '"""no entry fn."""\nx = 1\n')
         info = self._infos()["broken"]
         self.assertEqual(info.status, ExtensionStatus.FAILED)
-        self.assertIn("setup_extension", info.error)
+        self.assertIn("setup_extension", info.reason)
 
     def test_import_error_listed_as_failed(self) -> None:
         self._write_ext("boom", "raise RuntimeError('kaboom')\n")
         info = self._infos()["boom"]
         self.assertEqual(info.status, ExtensionStatus.FAILED)
-        self.assertIn("kaboom", info.error)
+        self.assertIn("kaboom", info.reason)
 
     def test_setup_error_survives_later_success(self) -> None:
         # a FAILED status must not be erased by unrelated later runs
@@ -242,8 +242,8 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
         self._write_ext("broken", '"""no entry fn."""\nx = 1\n')
         event = self._run_command()
         self.assertEqual(event.model_dump(), {"extensions": [
-            {"name": "broken", "description": "", "status": "failed", "error": "has no callable 'setup_extension()'"},
-            {"name": "shown", "description": "Show me.", "status": "uninitialized", "error": None},
+            {"name": "broken", "description": "", "status": "failed", "reason": "has no callable 'setup_extension()'"},
+            {"name": "shown", "description": "Show me.", "status": "uninitialized", "reason": None},
         ]})
 
     def test_empty_listing(self) -> None:
@@ -251,6 +251,64 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
 
     def test_command_registered_by_default(self) -> None:
         self.assertIsNotNone(CommandRegistry().with_defaults().get("extensions"))
+
+
+GATED = """
+from xun import extension_attr
+@extension_attr(min_version='{lo}', max_version='{hi}')
+def setup_extension(ctx): ctx.agent.state['gated'] = True
+"""
+
+class VersionGateTest(_ExtensionsTestBase):
+    def _write_gated(self, name: str = "gated") -> None:
+        self._write_ext(name, GATED.format(lo="2.0", hi="3.0"))
+
+    def test_attr_reaches_extension_struct(self) -> None:
+        self._write_gated()
+        with patch.object(ext_mod, "xun_version", return_value=None):
+            ext = default_loader.imported()[0]
+        self.assertEqual((ext.min_version, ext.max_version), ("2.0", "3.0"))
+
+    def test_in_range_loads(self) -> None:
+        self._write_gated()
+        with patch.object(ext_mod, "xun_version", return_value="2.5"):
+            agent = self._new_agent().initialize()
+        self.assertTrue(agent.state["gated"])
+        self.assertEqual(self._info("gated").status, ExtensionStatus.LOADED)
+
+    def test_out_of_range_skips_without_failing(self) -> None:
+        self._write_gated()
+        with patch.object(ext_mod, "xun_version", return_value="1.5.0"):
+            agent = self._new_agent().initialize()
+        self.assertNotIn("gated", agent.state)
+        info = self._info("gated")
+        self.assertEqual(info.status, ExtensionStatus.SKIPPED)
+        self.assertEqual(info.reason, "requires xun >= 2.0, running 1.5.0")
+
+    def test_without_version_metadata_passes(self) -> None:
+        self._write_gated()
+        with patch.object(ext_mod, "xun_version", return_value=None):
+            agent = self._new_agent().initialize()
+        self.assertTrue(agent.state["gated"])
+
+    def test_version_conflict_matrix(self) -> None:
+        ext = lambda lo, hi: ext_mod.Extension(name="e", description="", setup=lambda ctx: None,
+                                               path=Path("e.py"), min_version=lo, max_version=hi)
+        with patch.object(ext_mod, "xun_version", return_value="1.2.3"):
+            self.assertIsNone(ext(None, None).version_conflict())
+            self.assertIsNone(ext("1.0", "2.0").version_conflict())
+            self.assertIsNone(ext("1.2.3", "1.2.3").version_conflict())  # bounds inclusive
+            self.assertIsNone(ext("1.2", None).version_conflict())  # 1.2.3 > 1.2
+            self.assertIsNotNone(ext("2.0", None).version_conflict())
+            self.assertIsNotNone(ext(None, "1.0").version_conflict())
+
+    def test_version_compare_cores(self) -> None:
+        self.assertEqual(ext_mod._compare_versions("1.2", "1.2.0"), 0)  # zero-padded
+        self.assertEqual(ext_mod._compare_versions("1.10", "1.9"), 1)
+        self.assertEqual(ext_mod._compare_versions("2.0rc1", "1.9"), 1)  # numeric core
+
+    def _info(self, name: str) -> ExtensionInfo:
+        return {info.name: info for info in default_loader.infos()}[name]
 
 
 if __name__ == "__main__":

@@ -15,6 +15,14 @@ from .types import ModelCapabilityType
 BRAND = "XUN"
 ASSET_DIR = Path(__file__).parent / "assets"
 
+def xun_version() -> str | None:
+    """Installed release version of xun, or None when running without package metadata."""
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("xun-agent")
+    except PackageNotFoundError:
+        return None
+
 def get_home_dir() -> Path:
     home_dir = os.environ.get(f"{BRAND}_HOME")
     if home_dir:

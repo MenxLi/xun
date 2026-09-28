@@ -102,16 +102,11 @@ class Display(DisplayAbstract):
         table.add_column("Description", ratio=1)
         table.add_column("Status", no_wrap=True)
         for ext in exts:
-            if ext.status == "failed":
-                status = "[red]failed[/red]"
-            elif ext.status == "loaded":
-                status = "[green]loaded[/green]"
-            else:
-                status = "[dim]uninitialized[/dim]"
+            color = {"failed": "red", "loaded": "green", "skipped": "yellow"}.get(ext.status, "dim")
             description = ext.description or "[dim]No description provided.[/dim]"
-            if ext.error:
-                description = f"{description}\n[red]{rich.markup.escape(ext.error)}[/red]"
-            table.add_row(ext.name, description, status)
+            if ext.reason:
+                description = f"{description}\n[{color}]{rich.markup.escape(ext.reason)}[/{color}]"
+            table.add_row(ext.name, description, f"[{color}]{ext.status}[/{color}]")
         self._print(table)
 
     def _show_history(self, event: DisplayEvent[ShowHistoryEvent]) -> None:

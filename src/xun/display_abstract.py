@@ -51,8 +51,8 @@ class ShowExtensionsEvent(BaseModel):
         name: str
         description: str
         status: ExtensionStatus
-        error: Optional[str] = None
-        """Failure detail; set only for `FAILED` extensions."""
+        reason: Optional[str] = None
+        """Detail for `FAILED` or `SKIPPED` extensions."""
 
     extensions: list[ExtensionRecord] = Field(default_factory=list)
 
@@ -63,7 +63,7 @@ class ShowExtensionsEvent(BaseModel):
                 name=info.name,
                 description=info.description,
                 status=info.status,
-                error=info.error,
+                reason=info.reason,
             )
             for info in infos
         ])

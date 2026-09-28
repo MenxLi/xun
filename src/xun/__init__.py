@@ -8,15 +8,16 @@ from .compact import CompactorAbstract, AutoCompactor
 from .toolbox import ToolBox, ToolCallContext
 from .agent_factory import AgentGetterProtocol, AgentGetterParam
 from .toolcall import tool_attr
-from .config import AgentConfig
-from .extension import ExtensionContext
+from .config import AgentConfig, xun_version
+from .extension import ExtensionContext, extension_attr
 from .workspace import Workspace
 from .agent import Agent
 
 __all__ = [
     "Agent", "AgentConfig",
     "Workspace", 
-    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext",
+    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr",
+    "xun_version",
     "AgentGetterProtocol", "AgentGetterParam", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",

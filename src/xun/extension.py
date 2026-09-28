@@ -9,6 +9,7 @@ Two source forms, each yielding an extension named `{name}`:
 from __future__ import annotations
 import importlib.util
 import inspect
+import re
 import sys
 import threading
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
 import rich
-from .config import get_home_dir
+from .config import get_home_dir, xun_version
 from .types import CancelledError, Result
 if TYPE_CHECKING:
     from .agent import Agent
@@ -30,29 +31,68 @@ class ExtensionStatus(str, Enum):
     UNINITIALIZED = 'uninitialized'
     """Setup has not run (yet), or was interrupted."""
     LOADED = 'loaded'
+    SKIPPED = 'skipped'
+    """Not applicable to the running xun version."""
     FAILED = 'failed'
 
 @dataclass(frozen=True)
-class ExtensionFailure:
-    """An extension that failed to import."""
+class ExtensionIssue:
+    """Why an extension is unusable: FAILED to import, or SKIPPED by the version gate."""
     name: str
     path: Path
+    status: ExtensionStatus
     reason: str
 
 @dataclass(frozen=True)
 class ExtensionInfo:
-    """Presentation snapshot of one discovered extension, success or failure."""
+    """Presentation snapshot of one discovered extension, usable or not."""
     name: str
     description: str
     path: Path
     status: ExtensionStatus
-    error: str | None = None
-    """Only when FAILED."""
+    reason: str | None = None
+    """Why FAILED or SKIPPED."""
 
     @classmethod
-    def from_failure(cls, failure: ExtensionFailure) -> "ExtensionInfo":
-        return cls(name=failure.name, description="", path=failure.path,
-                   status=ExtensionStatus.FAILED, error=failure.reason)
+    def from_issue(cls, issue: ExtensionIssue) -> "ExtensionInfo":
+        return cls(name=issue.name, description="", path=issue.path,
+                   status=issue.status, reason=issue.reason)
+
+def _version_key(version: str) -> tuple[int, ...]:
+    """Numeric core of a version, e.g. '1.2rc3' -> (1, 2)."""
+    core = re.match(r"\d+(?:\.\d+)*", version)
+    return tuple(int(p) for p in core.group().split(".")) if core else ()
+
+def _compare_versions(a: str, b: str) -> int:
+    """Compare version strings on their numeric cores; shorter side zero-padded."""
+    ka, kb = _version_key(a), _version_key(b)
+    width = max(len(ka), len(kb))
+    ka += (0,) * (width - len(ka))
+    kb += (0,) * (width - len(kb))
+    return (ka > kb) - (ka < kb)
+
+@dataclass(frozen=True)
+class ExtensionAttr:
+    """A xun version range declared by an extension, both bounds inclusive."""
+    min_version: str | None
+    max_version: str | None
+
+    def attach_to[F: Callable](self, fn: F) -> F:
+        """Attach this ExtensionAttr to a function."""
+        setattr(fn, "__xun_extension_attr", self)
+        return fn
+
+    @classmethod
+    def extract_from(cls, fn: Callable) -> "ExtensionAttr | None":
+        """Extract an ExtensionAttr from a function, if it exists."""
+        return getattr(fn, "__xun_extension_attr", None)
+
+def extension_attr(min_version: str | None = None, max_version: str | None = None):
+    """Declare which xun versions an extension supports, on its `setup_extension`.
+    Outside the range the extension is SKIPPED, not FAILED."""
+    def _wrapper[F: Callable](fn: F) -> F:
+        return ExtensionAttr(min_version=min_version, max_version=max_version).attach_to(fn)
+    return _wrapper
 
 @dataclass(frozen=True)
 class Extension:
@@ -60,6 +100,23 @@ class Extension:
     description: str
     setup: Callable[["ExtensionContext"], None]
     path: Path
+    min_version: str | None = None
+    max_version: str | None = None
+
+    def version_conflict(self) -> str | None:
+        """Why the running xun is outside the declared range, or None when it fits.
+        Without version metadata (source checkout) the check passes."""
+        current = xun_version()
+        if current is None:
+            return None
+        violations = []
+        if self.min_version and _compare_versions(current, self.min_version) < 0:
+            violations.append(f">= {self.min_version}")
+        if self.max_version and _compare_versions(current, self.max_version) > 0:
+            violations.append(f"<= {self.max_version}")
+        if not violations:
+            return None
+        return f"requires xun {', '.join(violations)}, running {current}"
 
 @dataclass(frozen=True)
 class ExtensionContext:
@@ -71,7 +128,7 @@ class ExtensionContext:
     def name(self) -> str:
         return self._ext.name
 
-type ScanItem = Result[Extension, ExtensionFailure]
+type ScanItem = Result[Extension, ExtensionIssue]
 
 def _warn(msg: str) -> None:
     rich.print(f"[bold yellow]Extension warning:[/bold yellow] {msg}")
@@ -109,30 +166,37 @@ def _import_ext_module(name: str, location: Path) -> ModuleType:
 def _distill(name: str, location: Path) -> ScanItem:
     """Import one extension and extract its metadata."""
     path = location if location.is_file() else location / ENTRY_FILE
-    def err(reason: str) -> ScanItem:
-        return Result.Err(ExtensionFailure(name=name, path=path, reason=reason))
+    def issue(status: ExtensionStatus, reason: str) -> ScanItem:
+        return Result.Err(ExtensionIssue(name=name, path=path, status=status, reason=reason))
     try:
         mod = _import_ext_module(name, location)
         setup = getattr(mod, ENTRY_MODULE, None)
         if not callable(setup):
-            return err(f"has no callable '{ENTRY_MODULE}()'")
+            return issue(ExtensionStatus.FAILED, f"has no callable '{ENTRY_MODULE}()'")
+        attr = ExtensionAttr.extract_from(setup)
         doc = inspect.getdoc(mod) or ""
-        return Result.Ok(Extension(
-            name=name,
-            description=doc.splitlines()[0] if doc else "",
-            setup=cast("Callable[[ExtensionContext], None]", setup),
-            path=path,
-        ))
+        ext = Extension(
+            name = name,
+            description = doc.splitlines()[0] if doc else "",
+            setup = cast("Callable[[ExtensionContext], None]", setup),
+            path = path,
+            min_version = attr.min_version if attr else None,
+            max_version = attr.max_version if attr else None,
+        )
+        conflict = ext.version_conflict()
+        if conflict:
+            return issue(ExtensionStatus.SKIPPED, conflict)
+        return Result.Ok(ext)
     except (KeyboardInterrupt, CancelledError):
         raise
     except Exception as e:
-        return err(f"failed to import: {e}")
+        return issue(ExtensionStatus.FAILED, f"failed to import: {e}")
 
 @dataclass(frozen=True)
 class _SetupOutcome:
     """How the latest setup_extension run ended for an extension."""
     status: ExtensionStatus
-    error: str | None = None
+    reason: str | None = None
 
 _UNINITIALIZED_OUTCOME = _SetupOutcome(ExtensionStatus.UNINITIALIZED)
 
@@ -170,7 +234,7 @@ class ExtensionLoader:
         infos: list[ExtensionInfo] = []
         for item in self.scan():
             if item.is_err():
-                infos.append(ExtensionInfo.from_failure(item.unwrap_err()))
+                infos.append(ExtensionInfo.from_issue(item.unwrap_err()))
                 continue
             ext = item.unwrap()
             with self._status_lock:
@@ -180,7 +244,7 @@ class ExtensionLoader:
                 description = ext.description, 
                 path = ext.path, 
                 status = outcome.status, 
-                error = outcome.error
+                reason = outcome.reason
                 ))
         return infos
 
@@ -203,9 +267,9 @@ class ExtensionLoader:
             else:
                 self._record(ext.path, ExtensionStatus.LOADED)
 
-    def _record(self, path: Path, status: ExtensionStatus, error: str | None = None) -> None:
+    def _record(self, path: Path, status: ExtensionStatus, reason: str | None = None) -> None:
         with self._status_lock:
-            self._setup_outcomes[path] = _SetupOutcome(status, error)
+            self._setup_outcomes[path] = _SetupOutcome(status, reason)
 
     def _import_all(self, ext_root: Path) -> tuple[ScanItem, ...]:
         if not ext_root.is_dir():
@@ -228,8 +292,8 @@ class ExtensionLoader:
                 _warn(f"'{name}.py' is shadowed by package '{name}/', skipped")
             item = _distill(name, packages[name] if name in packages else flats[name])
             if item.is_err():
-                failure = item.unwrap_err()
-                _warn(f"extension '{failure.name}' {failure.reason}, skipped")
+                issue = item.unwrap_err()
+                _warn(f"extension '{issue.name}' {issue.reason}, skipped")
             items.append(item)
         return tuple(items)
 

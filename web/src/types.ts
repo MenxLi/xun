@@ -18,8 +18,8 @@ export interface ToolInfo {
 export interface ExtensionRecord {
   name: string
   description: string
-  status: 'uninitialized' | 'loaded' | 'failed'
-  error?: string | null
+  status: 'uninitialized' | 'loaded' | 'skipped' | 'failed'
+  reason?: string | null
 }
 
 type EventEnvelope<Name extends string, Payload> = {

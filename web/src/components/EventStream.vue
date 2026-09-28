@@ -239,7 +239,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
             </div>
             <div>
               <p>{{ ext.description || t('stream.noDescription') }}</p>
-              <p v-if="ext.error" class="extension-error">{{ ext.error }}</p>
+              <p v-if="ext.reason" class="extension-reason" :class="ext.status">{{ ext.reason }}</p>
             </div>
           </div>
         </section>

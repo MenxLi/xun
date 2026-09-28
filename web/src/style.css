@@ -210,7 +210,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .extension-chip { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--muted); font: 8px/1 'Fira Code', monospace; text-transform: uppercase; }
 .extension-chip.loaded { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-dark); background: var(--accent-soft); }
 .extension-chip.failed { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
-.tool-listing .extension-error { margin-top: 4px; color: var(--danger); }
+.extension-chip.skipped { border-color: color-mix(in srgb, var(--warm) 45%, transparent); color: var(--warm); background: color-mix(in srgb, var(--warm) 8%, transparent); }
+.tool-listing .extension-reason { margin-top: 4px; color: var(--danger); }
+.tool-listing .extension-reason.skipped { color: var(--warm); }
 .tool-listing p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
 .tools-empty { padding: 22px 12px; color: var(--muted); font-size: 11px; text-align: center; }
 .history-line { padding: 10px 12px; border-bottom: 1px solid var(--line); }

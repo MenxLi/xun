@@ -37,11 +37,26 @@ def setup_extension(ctx: ExtensionContext) -> None:
 
 The first line of the module docstring becomes the extension's description, shown by the `/extensions` command.
 
+## Version compatibility
+
+Declare the xun versions an extension supports on the entry function; both bounds are inclusive:
+
+```python
+"""Needs a recent xun."""
+from xun import ExtensionContext, extension_attr
+
+@extension_attr(min_version="1.2", max_version="2.0")
+def setup_extension(ctx: ExtensionContext) -> None:
+    ...
+```
+
+Outside the range the extension is **skipped** — listed as `skipped` by `/extensions` with the reason, warned once at scan time, never imported into agents, and never counted as `failed`. Query the running version with `xun_version()`; when xun runs without package metadata (a source checkout) the gate passes.
+
 ## Load semantics
 
 - Sources are imported **once per process** (cached), then `setup_extension` is re-run with a fresh context for every agent — including sub-agents.
 - Extensions apply in **name-sorted order**, deterministic across both forms.
-- Import failure or setup failure only prints a warning: a broken extension never blocks startup or the other extensions (this README itself is skipped as a non-source file since it isn't `.py`).
+- Import failure or setup failure only prints a warning: a broken extension never blocks startup or the other extensions (this README itself is skipped as a non-source file since it isn't `.py`). A version mismatch is likewise a warning, and shows up as `skipped` rather than `failed`.
 - Opt out with `enable_extensions: false` in `$XUN_HOME/config.json`; internal helper agents set this automatically.
 
 The implementation lives in [`src/xun/extension.py`](../src/xun/extension.py). Any `.py` source alongside this README serves as a working example.
