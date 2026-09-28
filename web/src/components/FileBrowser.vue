@@ -96,7 +96,7 @@ function toggleMenu(kind: 'toolbar' | 'entry', event: MouseEvent, entry?: FileEn
   const rect = button.getBoundingClientRect()
   const margin = 6
   const width = 176
-  const height = kind === 'entry' ? (entry?.kind === 'directory' ? 170 : 138) : 106
+  const height = kind === 'entry' ? (entry?.kind === 'directory' ? 170 : 138) : 138
   const top = rect.bottom + 4 + height <= window.innerHeight - margin
     ? rect.bottom + 4
     : rect.top - height - 4
@@ -363,18 +363,16 @@ async function loadServers() {
   }
 }
 
-function servingFor(entry: FileEntry): ServeServer | undefined {
-  return activeServers.value.find(server => server.path === entry.path)
-}
+const servingFor = (target: string) => activeServers.value.find(server => server.path === target)
 
-async function serveFolder(entry: FileEntry) {
+async function servePath(target: string) {
   closeMenu()
-  if (serveBusy.value || servingFor(entry)) return
+  if (serveBusy.value || servingFor(target)) return
   const agentId = props.agentId
   serveBusy.value = true
   error.value = ''
   try {
-    const server = await api.startServe(agentId, entry.path)
+    const server = await api.startServe(agentId, target)
     if (props.agentId !== agentId) return
     servers.value = [...servers.value, server]
     now.value = Date.now()
@@ -466,7 +464,7 @@ function serveRemaining(server: ServeServer): string {
           <Folder v-if="entry.kind === 'directory'" :size="16" />
           <File v-else :size="16" />
           <span>{{ entry.name }}</span>
-          <span v-if="servingFor(entry)" class="row-serve-badge" :title="t('files.serveRunning')"><Globe :size="11" /></span>
+          <span v-if="servingFor(entry.path)" class="row-serve-badge" :title="t('files.serveRunning')"><Globe :size="11" /></span>
         </button>
         <div v-if="inlineEntry?.path !== entry.path" class="file-menu-wrap file-actions" :class="{ open: activeMenu === 'entry' && activeEntry?.path === entry.path }" @click.stop>
           <button class="icon-button" :title="t('files.fileActions')" :aria-expanded="activeMenu === 'entry' && activeEntry?.path === entry.path" @click="toggleMenu('entry', $event, entry)"><MoreHorizontal :size="15" /></button>
@@ -481,13 +479,14 @@ function serveRemaining(server: ServeServer): string {
           <button :disabled="uploading" @click="browse(false); closeMenu()"><Upload :size="14" /><span>{{ t('files.uploadFiles') }}</span></button>
           <button :disabled="uploading" @click="browse(true); closeMenu()"><FolderUp :size="14" /><span>{{ t('files.uploadFolder') }}</span></button>
           <a :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" @click="closeMenu"><FolderArchive :size="14" /><span>{{ t('files.downloadFolder') }}</span></a>
+          <button :disabled="serveBusy || !available || !!servingFor(path)" @click="servePath(path)"><Globe :size="14" /><span>{{ servingFor(path) ? t('files.serveRunning') : t('files.serveHere') }}</span></button>
         </template>
         <template v-else-if="activeEntry">
           <button @click="showInfo(activeEntry)"><Info :size="14" /><span>{{ t('files.info') }}</span></button>
           <button @click="startInlineEdit('move', activeEntry)"><Pencil :size="14" /><span>{{ t('files.renameOrMove') }}</span></button>
           <a v-if="activeEntry.kind === 'file'" :href="api.downloadUrl(agentId, activeEntry.path)" :download="activeEntry.name" @click="closeMenu"><Download :size="14" /><span>{{ t('files.download') }}</span></a>
           <a v-else :href="api.archiveUrl(agentId, activeEntry.path)" :download="archiveName(activeEntry.path)" @click="closeMenu"><FolderArchive :size="14" /><span>{{ t('files.downloadFolder') }}</span></a>
-          <button v-if="activeEntry.kind === 'directory'" :disabled="serveBusy || !available || !!servingFor(activeEntry)" @click="serveFolder(activeEntry)"><Globe :size="14" /><span>{{ servingFor(activeEntry) ? t('files.serveRunning') : t('files.serve') }}</span></button>
+          <button v-if="activeEntry.kind === 'directory'" :disabled="serveBusy || !available || !!servingFor(activeEntry.path)" @click="servePath(activeEntry.path)"><Globe :size="14" /><span>{{ servingFor(activeEntry.path) ? t('files.serveRunning') : t('files.serve') }}</span></button>
           <button class="danger" @click="openDeleteDialog(activeEntry)"><Trash2 :size="14" /><span>{{ t('common.delete') }}</span></button>
         </template>
       </div>

@@ -1,8 +1,9 @@
 """Temporary static file servers for directories inside an agent's workdir.
 
-Serves one directory as a website under ``/srv/{key}/`` until it expires.
-Plain static hosting without the file API's per-response hardening: served
-files share the application's origin, so servers are opt-in and short-lived.
+Serves one directory, or the workdir root itself, as a website under
+``/srv/{key}/`` until it expires. Plain static hosting without the file
+API's per-response hardening: served files share the application's origin,
+so servers are opt-in and short-lived.
 """
 
 from __future__ import annotations
@@ -122,9 +123,8 @@ def build_serve_router(agent_getter: AgentGetter, manager: ServeManager) -> APIR
     @router.post("/api/serve/{agent_id}/start")
     async def start_server(agent_id: str, request: ServeRequest) -> dict[str, Any]:
         agent = agent_getter(agent_id)
+        # an empty path resolves to the workdir root, which is servable too
         target = resolve_path(agent, request.path)
-        if target == agent.workspace.workdir.resolve():
-            raise HTTPException(400, "Cannot serve the workspace root")
         if not target.is_dir():
             raise HTTPException(404, "Directory not found")
         return manager.start(request.path, target)

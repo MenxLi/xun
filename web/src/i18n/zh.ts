@@ -150,6 +150,7 @@ const zh: typeof en = {
     pathEscapes: '路径超出工作区范围',
     pathRoot: '路径解析为工作区根目录',
     serve: '作为网站托管',
+    serveHere: '托管当前文件夹',
     serveRunning: '正在作为网站托管',
     serveCopy: '复制网址',
     serveCopied: '网址已复制',

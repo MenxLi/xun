@@ -148,6 +148,7 @@ export default {
     pathEscapes: 'Path escapes the workspace',
     pathRoot: 'Path resolves to the workspace root',
     serve: 'Serve as website',
+    serveHere: 'Serve current folder',
     serveRunning: 'Serving as website',
     serveCopy: 'Copy URL',
     serveCopied: 'URL copied',

@@ -427,7 +427,6 @@ class WebDisplayTest(unittest.TestCase):
     def test_serve_rejects_bad_paths_and_too_many_servers(self) -> None:
         (self.root / "site").mkdir()
         (self.root / "file.txt").write_text("x", encoding="utf-8")
-        self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": ""}).status_code, 400)
         self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "nope"}).status_code, 404)
         self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "file.txt"}).status_code, 404)
         self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "../etc"}).status_code, 400)
@@ -436,6 +435,28 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(self.client.post("api/serve/agent-1/start", json={"path": "site"}).status_code, 429)
         for key in keys:
             self.assertTrue(self.client.post(f"api/serve/agent-1/{key}/stop").json()["stopped"])
+
+    def test_serve_workspace_root(self) -> None:
+        (self.root / "index.html").write_text("<main>root site</main>", encoding="utf-8")
+        (self.root / "sub").mkdir()
+        (self.root / "sub" / "app.css").write_text("body {}", encoding="utf-8")
+
+        started = self.client.post("api/serve/agent-1/start", json={"path": ""})
+        self.assertEqual(started.status_code, 200)
+        server = started.json()
+        self.assertEqual(server["path"], "")
+
+        home = self.client.get(server["url"].lstrip("/"))
+        self.assertEqual(home.status_code, 200)
+        self.assertIn("root site", home.text)
+        asset = self.client.get(server["url"].lstrip("/") + "sub/app.css")
+        self.assertEqual(asset.status_code, 200)
+
+        self.assertEqual(
+            [entry["key"] for entry in self.client.get("api/serve/agent-1").json()["servers"]],
+            [server["key"]],
+        )
+        self.assertTrue(self.client.post(f"api/serve/agent-1/{server['key']}/stop").json()["stopped"])
 
     def test_websocket_dispatches_messages_and_commands_to_selected_agent(self) -> None:
         second_root = self.root / "second"
