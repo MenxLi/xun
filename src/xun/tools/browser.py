@@ -769,7 +769,7 @@ def expose_browser_tools() -> list[Callable]:
         )
         with PILImage.open(BytesIO(capture.data)) as image:
             width, height = image.size
-            defer_tool_image(ctx, image.copy())
+            defer_tool_image(ctx, image.copy(), msg=f"[Tool browser_screenshot] Image size: {image.size}")
         return {
             "page_id": capture.page_id,
             "width": width,

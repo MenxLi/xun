@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
 
+from PIL import Image
 from ..toolcall import ToolCallContext as Context
 from ..toolcall import tool_attr
 from ..util import fmt_size, fmt_time
@@ -262,20 +263,47 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     The input can be a single local image path or URL.
 
     The image will be added to the conversation as a user message with an empty text content.
+    If the image is too large, it will be resized automatically.
 
     Call this tool whenever:
     - The request depends on visual details
     - The input is ambiguous without seeing an image
     - The task involves inspecting objects, scenes, diagrams, or UI
     """
+    MAX_IMAGE_SIDE=1000
+
     def is_url(path: str) -> bool:
         return path.startswith("http://") or path.startswith("https://")
+
     if not is_url(src):
         src_resolved = resolve_path(ctx, src)
         if not src_resolved.path.exists():
             raise FileNotFoundError("Source image file does not exist.")
         src = str(src_resolved.path)
-    defer_tool_image(ctx, src)
+        image = Image.open(src_resolved.path)
+    else:
+        # try to open the image from the URL
+        try:
+            import requests
+            from io import BytesIO
+            response = requests.get(src)
+            response.raise_for_status()
+            image = Image.open(BytesIO(response.content))
+        except Exception as e:
+            raise RuntimeError(f"Failed to load image from URL `{src}`: {e}")
+    
+    original_size = image.size
+
+    if max(image.size) > MAX_IMAGE_SIDE:
+        scale = MAX_IMAGE_SIDE / max(image.size)
+        new_size = (int(image.size[0] * scale), int(image.size[1] * scale))
+        image = image.resize(new_size)
+
+    defer_tool_image(
+        ctx, src, 
+        msg=f"[Tool request_image] Image size: {image.size}" + 
+            f", Resized from: {original_size}" if original_size != image.size else ""
+        )
     return "OK"
 
 @tool_attr(name="glob")

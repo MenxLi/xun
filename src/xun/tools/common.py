@@ -20,12 +20,12 @@ def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) 
     return ctx.agent.workspace.resolve(path, raise_on_invalid=raise_on_invalid)
 
 
-def defer_tool_image(ctx: Context, image: str | Image) -> None:
+def defer_tool_image(ctx: Context, image: str | Image, msg: str = "") -> None:
     """Add an image after the current batch of tool results is committed."""
     image_url = image_to_url(image)
 
     def add_image(args: HookArgs.AfterExecutionStepArgs) -> None:
-        args.agent.conversation.add_user_message("", images=[image_url])
+        args.agent.conversation.add_user_message(msg, images=[image_url])
 
     ctx.agent.hooks.after_execution_step.add_once(add_image)
 
