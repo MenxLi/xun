@@ -45,6 +45,7 @@ const stream = ref<InstanceType<typeof StickyScroll> | null>(null)
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let sessionRefreshTimer: number | undefined
+let commandRefreshTimer: number | undefined
 let agentDataRequest = 0
 const syncing = ref(false)
 let queuedMessages: ServerMessage[] = []
@@ -121,6 +122,27 @@ watch([selectedAgentId, currentSessionPath], async ([agentId, sessionPath], [pre
     if (requestId === agentDataRequest) commands.value = []
   }
 })
+
+// While typing a "/" command, refresh the command list (debounced) so newly
+// registered commands show up; only replace the cached list when it changed.
+watch(input, () => {
+  if (!selectedAgentId.value || !/^\/[^\s]*$/.test(input.value)) return
+  window.clearTimeout(commandRefreshTimer)
+  commandRefreshTimer = window.setTimeout(refreshCommands, 150)
+})
+
+async function refreshCommands() {
+  const agentId = selectedAgentId.value
+  if (!agentId) return
+  try {
+    const data = await api.commands(agentId)
+    if (agentId !== selectedAgentId.value) return
+    if (JSON.stringify(data) !== JSON.stringify(commands.value)) commands.value = data
+  } catch {
+    // keep the previous list on failure
+  }
+}
+
 async function fetchInitialData() {
   return Promise.all([
     api.config(), api.events(), api.agents(), api.running(), api.prompts(),
@@ -481,6 +503,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   window.clearInterval(sessionRefreshTimer)
+  window.clearTimeout(commandRefreshTimer)
   window.removeEventListener('resize', updateLayout)
   disconnect()
   sessionBuffers.dispose()
