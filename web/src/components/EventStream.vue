@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Puzzle, Terminal, Wrench } from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Info, Puzzle, Terminal, TriangleAlert, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
@@ -17,7 +17,6 @@ type TurnStep =
   | { kind: 'reason'; key: string; event: ModelMessageDisplayEvent }
   | { kind: 'tools'; key: string; tools: ToolItem[] }
   | { kind: 'confirm'; key: string; event: ConfirmDisplayEvent }
-  | { kind: 'message'; key: string; event: ModelMessageDisplayEvent }
 
 type AgentActivity = { key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number | null; autoApprovals: number; last: DisplayEvent; lastTool: string | null; working: boolean }
 type BatchItem = { kind: 'batch'; key: string; agents: AgentActivity[]; last: DisplayEvent }
@@ -71,11 +70,18 @@ const items = computed<StreamItem[]>(() => {
     } else if (data.name === 'ModelWorkingEvent') {
       ensureActivity(data, index).last = data
     } else if (data.name === 'ModelMessageEvent' && (data.agent.identifier !== rootAgent || !data.payload.content.trim())) {
-      const current = ensureActivity(data, index)
-      current.tokens = data.payload.total_tokens
-      current.last = data
-      if (data.payload.reasoning?.trim()) current.steps.push({ kind: 'reason', key: `reason-${index}`, event: data })
-      if (data.payload.content.trim()) current.steps.push({ kind: 'message', key: `message-${index}`, event: data })
+      const hasContent = !!data.payload.content.trim()
+      if (data.payload.reasoning?.trim()) {
+        const current = ensureActivity(data, index)
+        current.tokens = hasContent ? null : data.payload.total_tokens
+        current.last = data
+        current.steps.push({ kind: 'reason', key: `reason-${index}`, event: data })
+      }
+      if (hasContent) {
+        batch = null
+        latestActivities.delete(data.agent.identifier)
+        output.push({ kind: 'event', key: `${data.name}-${index}`, data })
+      }
     } else if (data.name === 'ToolCallEvent') {
       const item: ToolItem = { key: data.payload.tool_call_id || `tool-${index}`, call: data }
       if (data.payload.tool_call_id) toolItems.set(data.payload.tool_call_id, item)
@@ -266,8 +272,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
                   <MarkdownText :content="step.event.payload.reasoning!" :enabled="markdown" />
                 </details>
                 <ToolCalls v-else-if="step.kind === 'tools'" :tools="step.tools" />
-                <ConfirmPill v-else-if="step.kind === 'confirm'" :event="step.event" />
-                <MarkdownText v-else :content="step.event.payload.content" :enabled="markdown" />
+                <ConfirmPill v-else :event="step.event" />
               </template>
             </div>
           </details>
@@ -332,14 +337,38 @@ async function copyMessage(key: string, event: DisplayEvent) {
           <HtmlText :content="item.data.payload.html" />
         </section>
 
+        <div
+          v-else-if="isPlainTextEvent(item.data) && !isUser(item.data)"
+          class="stream-notice"
+          :class="{ warning: item.data.name === 'WarningEvent', error: item.data.name === 'ErrorEvent' }"
+          role="note"
+          :aria-label="label(item.data)"
+        >
+          <Info v-if="item.data.name === 'InfoEvent'" :size="13" />
+          <TriangleAlert v-else-if="item.data.name === 'WarningEvent'" :size="13" />
+          <CircleAlert v-else :size="13" />
+          <div class="notice-content">
+            <span class="notice-meta">
+              <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
+              <button
+                type="button"
+                class="message-copy"
+                :title="t('stream.copyMessage')"
+                :class="{ copied: copiedKey === item.key }"
+                @click="copyMessage(item.key, item.data)"
+              >
+                <Copy v-if="copiedKey !== item.key" :size="12" />
+                <Check v-else :size="12" />
+              </button>
+            </span>
+            <MarkdownText :content="displayText(item.data)" :enabled="markdown" plain />
+          </div>
+        </div>
+
         <article v-else class="message" :class="{
           user: isUser(item.data),
-          error: item.data.name === 'ErrorEvent',
-          warning: item.data.name === 'WarningEvent',
-          notice: item.data.name === 'InfoEvent' && !isUser(item.data),
         }">
           <div class="message-label">
-            <CircleAlert v-if="item.data.name === 'ErrorEvent'" :size="13" />
             {{ isUser(item.data) ? t('stream.you') : label(item.data) }}
             <template v-if="item.data.name === 'UserMessageEvent'">
               <span class="message-recipient">{{ t('stream.to') }}</span> {{ item.data.agent.name }}

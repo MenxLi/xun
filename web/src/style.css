@@ -106,11 +106,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-images { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 220px)); gap: 8px; }
 .message-images a { min-width: 0; display: block; border-radius: 5px; overflow: hidden; background: var(--input); }
 .message-images img { width: 100%; max-height: 260px; display: block; object-fit: contain; }
-.message.notice, .message.warning, .message.error { padding: 8px 12px; border-left: 3px solid var(--line-strong); color: var(--muted); }
-.message.notice .plain-text, .message.warning .plain-text, .message.error .plain-text,
-.message.notice .markdown, .message.warning .markdown, .message.error .markdown { font-size: 12px; line-height: 1.6; }
-.message.warning { border-color: var(--warm); }
-.message.error { border-color: var(--danger); color: var(--danger); }
+.stream-notice { min-height: 24px; margin: 0 0 3px; padding: 4px 6px; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: 6px; border-radius: 3px; color: var(--muted); background: color-mix(in srgb, var(--panel) 46%, transparent); transition: background .12s ease; }
+.stream-notice:hover { background: color-mix(in srgb, var(--panel) 68%, transparent); }
+.stream-notice > svg { width: 12px; height: 12px; margin-top: 2px; color: var(--muted); opacity: .72; }
+.stream-notice .notice-content { min-width: 0; }
+.stream-notice .notice-meta { margin-left: 8px; float: right; display: inline-flex; align-items: center; gap: 4px; }
+.stream-notice .plain-text { min-width: 0; color: var(--muted); font-family: 'Fira Code', monospace; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+.stream-notice time { font: 8px/1 'Fira Code', monospace; opacity: .45; }
+.stream-notice .message-copy { width: 16px; height: 16px; margin: 0; padding: 1px; }
+.stream-notice:hover .message-copy { opacity: .55; }
+.stream-notice.warning > svg { color: var(--warm); opacity: .9; }
+.stream-notice.error > svg { color: var(--danger); opacity: .9; }
 .markdown, .plain-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
 .markdown { white-space: normal; }
 .markdown > :first-child { margin-top: 0; }
