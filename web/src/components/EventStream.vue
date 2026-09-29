@@ -6,6 +6,7 @@ import MarkdownText from './MarkdownText.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
 import ConfirmPill from './ConfirmPill.vue'
+import ActivityPreview from './ActivityPreview.vue'
 import { eventTime, formatTokens, fullEventTime } from '../api'
 import { copyText } from '../clipboard'
 import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolCallDisplayEvent, ToolItem } from '../types'
@@ -83,7 +84,6 @@ const items = computed<StreamItem[]>(() => {
         if (owner.preview) {
           const previewIndex = owner.batch.previews.indexOf(owner.preview)
           if (previewIndex >= 0) owner.batch.previews.splice(previewIndex, 1)
-          owner.preview.key = `preview-result-${index}`
           owner.preview.text = `${owner.name} · ${t('stream.completed')}`
           pushPreview(owner.batch, owner.preview)
         }
@@ -267,12 +267,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
             </span>
             <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
           </span>
-          <TransitionGroup v-if="item.key === latestBatchKey && item.previews.length" name="activity-preview" tag="span" class="batch-preview" :class="{ single: item.agents.length === 1 }">
-            <span v-for="preview in item.previews" :key="preview.key" class="batch-preview-line">
-              <span class="batch-preview-agent">{{ preview.agent }}</span>
-              <span class="batch-preview-text">{{ preview.text }}</span>
-            </span>
-          </TransitionGroup>
+          <ActivityPreview v-if="item.key === latestBatchKey && item.previews.length" :previews="item.previews" :single="item.agents.length === 1" />
         </summary>
         <div class="batch-agents" :class="{ single: item.agents.length === 1 }">
           <component :is="item.agents.length > 1 ? 'details' : 'div'" v-for="agent in item.agents" :key="agent.key" class="turn">
