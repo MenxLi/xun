@@ -99,7 +99,7 @@ export default {
     input: 'Input',
     output: 'Output',
     completed: 'Completed',
-    generating: 'Generating response',
+    generating: 'Working',
     agentActivity: 'Activity',
     agents: '{n} agent | {n} agents',
     details: '{n} detail | {n} details',

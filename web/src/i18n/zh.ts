@@ -101,7 +101,7 @@ const zh: typeof en = {
     input: '输入',
     output: '输出',
     completed: '已完成',
-    generating: '正在生成回复',
+    generating: '处理中',
     agentActivity: '活动',
     agents: '{n} 个 agent',
     details: '{n} 项明细',

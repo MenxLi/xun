@@ -18,9 +18,10 @@ type TurnStep =
   | { kind: 'tools'; key: string; tools: ToolItem[] }
   | { kind: 'confirm'; key: string; event: ConfirmDisplayEvent }
 
+type ActivityPreview = { key: string; agentId: string; agent: string; text: string }
 type AgentActivity = { key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number | null; autoApprovals: number; last: DisplayEvent; lastTool: string | null; working: boolean }
-type BatchItem = { kind: 'batch'; key: string; agents: AgentActivity[]; last: DisplayEvent }
-type ToolOwner = { activity: AgentActivity; batch: BatchItem; name: string }
+type BatchItem = { kind: 'batch'; key: string; agents: AgentActivity[]; previews: ActivityPreview[]; last: DisplayEvent }
+type ToolOwner = { activity: AgentActivity; batch: BatchItem; name: string; preview: ActivityPreview | null }
 
 type StreamItem =
   | { kind: 'event'; key: string; data: DisplayEvent }
@@ -34,9 +35,22 @@ const items = computed<StreamItem[]>(() => {
   let batch: BatchItem | null = null
   let rootAgent = ''
 
+  function pushPreview(target: BatchItem, preview: ActivityPreview) {
+    target.previews.push(preview)
+    if (target.previews.length > 3) target.previews.shift()
+  }
+
+  function addPreview(target: BatchItem, data: DisplayEvent, index: number, text: string) {
+    const detail = text.replace(/\s+/g, ' ').trim().slice(0, 160)
+    if (!detail) return null
+    const preview = { key: `preview-${index}`, agentId: data.agent.identifier, agent: data.agent.name, text: detail }
+    pushPreview(target, preview)
+    return preview
+  }
+
   function ensureActivity(data: DisplayEvent, index: number): AgentActivity {
     if (!batch) {
-      batch = { kind: 'batch', key: `batch-${index}`, agents: [], last: data }
+      batch = { kind: 'batch', key: `batch-${index}`, agents: [], previews: [], last: data }
       output.push(batch)
     }
     batch.last = data
@@ -66,9 +80,17 @@ const items = computed<StreamItem[]>(() => {
         owner.activity.last = data
         owner.activity.lastTool = owner.name
         owner.batch.last = data
+        if (owner.preview) {
+          const previewIndex = owner.batch.previews.indexOf(owner.preview)
+          if (previewIndex >= 0) owner.batch.previews.splice(previewIndex, 1)
+          owner.preview.key = `preview-result-${index}`
+          owner.preview.text = `${owner.name} · ${t('stream.completed')}`
+          pushPreview(owner.batch, owner.preview)
+        }
       }
     } else if (data.name === 'ModelWorkingEvent') {
-      ensureActivity(data, index).last = data
+      const current = ensureActivity(data, index)
+      current.last = data
     } else if (data.name === 'ModelMessageEvent' && (data.agent.identifier !== rootAgent || !data.payload.content.trim())) {
       const hasContent = !!data.payload.content.trim()
       if (data.payload.reasoning?.trim()) {
@@ -76,6 +98,7 @@ const items = computed<StreamItem[]>(() => {
         current.tokens = hasContent ? null : data.payload.total_tokens
         current.last = data
         current.steps.push({ kind: 'reason', key: `reason-${index}`, event: data })
+        addPreview(batch!, data, index, data.payload.reasoning)
       }
       if (hasContent) {
         batch = null
@@ -87,7 +110,8 @@ const items = computed<StreamItem[]>(() => {
       if (data.payload.tool_call_id) toolItems.set(data.payload.tool_call_id, item)
       const current = ensureActivity(data, index)
       current.lastTool = toolSummary(data)
-      if (data.payload.tool_call_id) toolOwners.set(data.payload.tool_call_id, { activity: current, batch: batch!, name: current.lastTool })
+      const preview = addPreview(batch!, data, index, current.lastTool)
+      if (data.payload.tool_call_id) toolOwners.set(data.payload.tool_call_id, { activity: current, batch: batch!, name: current.lastTool, preview })
       const last = current.steps.at(-1)
       if (last?.kind === 'tools') last.tools.push(item)
       else current.steps.push({ kind: 'tools', key: `steps-${item.key}`, tools: [item] })
@@ -96,10 +120,12 @@ const items = computed<StreamItem[]>(() => {
       const current = ensureActivity(data, index)
       current.autoApprovals += 1
       current.last = data
+      addPreview(batch!, data, index, data.payload.prompt)
     } else if (data.name === 'ConfirmEvent') {
       const current = ensureActivity(data, index)
       current.steps.push({ kind: 'confirm', key: `confirm-${index}`, event: data })
       current.last = data
+      addPreview(batch!, data, index, data.payload.prompt)
     } else if (data.name === 'AgentBindEvent' || data.name === 'AgentUnbindEvent') {
       return
     } else {
@@ -113,6 +139,8 @@ const items = computed<StreamItem[]>(() => {
   output.forEach(item => {
     if (item.kind === 'batch') {
       item.agents = item.agents.filter(activity => activity.steps.length || activity.autoApprovals || activity.working)
+      const visibleAgents = new Set(item.agents.map(activity => activity.agent.identifier))
+      item.previews = item.previews.filter(preview => visibleAgents.has(preview.agentId))
     }
   })
   return output.filter(item => item.kind !== 'batch' || item.agents.length)
@@ -138,19 +166,6 @@ const latestBatchKey = computed(() => {
   }
   return null
 })
-
-function batchSummary(batch: BatchItem): string {
-  const activity = batch.agents.reduce((latest, item) => item.last.timestamp > latest.last.timestamp ? item : latest)
-  const event = activity.last
-  let action = ''
-  if (event.name === 'ModelWorkingEvent') action = t('stream.generating')
-  else if (event.name === 'ModelMessageEvent') action = event.payload.content || event.payload.reasoning || ''
-  else if (event.name === 'ToolCallEvent') action = activity.lastTool || event.payload.tool_name
-  else if (event.name === 'ToolResultEvent') action = `${activity.lastTool || t('stream.tool')} · ${t('stream.completed')}`
-  else if (event.name === 'ConfirmEvent') action = event.payload.prompt
-  const detail = action.replace(/\s+/g, ' ').trim().slice(0, 160) || t('stream.generating')
-  return `${activity.agent.name} · ${detail}`
-}
 
 // Render only a trailing window: mounting thousands of message components at
 // once is what made long sessions crawl.
@@ -237,26 +252,31 @@ async function copyMessage(key: string, event: DisplayEvent) {
       </button>
     </div>
     <template v-for="item in visibleItems" :key="item.key">
-      <details v-if="item.kind === 'batch'" class="activity-batch">
+      <details v-if="item.kind === 'batch'" class="activity-batch" :class="{ 'single-agent': item.agents.length === 1, 'has-preview': item.key === latestBatchKey && !!item.previews.length }">
         <summary class="batch-header">
-          <ChevronRight :size="12" class="chevron" />
-          <span class="batch-title">{{ t('stream.agentActivity') }}</span>
-          <span class="batch-meta">· {{ t('stream.agents', { n: item.agents.length }) }}</span>
-          <span v-if="batchDetailCount(item)" class="batch-meta">· {{ t('stream.details', { n: batchDetailCount(item) }) }}</span>
-          <span v-if="item.key === latestBatchKey" class="batch-summary" :title="batchSummary(item)">
-            <Transition name="activity-update">
-              <span :key="batchSummary(item)" class="batch-summary-text">{{ batchSummary(item) }}</span>
-            </Transition>
+          <span class="batch-heading">
+            <ChevronRight :size="12" class="chevron" />
+            <span class="batch-title">{{ item.agents.length === 1 ? item.agents[0].agent.name : t('stream.agentActivity') }}</span>
+            <span v-if="item.agents.length > 1" class="batch-meta">· {{ t('stream.agents', { n: item.agents.length }) }}</span>
+            <span v-if="batchDetailCount(item)" class="batch-meta">· {{ t('stream.details', { n: batchDetailCount(item) }) }}</span>
+            <span v-if="item.agents.length === 1 && item.agents[0].autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ item.agents[0].autoApprovals }}</span>
+            <span v-if="item.agents.length === 1 && item.agents[0].tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.agents[0].tokens!) }} {{ t('app.tokens') }}</span>
+            <span v-if="item.agents.some(agent => agent.working)" class="tool-state">
+              <Clock3 :size="12" />
+              {{ t('stream.running') }}
+            </span>
+            <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
           </span>
-          <span v-if="item.agents.some(agent => agent.working)" class="tool-state">
-            <Clock3 :size="12" />
-            {{ t('stream.running') }}
-          </span>
-          <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
+          <TransitionGroup v-if="item.key === latestBatchKey && item.previews.length" name="activity-preview" tag="span" class="batch-preview" :class="{ single: item.agents.length === 1 }">
+            <span v-for="preview in item.previews" :key="preview.key" class="batch-preview-line">
+              <span class="batch-preview-agent">{{ preview.agent }}</span>
+              <span class="batch-preview-text">{{ preview.text }}</span>
+            </span>
+          </TransitionGroup>
         </summary>
-        <div class="batch-agents">
-          <details v-for="agent in item.agents" :key="agent.key" class="turn">
-            <summary class="turn-header">
+        <div class="batch-agents" :class="{ single: item.agents.length === 1 }">
+          <component :is="item.agents.length > 1 ? 'details' : 'div'" v-for="agent in item.agents" :key="agent.key" class="turn">
+            <summary v-if="item.agents.length > 1" class="turn-header">
               <ChevronRight :size="12" class="chevron" />
               <span class="turn-agent">{{ agent.agent.name }}</span>
               <span v-if="detailCount(agent)">· {{ t('stream.details', { n: detailCount(agent) }) }}</span>
@@ -275,7 +295,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
                 <ConfirmPill v-else :event="step.event" />
               </template>
             </div>
-          </details>
+          </component>
         </div>
       </details>
 
@@ -349,7 +369,6 @@ async function copyMessage(key: string, event: DisplayEvent) {
           <CircleAlert v-else :size="13" />
           <div class="notice-content">
             <span class="notice-meta">
-              <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
               <button
                 type="button"
                 class="message-copy"
@@ -360,6 +379,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
                 <Copy v-if="copiedKey !== item.key" :size="12" />
                 <Check v-else :size="12" />
               </button>
+              <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
             </span>
             <MarkdownText :content="displayText(item.data)" :enabled="markdown" plain />
           </div>
