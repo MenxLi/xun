@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Info, Puzzle, Terminal, TriangleAlert, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
@@ -240,6 +240,8 @@ async function copyMessage(key: string, event: DisplayEvent) {
   copyTimer = window.setTimeout(() => { copiedKey.value = '' }, 1600)
 }
 
+onBeforeUnmount(() => window.clearTimeout(copyTimer))
+
 </script>
 
 <template>
@@ -295,11 +297,7 @@ async function copyMessage(key: string, event: DisplayEvent) {
       </details>
 
       <template v-else>
-        <div v-if="item.data.name === 'ModelWorkingEvent'" class="working">
-          <span class="working-dot" /> {{ t('stream.working', { name: item.data.agent.name }) }}
-        </div>
-
-        <ConfirmPill v-else-if="item.data.name === 'ConfirmEvent'" :event="item.data" />
+        <ConfirmPill v-if="item.data.name === 'ConfirmEvent'" :event="item.data" />
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
           <header><Terminal :size="15" /> {{ t('stream.availableCommands') }}</header>
@@ -392,17 +390,19 @@ async function copyMessage(key: string, event: DisplayEvent) {
               <span class="message-recipient">·</span>
               <span class="token-usage" :title="t('stream.tokensTitle')">{{ formatTokens(item.data.payload.total_tokens) }} {{ t('app.tokens') }}</span>
             </template>
-            <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
-            <button
-              type="button"
-              class="message-copy"
-              :title="t('stream.copyMessage')"
-              :class="{ copied: copiedKey === item.key }"
-              @click="copyMessage(item.key, item.data)"
-            >
-              <Copy v-if="copiedKey !== item.key" :size="12" />
-              <Check v-else :size="12" />
-            </button>
+            <span class="message-meta">
+              <button
+                type="button"
+                class="message-copy"
+                :title="t('stream.copyMessage')"
+                :class="{ copied: copiedKey === item.key }"
+                @click="copyMessage(item.key, item.data)"
+              >
+                <Copy v-if="copiedKey !== item.key" :size="12" />
+                <Check v-else :size="12" />
+              </button>
+              <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
+            </span>
           </div>
           <details v-if="item.data.name === 'ModelMessageEvent' && item.data.payload.reasoning" class="reasoning">
             <summary><ChevronRight :size="11" class="chevron" />{{ t('stream.reasoning') }}</summary>

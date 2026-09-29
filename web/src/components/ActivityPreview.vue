@@ -55,7 +55,6 @@ defineProps<{
 
 @media (max-width: 520px) {
   .batch-preview { height: 31px; }
-  .batch-preview-line:first-child:nth-last-child(3) { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

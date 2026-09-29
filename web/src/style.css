@@ -94,7 +94,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .stream { width: min(780px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 18px; }
 .message { margin: 0 0 22px; overflow-wrap: anywhere; }
 .message-label { margin-bottom: 6px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 500 10px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .05em; }
-.message-label time { margin-left: auto; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
+.message-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.message:not(.user) .message-meta { padding-right: 8px; }
+.message-meta time { font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
+.message-meta .message-copy { margin-left: 0; }
 .message-copy { margin-left: 4px; padding: 2px; display: inline-grid; place-items: center; border: 0; border-radius: 3px; color: var(--muted); background: transparent; opacity: 0; cursor: pointer; transition: opacity .12s ease, background .12s ease, color .12s ease; }
 .message:hover .message-copy, .message-copy:focus-visible, .message-copy.copied { opacity: 1; }
 .message-copy:hover { color: var(--ink); background: var(--hover); }
@@ -146,7 +149,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
 .markdown blockquote { padding-left: 12px; border-left: 2px solid var(--warm); color: var(--muted); }
-.working { margin: -5px 0 18px; color: var(--muted); font-size: 11px; }
 .activity-batch { margin: 0 0 20px; color: var(--muted); }
 .message + .activity-batch { margin-top: -8px; }
 .activity-batch + .stream-notice { margin-top: -10px; }
@@ -199,8 +201,6 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .confirm-choice.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent-dark); background: var(--accent-soft); font-weight: 500; }
 .confirm-hint .confirm-message-block { align-items: start; }
 .confirm-message { max-height: 140px; padding: 4px 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; }
-.working-dot { width: 6px; height: 6px; margin-right: 6px; display: inline-block; border-radius: 50%; background: var(--warm); animation: pulse 1.1s infinite; }
-@keyframes pulse { 50% { opacity: .3; } }
 .activity-group { margin: -7px 0 20px; color: var(--muted); font: 11px/1.5 'Fira Code', monospace; }
 .activity-group > summary, .tool-row > summary, .reasoning > summary { width: fit-content; padding: 4px 0; display: flex; align-items: center; cursor: pointer; list-style: none; }
 .activity-group summary::-webkit-details-marker, .tool-row summary::-webkit-details-marker, .reasoning summary::-webkit-details-marker { display: none; }
