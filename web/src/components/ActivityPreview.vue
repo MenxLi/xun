@@ -6,7 +6,13 @@ defineProps<{
 </script>
 
 <template>
-  <TransitionGroup name="activity-preview" tag="span" class="batch-preview" :class="{ single }">
+  <TransitionGroup
+    name="activity-preview"
+    tag="span"
+    class="batch-preview"
+    :class="{ single }"
+    :style="{ '--preview-lines': Math.min(previews.length, 3) }"
+  >
     <span v-for="preview in previews" :key="preview.key" class="batch-preview-line">
       <span class="batch-preview-agent">{{ preview.agent }}</span>
       <span class="batch-preview-text">{{ preview.text }}</span>
@@ -17,7 +23,11 @@ defineProps<{
 <style scoped>
 .batch-preview {
   position: relative;
-  height: 47px;
+  /* Height follows the line count (15px lines + 1px gaps) so short previews sit
+     tight under the header; the transition keeps growth smooth, and the steady
+     3-line case never changes height at all. */
+  height: calc(var(--preview-lines, 1) * 16px - 1px);
+  transition: height 180ms cubic-bezier(.22, 1, .36, 1);
   margin: 0 19px 6px;
   overflow: hidden;
   display: flex;
@@ -54,10 +64,11 @@ defineProps<{
 .activity-preview-leave-active { position: absolute; left: 0; right: 0; top: 0; }
 
 @media (max-width: 520px) {
-  .batch-preview { height: 31px; }
+  .batch-preview { height: calc(min(var(--preview-lines, 1), 2) * 16px - 1px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .batch-preview,
   .activity-preview-enter-active,
   .activity-preview-leave-active,
   .activity-preview-move { transition: none; }

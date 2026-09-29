@@ -109,7 +109,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .message-images { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 220px)); gap: 8px; }
 .message-images a { min-width: 0; display: block; border-radius: 5px; overflow: hidden; background: var(--input); }
 .message-images img { width: 100%; max-height: 260px; display: block; object-fit: contain; }
-.stream-notice { min-height: 24px; margin: 0 0 3px; padding: 4px 8px 4px 6px; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: 6px; border-radius: 3px; color: var(--muted); background: color-mix(in srgb, var(--panel) 46%, transparent); transition: background .12s ease; }
+.stream-notice { min-height: 24px; margin: 0 0 22px; padding: 4px 8px 4px 6px; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: 6px; border-radius: 3px; color: var(--muted); background: color-mix(in srgb, var(--panel) 46%, transparent); transition: background .12s ease; }
 .stream-notice:hover { background: color-mix(in srgb, var(--panel) 68%, transparent); }
 .stream-notice > svg { width: 12px; height: 12px; margin-top: 2px; color: var(--muted); opacity: .72; }
 .stream-notice .notice-content { min-width: 0; }
@@ -151,8 +151,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .markdown blockquote { padding-left: 12px; border-left: 2px solid var(--warm); color: var(--muted); }
 .activity-batch { margin: 0 0 20px; color: var(--muted); }
 .message + .activity-batch { margin-top: -8px; }
-.activity-batch + .stream-notice { margin-top: -10px; }
-.stream-notice + .activity-batch { margin-top: 9px; }
+/* Notices share the normal block rhythm (22px); only consecutive notices stack tight (3px). */
+.stream-notice + .stream-notice { margin-top: -19px; }
 .batch-header, .turn-header { min-height: 28px; overflow: hidden; cursor: pointer; list-style: none; font: 500 10px/1 'Fira Code', monospace; text-transform: uppercase; white-space: nowrap; }
 .turn-header, .batch-heading { display: flex; align-items: center; gap: 5px; }
 .batch-header { min-height: 32px; padding: 0 7px; border: 1px solid transparent; border-radius: 3px; transition: background .14s ease, border-color .14s ease; }
