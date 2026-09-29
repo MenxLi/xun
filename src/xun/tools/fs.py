@@ -257,13 +257,22 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
     return "OK"
 
 @tool_attr(name="request_image", required_capabilities=["vision"])
-def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
+def fs_request_image(
+    ctx: Context,
+    src: str,
+    crop: Optional[tuple[float, float, float, float]] = None,
+) -> Literal["OK"]:
     """
-    You can request an image using the `request_image` tool.
+    Request an image.
     The input can be a single local image path or URL.
 
-    The image will be added to the conversation as a user message with an empty text content.
+    The image will be added to the conversation as a user message. 
     If the image is too large, it will be resized automatically.
+
+    Optional processing:
+    - crop: relative region of interest as (x, y, w, h), each in [0, 1] of the
+      original size. e.g. crop=(0.0, 0.5, 1.0, 0.5) keeps the bottom half.
+      For details, use a tight crop; the cropped area keeps its original pixels.
 
     Call this tool whenever:
     - The request depends on visual details
@@ -294,16 +303,29 @@ def fs_request_image(ctx: Context, src: str) -> Literal["OK"]:
     
     original_size = image.size
 
+    if crop is not None:
+        x, y, w, h = crop
+        if not (0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 - x and 0 < h <= 1 - y):
+            raise ValueError(
+                f"Invalid crop {crop}: must be relative (x, y, w, h) in [0, 1], "
+                f"with w, h > 0 and x + w <= 1, y + h <= 1."
+            )
+        W, H = image.size
+        image = image.crop((int(x * W), int(y * H), round((x + w) * W), round((y + h) * H)))
+
+    # Safety cap on what gets sent to the model, applied after cropping.
     if max(image.size) > MAX_IMAGE_SIDE:
         scale = MAX_IMAGE_SIDE / max(image.size)
-        new_size = (int(image.size[0] * scale), int(image.size[1] * scale))
+        new_size = (max(1, int(image.size[0] * scale)), max(1, int(image.size[1] * scale)))
         image = image.resize(new_size)
 
-    defer_tool_image(
-        ctx, src, 
-        msg=f"[Tool request_image] Image size: {image.size}" + 
-            f", Resized from: {original_size}" if original_size != image.size else ""
-        )
+    msg = f"[Tool request_image] Image size: {image.size}"
+    if crop is not None:
+        msg += f", Crop: {crop}"
+    if original_size != image.size:
+        msg += f", Processed from: {original_size}"
+
+    defer_tool_image(ctx, image, msg=msg)
     return "OK"
 
 @tool_attr(name="glob")

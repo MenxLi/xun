@@ -36,10 +36,40 @@ class ConversationImageInputTest(unittest.TestCase):
         agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
 
         self.assertEqual([message["role"] for message in conversation.messages], ["tool", "user"])
-        self.assertEqual(
-            cast(list[dict[str, Any]], conversation.messages[-1]["content"])[0]["image_url"]["url"],
-            "https://example.com/chart.png",
-        )
+        parts = cast(list[dict[str, Any]], conversation.messages[-1]["content"])
+        url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
+        # The processed image (not the original URL) is attached as a data URL.
+        self.assertTrue(url.startswith("data:image/png;base64,"))
+        image = Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1])))
+        self.assertEqual(image.size, (2, 2))
+
+    def test_request_image_crop(self) -> None:
+        conversation = Conversation()
+        agent = SimpleNamespace(hooks=Hooks(), conversation=conversation)
+        context = ToolCallContext(agent, "request_image", None)
+        output = BytesIO()
+        Image.new("RGB", (100, 100), "blue").save(output, format="PNG")
+        response = SimpleNamespace(content=output.getvalue(), raise_for_status=lambda: None)
+
+        def sent_image() -> Image.Image:
+            conversation.add_tool_result("call_1", Result.Ok("OK"))
+            agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
+            parts = cast(list[dict[str, Any]], conversation.messages[-1]["content"])
+            url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
+            return Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1])))
+
+        with patch("requests.get", return_value=response):
+            # crop bottom-left quarter -> original pixels of a 50x50 region
+            self.assertEqual(fs_request_image(context, "https://example.com/chart.png", crop=(0.0, 0.5, 0.5, 0.5)), "OK")
+        self.assertEqual(sent_image().size, (50, 50))
+
+        with patch("requests.get", return_value=response):
+            self.assertEqual(fs_request_image(context, "https://example.com/chart.png", crop=(0.25, 0.25, 0.5, 0.5)), "OK")
+        self.assertEqual(sent_image().size, (50, 50))
+
+        for bad_crop in [(0.5, 0.5, 0.6, 0.5), (0.0, 0.0, 0.0, 0.5), (-0.1, 0.0, 0.5, 0.5)]:
+            with self.assertRaises(ValueError), patch("requests.get", return_value=response):
+                fs_request_image(context, "https://example.com/chart.png", crop=bad_crop)
 
     def test_render_history_as_html_expands_json_tool_result_content(self) -> None:
         conversation = Conversation()
