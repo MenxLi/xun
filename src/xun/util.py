@@ -1,6 +1,7 @@
 
 import os
 import sys
+import json
 import base64
 import binascii
 import fnmatch
@@ -136,6 +137,23 @@ def parse_bool(name: str) -> bool | None:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return None
+
+def parse_list_str(value: str) -> list | None:
+    """
+    Parse a string a model may emit in place of a JSON array for sequence arguments.
+    Accepts JSON ('["a", "b"]') or comma-separated ('a, b') form; returns None otherwise.
+    """
+    s = value.strip()
+    if not s:
+        return None
+    if s.startswith("["):
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, list) else None
+    parts = [item.strip() for item in s.split(",") if item.strip()]
+    return parts or None
 
 def to_json_object(
     obj: object, 

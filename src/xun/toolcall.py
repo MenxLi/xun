@@ -1,16 +1,18 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import json
+from types import UnionType
 from typing import (
-    Callable, Any, Optional, Sequence, 
-    get_origin, cast, get_type_hints, 
+    Annotated, Callable, Any, Optional, Sequence, 
+    Union, get_args, get_origin, cast, get_type_hints, 
     TYPE_CHECKING
 )
 from functools import wraps
 import inspect
 from openai.types.chat import ChatCompletionToolParam
-from pydantic import BaseModel, ConfigDict, ValidationError, create_model
+from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError, create_model
 from .types import ModelCapabilityType
+from .util import parse_list_str
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -170,6 +172,34 @@ class Function:
             return self.func(**validated.model_dump())
 
 
+def _sequence_coercer(is_tuple: bool):
+    """Accept sequence-shaped strings (and lists for tuples) for list/tuple tool args."""
+    def coerce(value: Any) -> Any:
+        if isinstance(value, str):
+            parsed = parse_list_str(value)
+            if parsed is not None:
+                return tuple(parsed) if is_tuple else parsed
+        elif is_tuple and isinstance(value, list):
+            return tuple(value)
+        return value
+    return BeforeValidator(coerce)
+
+def _tolerant_sequence_type(param_type: Any) -> Any:
+    """Wrap list/tuple hints (incl. inside Optional) so stringified arrays are accepted.
+    Unions with a plain str member are left alone: the string there is intentional input."""
+    origin = get_origin(param_type)
+    if origin in (list, tuple):
+        return Annotated[param_type, _sequence_coercer(origin is tuple)]
+    if origin is Union or origin is UnionType:
+        args = get_args(param_type)
+        if str in args:
+            return param_type
+        wrapped = tuple(_tolerant_sequence_type(arg) for arg in args)
+        if wrapped == args:
+            return param_type
+        return Union[wrapped]
+    return param_type
+
 def _build_args_model_from_function(func: Callable, skip_keys: list[str] = []) -> type[BaseModel]:
     sig = inspect.signature(func)
     type_hints = get_type_hints(func)
@@ -185,7 +215,7 @@ def _build_args_model_from_function(func: Callable, skip_keys: list[str] = []) -
             param_type = Any
 
         default = ... if param.default is inspect.Parameter.empty else param.default
-        fields[name] = (param_type, default)
+        fields[name] = (_tolerant_sequence_type(param_type), default)
 
     create_fields = cast(dict[str, Any], fields)
     return create_model(  # type: ignore[call-overload]
