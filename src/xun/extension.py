@@ -73,9 +73,9 @@ def _compare_versions(a: str, b: str) -> int:
 
 @dataclass(frozen=True)
 class ExtensionAttr:
-    """A xun version range declared by an extension, both bounds inclusive."""
-    min_version: str | None
-    max_version: str | None
+    """A xun API version range declared by an extension, both bounds inclusive."""
+    api_min_version: str | None
+    api_max_version: str | None
 
     def attach_to[F: Callable](self, fn: F) -> F:
         """Attach this ExtensionAttr to a function."""
@@ -87,11 +87,11 @@ class ExtensionAttr:
         """Extract an ExtensionAttr from a function, if it exists."""
         return getattr(fn, "__xun_extension_attr", None)
 
-def extension_attr(min_version: str | None = None, max_version: str | None = None):
-    """Declare which xun versions an extension supports, on its `setup_extension`.
+def extension_attr(api_min_version: str | None = None, api_max_version: str | None = None):
+    """Declare which xun API versions an extension supports, on its `setup_extension`.
     Outside the range the extension is SKIPPED, not FAILED."""
     def _wrapper[F: Callable](fn: F) -> F:
-        return ExtensionAttr(min_version=min_version, max_version=max_version).attach_to(fn)
+        return ExtensionAttr(api_min_version=api_min_version, api_max_version=api_max_version).attach_to(fn)
     return _wrapper
 
 @dataclass(frozen=True)
@@ -100,8 +100,8 @@ class Extension:
     description: str
     setup: Callable[["ExtensionContext"], None]
     path: Path
-    min_version: str | None = None
-    max_version: str | None = None
+    api_min_version: str | None = None
+    api_max_version: str | None = None
 
     def version_conflict(self) -> str | None:
         """Why the running xun is outside the declared range, or None when it fits.
@@ -110,10 +110,10 @@ class Extension:
         if current is None:
             return None
         violations = []
-        if self.min_version and _compare_versions(current, self.min_version) < 0:
-            violations.append(f">= {self.min_version}")
-        if self.max_version and _compare_versions(current, self.max_version) > 0:
-            violations.append(f"<= {self.max_version}")
+        if self.api_min_version and _compare_versions(current, self.api_min_version) < 0:
+            violations.append(f">= {self.api_min_version}")
+        if self.api_max_version and _compare_versions(current, self.api_max_version) > 0:
+            violations.append(f"<= {self.api_max_version}")
         if not violations:
             return None
         return f"requires xun {', '.join(violations)}, running {current}"
@@ -180,8 +180,8 @@ def _distill(name: str, location: Path) -> ScanItem:
             description = doc.splitlines()[0] if doc else "",
             setup = cast("Callable[[ExtensionContext], None]", setup),
             path = path,
-            min_version = attr.min_version if attr else None,
-            max_version = attr.max_version if attr else None,
+            api_min_version = attr.api_min_version if attr else None,
+            api_max_version = attr.api_max_version if attr else None,
         )
         conflict = ext.version_conflict()
         if conflict:

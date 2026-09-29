@@ -45,7 +45,7 @@ Declare the xun versions an extension supports on the entry function; both bound
 """Needs a recent xun."""
 from xun import ExtensionContext, extension_attr
 
-@extension_attr(min_version="1.2", max_version="2.0")
+@extension_attr(api_min_version="1.2", api_max_version="2.0")
 def setup_extension(ctx: ExtensionContext) -> None:
     ...
 ```

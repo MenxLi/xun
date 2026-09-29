@@ -255,7 +255,7 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
 
 GATED = """
 from xun import extension_attr
-@extension_attr(min_version='{lo}', max_version='{hi}')
+@extension_attr(api_min_version='{lo}', api_max_version='{hi}')
 def setup_extension(ctx): ctx.agent.state['gated'] = True
 """
 
@@ -267,7 +267,7 @@ class VersionGateTest(_ExtensionsTestBase):
         self._write_gated()
         with patch.object(ext_mod, "xun_version", return_value=None):
             ext = default_loader.imported()[0]
-        self.assertEqual((ext.min_version, ext.max_version), ("2.0", "3.0"))
+        self.assertEqual((ext.api_min_version, ext.api_max_version), ("2.0", "3.0"))
 
     def test_in_range_loads(self) -> None:
         self._write_gated()
@@ -293,7 +293,7 @@ class VersionGateTest(_ExtensionsTestBase):
 
     def test_version_conflict_matrix(self) -> None:
         ext = lambda lo, hi: ext_mod.Extension(name="e", description="", setup=lambda ctx: None,
-                                               path=Path("e.py"), min_version=lo, max_version=hi)
+                                               path=Path("e.py"), api_min_version=lo, api_max_version=hi)
         with patch.object(ext_mod, "xun_version", return_value="1.2.3"):
             self.assertIsNone(ext(None, None).version_conflict())
             self.assertIsNone(ext("1.0", "2.0").version_conflict())

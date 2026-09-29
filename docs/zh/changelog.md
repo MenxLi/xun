@@ -5,7 +5,7 @@
 ### 扩展系统
 
 - 扩展状态与显示事件：`/extensions` 呈现加载状态，初始化异常可抛出并清晰展示，不再只是静默告警。
-- 版本兼容门槛：`@extension_attr` 声明支持的版本区间，区间外的扩展标记为 `skipped` 且不加载；
+- 版本兼容门槛：`@extension_attr(api_min_version=..., api_max_version=...)` 声明支持的版本区间，区间外的扩展标记为 `skipped` 且不加载；
 - 新增 `xun_version()` 查询当前版本。
 
 ### 核心与钩子
