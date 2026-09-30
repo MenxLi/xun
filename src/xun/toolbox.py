@@ -92,10 +92,10 @@ class ToolBox:
                 agent = Agent.inherit(ctx.agent).system(get_subagent_prompt())
                 if param.name:
                     agent.name = param.name
-                agent.state[self.SUBAGENT_DEPTH_FLAG] = ctx.agent.state.get(self.SUBAGENT_DEPTH_FLAG, 0)
-                if agent.state[self.SUBAGENT_DEPTH_FLAG] >= self.SUBAGENT_MAX_DEPTH:
+                depth = ctx.agent.state.get(self.SUBAGENT_DEPTH_FLAG, 0) + 1
+                agent.state[self.SUBAGENT_DEPTH_FLAG] = depth
+                if depth > self.SUBAGENT_MAX_DEPTH:
                     agent.toolbox.disable_subagent()
-                agent.state[self.SUBAGENT_DEPTH_FLAG] = agent.state.get(self.SUBAGENT_DEPTH_FLAG, 0) + 1
                 return agent
             agent_getter = _agent_getter
         self.register(agent_run_factory(agent_getter))
