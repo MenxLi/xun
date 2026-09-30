@@ -19,7 +19,7 @@ doc-update:
 	xunc . \
 		--env "XUN_AUTO_CONFIRM=true" \
 		--exec "xun --non-interactive \
-			'请按照docs/AGENTS.md的要求，查看源码最近的变动，按照最近更新内容更新文档并优化目前的文档内容，保持整体文档简明扼要'" \
+			'请按照docs/AGENTS.md的要求，查看源码最近的变动，按照最近更新内容更新文档并优化目前的文档内容，保持整体文档简明扼要，如发现之前的错误，请及时修正'" \
 		--name "xun-doc" \
 		--port ""
 
