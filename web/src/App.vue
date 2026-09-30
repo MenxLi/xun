@@ -551,7 +551,10 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="agent-controls">
-          <Bot :size="15" />
+          <span class="agent-icon">
+            <Bot :size="15" />
+            <span v-if="selectedAgentRunning" class="agent-running-dot" :title="t('stream.running')" />
+          </span>
           <select v-model="selectedAgentId" :aria-label="t('app.activeAgent')" :disabled="!agents.length">
             <option v-if="!agents.length" value="" />
             <option v-for="agent in agents" :key="agent.identifier" :value="agent.identifier">{{ agent.name }}</option>
@@ -611,6 +614,9 @@ onBeforeUnmount(() => {
       </div>
 
       <footer class="composer-area">
+        <Transition name="footer-spectrum" type="transition">
+          <span v-if="selectedAgentRunning" class="footer-working-spectrum" aria-hidden="true" />
+        </Transition>
         <InputComposer
           v-model="input"
           :commands="commands"
