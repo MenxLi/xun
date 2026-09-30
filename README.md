@@ -111,6 +111,16 @@ Additional features are shown in [demo.ipynb](demo.ipynb), including:
 
 **Do check out [demo.ipynb](demo.ipynb) for detailed examples.**
 
+<details>
+<summary>Why APIs are all synchronous?</summary>
+
+The APIs are designed to be synchronous deliberately, for the following reasons:
+- Simplifies the mental model for users: synchronous code is easier to type and reason about.
+- Synchronous API does not mean inefficient: the threaded model still optimizes underlying I/O operations.
+- The bottleneck of an agent system usually comes from the underlying LLM call... which are un-scalable anyway.
+
+</details>
+
 ## CLI
 
 Run `xun` in your terminal to start an interactive session.
