@@ -130,7 +130,7 @@ class WebDisplay(DisplayAbstract):
     def __init__(
         self,
         expose_files: bool = False,
-        max_events: int = 2000,
+        max_events: int = 5000,
     ) -> None:
         super().__init__()
         self.expose_files = expose_files
@@ -184,14 +184,6 @@ class WebDisplay(DisplayAbstract):
 
     def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
         super().bind(agent)
-        # running-state broadcasts come from the agent's run hooks, so no
-        # tracking set is needed here; /api/running reads agent.is_running
-        def broadcast_closure(running: bool) -> None:
-            self._broadcast({"type": "execution_state", "agent_id": agent.identifier, "running": running})
-
-        agent.hooks.run_start.add(lambda _args: broadcast_closure(True))
-        agent.hooks.run_end.add(lambda _args: broadcast_closure(False))
-
         def after_command(args: HookArgs.CommandArgs) -> None:
             if args.command.name == "clear":
                 self._store.clear(agent.identifier)
@@ -290,8 +282,7 @@ class WebDisplay(DisplayAbstract):
     def _track(self, agent: "Agent[Agent.T.Init]", run: Callable[[], object]) -> None:
         # the CM keeps _running true across the whole tracked window (including the
         # retry/instruct gaps between entry-point CMs), so cancel() is effective
-        # whenever the UI shows running; execution_state broadcasts are emitted by
-        # the run_start hook registered in bind()
+        # whenever the UI shows running; lifecycle events update the frontend.
         try:
             with agent.cancellable_execution():
                 run()

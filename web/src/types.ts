@@ -48,6 +48,8 @@ export interface ImageDescriptor {
 export type DisplayEvent =
   | EventEnvelope<'AgentBindEvent', Record<string, never>>
   | EventEnvelope<'AgentUnbindEvent', Record<string, never>>
+  | EventEnvelope<'AgentRunningStartEvent', Record<string, never>>
+  | EventEnvelope<'AgentRunningEndEvent', Record<string, never>>
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
   | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number }>
   | ToolCallDisplayEvent
@@ -130,7 +132,6 @@ export interface ModelCapabilities {
 export type ServerMessage = DisplayEvent
   | { type: 'pending_prompt'; data: PendingPrompt }
   | { type: 'prompt_resolved'; prompt_id: string }
-  | { type: 'execution_state'; agent_id: string; running: boolean }
   | { type: 'accepted'; client_id: string }
 
 export type ClientMessage =

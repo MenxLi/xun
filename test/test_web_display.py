@@ -535,13 +535,21 @@ class WebDisplayTest(unittest.TestCase):
         self.agent.command.register(Command(name="slow", description="Blocks until cancelled.", handler=slow_command))
 
         with self.client.websocket_connect("/session/ws", headers={"Authorization": "Bearer test-token"}) as websocket:
+            def receive_event(name: str) -> None:
+                while websocket.receive_json().get("name") != name:
+                    pass
+
             websocket.send_json({"type": "command", "agent_id": "agent-1", "name": "slow"})
-            # the running badge drives the frontend's stop button
+            receive_event("AgentRunningStartEvent")
             self.assertTrue(self._wait_until(lambda: "agent-1" in self.client.get("api/running").json()))
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
             self.assertTrue(self.agent.cancel_called.wait(1))
+            receive_event("AgentRunningEndEvent")
 
         self.assertTrue(self._wait_until(lambda: "agent-1" not in self.client.get("api/running").json()))
+        names = [event.name for event in self.display._store.list()]
+        self.assertIn("AgentRunningStartEvent", names)
+        self.assertIn("AgentRunningEndEvent", names)
 
     def test_pending_prompts_are_restored_and_resolved_per_agent(self) -> None:
         second_agent = _Agent(self.root, "agent-2", "Research")

@@ -10,6 +10,7 @@ from .types import CancelledError
 
 if TYPE_CHECKING:
     from .agent import Agent
+    from .display_abstract import DisplayEventType
     from .hooks import HookArgs, Hooks
 
 
@@ -33,6 +34,8 @@ class AgentRunningStateProtocol(Protocol):
     cancel_event: ChainedEvent
     hooks: "Hooks"
     _running: bool
+
+    def display_event(self, ev: "DisplayEventType") -> None: ...
 
 
 class AgentRunningStateMixin(AgentRunningStateProtocol):
@@ -67,6 +70,7 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         On the idle -> running transition (outermost scope only) this fires
         hooks.run_start; hooks.run_end fires exactly when such a
         scope exits, for any reason."""
+        from .display_abstract import AgentRunningEndEvent, AgentRunningStartEvent
         from .hooks import HookArgs
 
         prev_running = self._running
@@ -77,6 +81,7 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
             if not prev_running:
                 # only fire at real state transitions
                 scope = HookArgs.RunArgs(agent=cast("Agent[Agent.T.Init]", self))
+                self.display_event(AgentRunningStartEvent())
                 self.hooks.run_start.invoke(scope)
             yield
             self.check_cancel()
@@ -89,3 +94,4 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
             self._clear_cancel()
             if scope is not None:
                 self.hooks.run_end.invoke(scope)
+                self.display_event(AgentRunningEndEvent())

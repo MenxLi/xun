@@ -126,8 +126,6 @@ const items = computed<StreamItem[]>(() => {
       current.steps.push({ kind: 'confirm', key: `confirm-${index}`, event: data })
       current.last = data
       addPreview(batch!, data, index, data.payload.prompt)
-    } else if (data.name === 'AgentBindEvent' || data.name === 'AgentUnbindEvent') {
-      return
     } else {
       batch = null
       latestActivities.delete(data.agent.identifier)

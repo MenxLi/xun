@@ -64,6 +64,7 @@ class Display(DisplayAbstract):
             case UserCommandEvent(): ... # Shown by input
             case AgentBindEvent(): self._agent_bind(event)
             case AgentUnbindEvent(): self._agent_unbind(event)
+            case AgentRunningStartEvent() | AgentRunningEndEvent(): ...
             case _: self._unhandled(event)
 
     def _show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:

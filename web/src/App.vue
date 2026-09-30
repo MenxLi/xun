@@ -90,7 +90,13 @@ const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.valu
   ? pendingPrompts.value.filter(prompt => prompt.agent_id === selectedAgentId.value)
   : pendingPrompts.value,
 )
-const streamSize = computed(() => visibleEvents.value.filter(event => event.name !== 'AgentBindEvent' && event.name !== 'AgentUnbindEvent').length + visiblePrompts.value.length)
+const streamEvents = computed(() => visibleEvents.value.filter(event =>
+  event.name !== 'AgentBindEvent'
+  && event.name !== 'AgentUnbindEvent'
+  && event.name !== 'AgentRunningStartEvent'
+  && event.name !== 'AgentRunningEndEvent',
+))
+const streamSize = computed(() => streamEvents.value.length + visiblePrompts.value.length)
 const streamViewKey = computed(() => `${currentSessionPath.value}:${selectedOnly.value ? selectedAgentId.value : '*'}`)
 const selectedAgentTokens = computed(() => {
   for (let i = events.value.length - 1; i >= 0; i--) {
@@ -261,7 +267,7 @@ function applyAgentEvent(event: DisplayEvent) {
     else agents.value[index] = agent
   } else if (event.name === 'AgentUnbindEvent') {
     agents.value = agents.value.filter(item => item.identifier !== agent.identifier)
-  }
+  } else return
   ensureAgentSelection()
 }
 
@@ -346,15 +352,16 @@ function handleServerMessage(payload: ServerMessage) {
     pendingPrompts.value = [...pendingPrompts.value.filter(prompt => prompt.id !== payload.data.id), payload.data]
   } else if (isPromptResolved(payload)) {
     pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== payload.prompt_id)
-  } else if (isExecutionState(payload)) {
+  } else if (payload.name === 'AgentRunningStartEvent' || payload.name === 'AgentRunningEndEvent') {
+    events.value.push(payload)
     const running = new Set(runningAgents.value)
     const cancelling = new Set(cancellingAgents.value)
-    if (payload.running) {
-      running.add(payload.agent_id)
-      cancelling.delete(payload.agent_id)
+    if (payload.name === 'AgentRunningStartEvent') {
+      running.add(payload.agent.identifier)
+      cancelling.delete(payload.agent.identifier)
     } else {
-      running.delete(payload.agent_id)
-      cancelling.delete(payload.agent_id)
+      running.delete(payload.agent.identifier)
+      cancelling.delete(payload.agent.identifier)
     }
     runningAgents.value = running
     cancellingAgents.value = cancelling
@@ -370,10 +377,6 @@ function isPendingPrompt(payload: ServerMessage): payload is Extract<ServerMessa
 
 function isPromptResolved(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'prompt_resolved' }> {
   return 'type' in payload && payload.type === 'prompt_resolved'
-}
-
-function isExecutionState(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'execution_state' }> {
-  return 'type' in payload && payload.type === 'execution_state'
 }
 
 function isAccepted(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'accepted' }> {
@@ -594,7 +597,7 @@ onBeforeUnmount(() => {
 
       <div class="stream-wrap">
       <StickyScroll :key="currentSessionPath" ref="stream" :size="streamSize">
-        <EventStream v-if="visibleEvents.length" :key="streamViewKey" :events="visibleEvents" :markdown="settings.markdown" :running-agents="runningAgents" />
+        <EventStream v-if="streamEvents.length" :key="streamViewKey" :events="streamEvents" :markdown="settings.markdown" :running-agents="runningAgents" />
         <div v-if="visiblePrompts.length" class="prompt-stream">
           <PromptCard
             v-for="prompt in visiblePrompts"

@@ -5,7 +5,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
 from xun import Agent, NullDisplay
-from xun.display_abstract import ConfirmEvent, DisplayAbstract, DisplayEvent, InfoEvent
+from xun.display_abstract import (
+    AgentRunningEndEvent,
+    AgentRunningStartEvent,
+    ConfirmEvent,
+    DisplayAbstract,
+    DisplayEvent,
+    InfoEvent,
+)
 from xun.types import CancelledError
 from xun.workspace import Workspace
 
@@ -123,6 +130,35 @@ class AgentLifecycleTest(unittest.TestCase):
         self.assertTrue(agent.cancel_event.event.is_set())
         with self.assertRaises(CancelledError):
             agent.check_cancel()
+
+    def test_running_events_are_emitted_once_for_nested_scopes(self) -> None:
+        display = _RecordingDisplay()
+        agent = Agent(display=display, workspace=Workspace(workdir=self.workdir)).initialize()
+
+        with agent.cancellable_execution():
+            with agent.cancellable_execution():
+                self.assertTrue(agent.is_running)
+
+        running_events = [
+            event.payload for event in display.events
+            if isinstance(event.payload, (AgentRunningStartEvent, AgentRunningEndEvent))
+        ]
+        self.assertEqual(
+            [type(event) for event in running_events],
+            [AgentRunningStartEvent, AgentRunningEndEvent],
+        )
+        self.assertFalse(agent.is_running)
+
+    def test_running_end_event_is_emitted_on_error(self) -> None:
+        display = _RecordingDisplay()
+        agent = Agent(display=display, workspace=Workspace(workdir=self.workdir)).initialize()
+
+        with self.assertRaisesRegex(RuntimeError, "failed"):
+            with agent.cancellable_execution():
+                raise RuntimeError("failed")
+
+        self.assertIsInstance(display.events[-1].payload, AgentRunningEndEvent)
+        self.assertFalse(agent.is_running)
 
     def test_auto_confirm_emits_confirmation_event(self) -> None:
         display = _RecordingDisplay()

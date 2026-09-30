@@ -181,6 +181,12 @@ class AgentBindEvent(BaseModel):
 class AgentUnbindEvent(BaseModel):
     ...
 
+class AgentRunningStartEvent(BaseModel):
+    ...
+
+class AgentRunningEndEvent(BaseModel):
+    ...
+
 DisplayEventType = (
     ShowHelpEvent
     | ShowToolsEvent
@@ -188,6 +194,8 @@ DisplayEventType = (
     | ShowExtensionsEvent
     | AgentBindEvent
     | AgentUnbindEvent
+    | AgentRunningStartEvent
+    | AgentRunningEndEvent
     | UserCommandEvent
     | UserMessageEvent
     | ModelWorkingEvent
