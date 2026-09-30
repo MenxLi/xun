@@ -259,14 +259,14 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
           <span class="batch-heading">
             <ChevronRight :size="12" class="chevron" />
             <span class="batch-title">{{ item.agents.length === 1 ? item.agents[0].agent.name : t('stream.agentActivity') }}</span>
-            <span v-if="item.agents.length > 1" class="batch-meta">· {{ t('stream.agents', { n: item.agents.length }) }}</span>
-            <span v-if="batchDetailCount(item)" class="batch-meta">· {{ t('stream.details', { n: batchDetailCount(item) }) }}</span>
-            <span v-if="item.agents.length === 1 && item.agents[0].autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ item.agents[0].autoApprovals }}</span>
-            <span v-if="item.agents.length === 1 && item.agents[0].tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.agents[0].tokens!) }} {{ t('app.tokens') }}</span>
             <span v-if="item.agents.some(agent => agent.working)" class="tool-state">
               <Clock3 :size="12" />
               {{ t('stream.running') }}
             </span>
+            <span v-if="item.agents.length > 1" class="batch-meta">· {{ t('stream.agents', { n: item.agents.length }) }}</span>
+            <span v-if="batchDetailCount(item)" class="batch-meta">· {{ t('stream.details', { n: batchDetailCount(item) }) }}</span>
+            <span v-if="item.agents.length === 1 && item.agents[0].autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ item.agents[0].autoApprovals }}</span>
+            <span v-if="item.agents.length === 1 && item.agents[0].tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.agents[0].tokens!) }} {{ t('app.tokens') }}</span>
             <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
           </span>
           <ActivityPreview v-if="item.key === latestBatchKey && item.previews.length" :previews="item.previews" :single="item.agents.length === 1" />
@@ -276,10 +276,10 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
             <summary v-if="item.agents.length > 1" class="turn-header">
               <ChevronRight :size="12" class="chevron" />
               <span class="turn-agent">{{ agent.agent.name }}</span>
+              <span v-if="agent.working" class="tool-state"><Clock3 :size="12" />{{ t('stream.running') }}</span>
               <span v-if="detailCount(agent)">· {{ t('stream.details', { n: detailCount(agent) }) }}</span>
               <span v-if="agent.autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ agent.autoApprovals }}</span>
               <span v-if="agent.tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(agent.tokens) }} {{ t('app.tokens') }}</span>
-              <span v-if="agent.working" class="tool-state"><Clock3 :size="12" />{{ t('stream.running') }}</span>
               <time :title="fullEventTime(agent.last)">{{ eventTime(agent.last) }}</time>
             </summary>
             <div class="turn-steps">

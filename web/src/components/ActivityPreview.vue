@@ -61,7 +61,12 @@ defineProps<{
 }
 .activity-preview-enter-from { opacity: 0; transform: translateY(16px); }
 .activity-preview-leave-to { opacity: 0; transform: translateY(-16px); }
-.activity-preview-leave-active { position: absolute; left: 0; right: 0; top: 0; }
+.activity-preview-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc((var(--preview-lines, 1) - 1) * 16px);
+}
 
 @media (max-width: 520px) {
   .batch-preview { height: calc(min(var(--preview-lines, 1), 2) * 16px - 1px); }
