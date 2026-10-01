@@ -54,6 +54,32 @@ Output:
 - Include: (1) what you completed, (2) key findings, (3) assumptions or blockers.
 """
 
+HANDOFF_PROMPT = """\
+Now temporarily suspend the current task and prepare for handoff.
+You will hand off / fork the task to another agent. 
+Package everything into {file_name}.zip so the receiver can continue with zero prior context.
+If you lack the tools to create a zip file, say so honestly instead of pretending it is done.
+
+Package structure:
+- AGENT_HANDOFF_README.md at the zip root — the entry point as an index. 
+  It must cover the essentials (in any form or order):
+  1. Task: the original request, the goal, and the done criteria.
+  2. State: what is done, what remains, known issues or blockers.
+  3. Next steps: how to continue or verify the work.
+- Details need not live in the README. For complex tasks, organize material into
+  separate files (notes, logs, data, source) and link them from the README, so the
+  receiver can read on demand instead of upfront. Simple tasks: one file is fine.
+- Every referenced file must be in the package or the README must say where to get it.
+- Only files the receiver truly needs, at their original relative paths.
+
+Size budget:
+- Target < 10 MB; with many files keep < 100 MB; exceed only when strictly necessary and explain why in the README.
+- Skip bulky or regenerable content (dependencies, build artifacts, caches, large media or datasets) — reference how to obtain it instead.
+
+Before finishing, verify the zip contains AGENT_HANDOFF_README.md at its root and stays within the size budget.
+When the zip is verified, report its path and size, then stop and wait for the user.
+"""
+
 def get_system_prompt() -> str:
     """Get the system prompt for the main agent."""
     return SYSTEM_PROMPT
@@ -61,3 +87,9 @@ def get_system_prompt() -> str:
 def get_subagent_prompt() -> str:
     """Get the system prompt for the worker agents."""
     return SUBAGENT_PROMPT
+
+def get_handoff_prompt(file_name: str) -> str:
+    """Get the handoff prompt with the specified file name."""
+    if file_name.endswith(".zip"):
+        file_name = file_name[:-4]
+    return HANDOFF_PROMPT.format(file_name=file_name)

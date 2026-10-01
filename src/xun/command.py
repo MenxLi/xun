@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Callable, Any, cast
 import inspect
 from .types import CancelledError
+from .prompt import get_handoff_prompt
+import datetime
 from pathlib import Path
 if TYPE_CHECKING:
     from .agent import Agent
@@ -331,9 +333,25 @@ def default_commands_with_fs() -> list[Command]:
 
         html = agent.display.render_history_as_html(title=f"xun · {agent.name}")
         aim_path.write_text(html, encoding="utf-8")
+    
+    def _handoff(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
+        """Prepare for handoff by packaging the current task into a zip file.
+        If no file name is given, defaults to handoff_<timestamp>.zip.
+        Usage:
+            handoff [file_name]
+        """
+        if not arguments:
+            file_name = f"handoff_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.zip"
+        else:
+            assert len(arguments) == 1, "Please provide exactly one file name for the handoff package."
+            file_name = arguments[0]
+        agent.workspace.resolve(Path(file_name), raise_on_invalid=True)
+        prompt = get_handoff_prompt(file_name)
+        agent.instruct(prompt, _emit_event=False).execute()
 
     return [
         Command(name="render", handler=_render_handler),
         Command(name="save", handler=_save_handler),
         Command(name="load", handler=_load_handler),
+        Command(name="handoff", handler=_handoff)
     ]
