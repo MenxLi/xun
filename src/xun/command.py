@@ -301,8 +301,10 @@ def default_commands_with_fs() -> list[Command]:
             agent.error("Please provide a file path to save the rendered HTML.")
             return
         assert len(arguments) == 1, "Please provide exactly one file path to save the rendered HTML."
-        html = agent.display.render_history_as_html(title=f"xun · {agent.name}")
         aim_path = Path(arguments[0])
+        agent.workspace.resolve(aim_path, raise_on_invalid=True)
+
+        html = agent.display.render_history_as_html(title=f"xun · {agent.name}")
         aim_path.write_text(html, encoding="utf-8")
 
     return [
