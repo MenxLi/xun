@@ -88,6 +88,16 @@ INLINE_SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'none'",
 }
 
+# HTML previews render as a document in the preview pane: same-origin CSS,
+# images and fonts must load so multi-file pages work, scripts stay banned.
+HTML_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": (
+        "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline';"
+        " font-src 'self' data:; script-src 'none'"
+    ),
+}
+
 MAX_ARCHIVE_SIZE = 1_073_741_824  # 1 GiB hard cap on the packed archive
 MAX_PREVIEW_TEXT_SIZE = 1_000_000  # 1 MB cap on inline text previews
 MAX_PREVIEW_IMAGE_SIZE = 20_971_520  # 20 MiB cap on inline image previews
@@ -242,10 +252,10 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
             "modified_at": file_stat.st_mtime,
         }
 
-    @router.get("/api/files/{agent_id}/content")
-    async def file_content(agent_id: str, path: str) -> Response:
+    @router.get("/api/files/{agent_id}/content/{file_path:path}")
+    async def file_content(agent_id: str, file_path: str) -> Response:
         """Serve file bytes for the preview pane; new formats only extend this dispatch."""
-        target = resolve_path(agent_getter(agent_id), path)
+        target = resolve_path(agent_getter(agent_id), file_path)
         if not target.is_file():
             raise HTTPException(404, "File not found")
         media_type = _media_type(target)
@@ -257,6 +267,10 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
             if target.stat().st_size > MAX_PREVIEW_DOCUMENT_SIZE:
                 raise HTTPException(413, "Document is too large to preview")
             return FileResponse(target, media_type=media_type, headers=INLINE_SECURITY_HEADERS)
+        if media_type == "text/html":
+            if target.stat().st_size > MAX_PREVIEW_DOCUMENT_SIZE:
+                raise HTTPException(413, "Document is too large to preview")
+            return FileResponse(target, media_type=media_type, headers=HTML_SECURITY_HEADERS)
         if media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES:
             if target.stat().st_size > MAX_PREVIEW_TEXT_SIZE:
                 raise HTTPException(413, "File is too large to preview")

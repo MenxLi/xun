@@ -64,7 +64,7 @@ watch(() => props.entry.path, () => {
       <div v-if="error" class="preview-error">{{ error }}</div>
       <template v-else-if="rendered && render">
         <MarkdownText v-if="render === 'markdown'" class="preview-rendered" :content="text" :enabled="!loading" />
-        <iframe v-else class="preview-document" :src="contentUrl" sandbox="" :title="t('preview.previewOf', { name: entry.name })" />
+        <iframe v-else class="preview-document" :src="contentUrl" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" />
       </template>
       <pre v-else-if="highlighted" v-html="highlighted" />
       <pre v-else>{{ loading ? t('preview.loading') : text }}</pre>

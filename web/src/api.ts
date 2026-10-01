@@ -95,9 +95,9 @@ export const api = {
   fileInfo: (agentId: string, path: string) =>
     request<FileInfo>(appUrl(`/api/files/${encodeURIComponent(agentId)}/info?${query({ path })}`)),
   contentUrl: (agentId: string, path: string) =>
-    appUrl(`/api/files/${encodeURIComponent(agentId)}/content?${query({ path })}`),
+    appUrl(`/api/files/${encodeURIComponent(agentId)}/content/${path.split('/').map(encodeURIComponent).join('/')}`),
   textContent: (agentId: string, path: string) =>
-    fetchOk(appUrl(`/api/files/${encodeURIComponent(agentId)}/content?${query({ path })}`)).then(response => response.text()),
+    fetchOk(api.contentUrl(agentId, path)).then(response => response.text()),
   downloadUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/download?${query({ path })}`),
   archiveUrl: (agentId: string, path: string) =>

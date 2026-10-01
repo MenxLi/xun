@@ -181,10 +181,7 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertEqual(response.json(), {"uploaded": ["note.txt"]})
 
-        preview = self.client.get(
-            "api/files/agent-1/content",
-            params={"path": "note.txt"},
-        )
+        preview = self.client.get("api/files/agent-1/content/note.txt")
         self.assertEqual(preview.text, "hello web")
         self.assertTrue(preview.headers["content-type"].startswith("text/plain"))
         self.assertEqual(preview.headers["x-content-type-options"], "nosniff")
@@ -300,24 +297,32 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(media_types["Makefile"], "text/plain")
 
         # images stream inline with sandboxing headers
-        image = self.client.get("api/files/agent-1/content", params={"path": "pic.png"})
+        image = self.client.get("api/files/agent-1/content/pic.png")
         self.assertEqual(image.status_code, 200)
         self.assertEqual(image.headers["content-type"], "image/png")
         self.assertEqual(image.content, png)
         self.assertEqual(image.headers["content-security-policy"], "default-src 'none'")
 
-        pdf_preview = self.client.get("api/files/agent-1/content", params={"path": "report.pdf"})
+        pdf_preview = self.client.get("api/files/agent-1/content/report.pdf")
         self.assertEqual(pdf_preview.status_code, 200)
         self.assertEqual(pdf_preview.headers["content-type"], "application/pdf")
         self.assertEqual(pdf_preview.content, pdf)
 
+        # html renders as a document: same-origin styles/images load, scripts stay banned
+        (self.root / "page.html").write_text("<main>hi</main>", encoding="utf-8")
+        html_preview = self.client.get("api/files/agent-1/content/page.html")
+        self.assertEqual(html_preview.status_code, 200)
+        self.assertEqual(html_preview.headers["content-type"], "text/html; charset=utf-8")
+        self.assertIn("style-src 'self'", html_preview.headers["content-security-policy"])
+        self.assertIn("script-src 'none'", html_preview.headers["content-security-policy"])
+
         # structured non-text/* formats still preview as text
-        json_preview = self.client.get("api/files/agent-1/content", params={"path": "data.json"})
+        json_preview = self.client.get("api/files/agent-1/content/data.json")
         self.assertEqual(json_preview.status_code, 200)
         self.assertEqual(json_preview.text, '{"ok": true}')
 
         # unknown types are refused for preview but still downloadable
-        refused = self.client.get("api/files/agent-1/content", params={"path": "blob.bin"})
+        refused = self.client.get("api/files/agent-1/content/blob.bin")
         self.assertEqual(refused.status_code, 415)
         download = self.client.get("api/files/agent-1/download", params={"path": "blob.bin"})
         self.assertEqual(download.status_code, 200)
@@ -360,16 +365,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(missing.status_code, 404)
 
     def test_rejects_paths_outside_workdir(self) -> None:
-        response = self.client.get(
-            "api/files/agent-1/content",
-            params={"path": "../secret.txt"},
-        )
+        response = self.client.get("api/files/agent-1/content/%2E%2E/secret.txt")
         self.assertEqual(response.status_code, 400)
 
-        missing = self.client.get(
-            "api/files/agent-1/content",
-            params={"path": "missing.txt"},
-        )
+        missing = self.client.get("api/files/agent-1/content/missing.txt")
         self.assertEqual(missing.status_code, 404)
 
     def test_serve_directory_as_temporary_website(self) -> None:
