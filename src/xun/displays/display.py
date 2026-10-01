@@ -1,6 +1,7 @@
 import hashlib, datetime, re
 import readline     # noqa
 import threading
+from typing import Callable
 import rich
 import rich.box
 import rich.table
@@ -16,13 +17,33 @@ class Display(DisplayAbstract):
     def __init__(self, event_buffer_size: int = 1000):
         self.console = rich.console.Console()
         self.lock = threading.Lock()
+        self.input_lock = threading.RLock()
+        self._input_active = False
+        self._input_prompt = ""
         self.set_event_buffer_size(event_buffer_size)
 
     def _print(self, *args, **kwargs):
         with self.lock:
+            if self._input_active:
+                self.console.file.write("\r\033[2K")
             if isinstance(args[0] if args else None, str):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
+            if self._input_active:
+                self.console.file.write(self._input_prompt + readline.get_line_buffer())
+                self.console.file.flush()
+
+    def input(self, prompt: str = "") -> str:
+        with self.input_lock:
+            with self.lock:
+                self._input_prompt = prompt.replace("\001", "").replace("\002", "")
+                self._input_active = True
+            try:
+                return input(prompt)
+            finally:
+                with self.lock:
+                    self._input_active = False
+                    self._input_prompt = ""
 
     def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
         choices = request.choices
@@ -32,18 +53,32 @@ class Display(DisplayAbstract):
             choices_str += f"\n  [{extra_choice_idx}] Other (enter your own choice)"
         full_msg = f"{request.message}\n--- Choices ---\n{choices_str}"
         default_idx = choices.index(request.default) + 1 if request.default in choices else None
-        with self.lock:
-            if request.message:
-                _note(self.console, full_msg, request.title, request.subtitle)
+        input_acquired = self.input_lock.acquire(blocking=False)
+        if not input_acquired:
+            waiting_msg = f"{request.prompt}\n--- Choices ---\n{choices_str}\n[dim]Waiting for current input to finish.[/dim]"
+            self._print(rich.panel.Panel(
+                waiting_msg,
+                border_style="yellow",
+                title=f"[bold yellow]{request.title or 'Confirmation required'}[/bold yellow]",
+                subtitle=f"[dim]{request.subtitle}[/dim]" if request.subtitle else None,
+            ))
+            self.input_lock.acquire()
+        try:
+            with self.lock:
+                if request.message:
+                    _note(self.console, full_msg, request.title, request.subtitle)
             choice_idx = _choose_from_int(
                 self.console, 
                 prompt = request.prompt, 
                 n_choices=len(choices) + (1 if request.allow_extra else 0),
-                default=default_idx)
+                default=default_idx,
+                input_func=self.input)
             if request.allow_extra and choice_idx == extra_choice_idx:
-                extra_choice = _ask_text(self.console, "Enter your choice")
+                extra_choice = _ask_text(self.console, "Enter your choice", self.input)
                 return extra_choice
             return choices[choice_idx - 1]
+        finally:
+            self.input_lock.release()
         
 
     def on_event(self, event: DisplayEvent):
@@ -216,14 +251,19 @@ def _rl_prompt(console: rich.console.Console, markup: str) -> str:
     ).rstrip("\n")
     return _ANSI_RE.sub(lambda m: "\x01" + m.group(0) + "\x02", rendered)
 
-def _ask_text(console: rich.console.Console, prompt: str) -> str:
-    return input(_rl_prompt(console, prompt + " "))
+def _ask_text(
+    console: rich.console.Console,
+    prompt: str,
+    input_func: Callable[[str], str] | None = None,
+) -> str:
+    return (input_func or input)(_rl_prompt(console, prompt + " "))
 
 def _choose_from_int(
     console: rich.console.Console, 
     prompt: str, 
     n_choices: int,
     default: Optional[int] = None,
+    input_func: Callable[[str], str] | None = None,
     ) -> int:
     if default is None:
         default = 1
@@ -231,7 +271,7 @@ def _choose_from_int(
     choices_str = "/".join(sorted(valid, key=int))
     prompt_str = _rl_prompt(console, f"{prompt} [bold magenta][{choices_str}][/bold magenta] [bold cyan]({default})[/bold cyan]: ")
     while True:
-        answer = input(prompt_str).strip() or str(default)
+        answer = (input_func or input)(prompt_str).strip() or str(default)
         if answer in valid:
             break
         console.print("[red]Please select one of the available options[/red]")

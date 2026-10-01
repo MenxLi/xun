@@ -1,6 +1,9 @@
 import unittest
+import threading
+import io
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+import rich.console
 
 from xun.display_abstract import (
     AgentInfo,
@@ -17,6 +20,87 @@ from xun.displays.display import Display
 
 
 class DisplayTest(unittest.TestCase):
+    def test_events_render_and_redraw_during_console_input(self) -> None:
+        display = Display()
+        output = io.StringIO()
+        display.console = rich.console.Console(file=output, force_terminal=True)
+        input_started = threading.Event()
+        release_input = threading.Event()
+
+        def blocking_input(_prompt: str) -> str:
+            input_started.set()
+            self.assertTrue(release_input.wait(1))
+            return "hello"
+
+        with (
+            patch("builtins.input", side_effect=blocking_input),
+            patch("xun.displays.display.readline.get_line_buffer", return_value="partial"),
+        ):
+            input_thread = threading.Thread(target=display.input, args=(">>> ",))
+            input_thread.start()
+            self.assertTrue(input_started.wait(1))
+
+            event_thread = threading.Thread(target=display.on_event, args=(_ev(ModelMessageEvent(
+                model_call_id="m1", content="background", total_tokens=1,
+            )),))
+            event_thread.start()
+            event_thread.join(1)
+
+            self.assertFalse(event_thread.is_alive())
+            self.assertTrue(output.getvalue().endswith(">>> partial"))
+
+            release_input.set()
+            input_thread.join(1)
+
+        self.assertFalse(input_thread.is_alive())
+
+    def test_confirm_is_shown_while_console_input_is_active(self) -> None:
+        display = Display()
+        output = io.StringIO()
+        display.console = rich.console.Console(file=output, force_terminal=True, width=100)
+        input_started = threading.Event()
+        release_input = threading.Event()
+        input_calls = 0
+
+        def controlled_input(_prompt: str) -> str:
+            nonlocal input_calls
+            input_calls += 1
+            if input_calls == 1:
+                input_started.set()
+                self.assertTrue(release_input.wait(1))
+                return "draft"
+            return "1"
+
+        request = Display.ChoiceRequest(
+            agent_info=AGENT,
+            prompt="Allow command?",
+            choices=["Yes", "No"],
+        )
+        choice: list[str] = []
+        with (
+            patch("builtins.input", side_effect=controlled_input),
+            patch("xun.displays.display.readline.get_line_buffer", return_value="partial"),
+        ):
+            input_thread = threading.Thread(target=display.input, args=(">>> ",))
+            input_thread.start()
+            self.assertTrue(input_started.wait(1))
+
+            confirm_thread = threading.Thread(target=lambda: choice.append(display.get_choice(request)))
+            confirm_thread.start()
+            confirm_thread.join(0.05)
+
+            self.assertTrue(confirm_thread.is_alive())
+            self.assertIn("Allow command?", output.getvalue())
+            self.assertIn("Waiting for current input to finish.", output.getvalue())
+            self.assertTrue(output.getvalue().endswith(">>> partial"))
+
+            release_input.set()
+            input_thread.join(1)
+            confirm_thread.join(1)
+
+        self.assertEqual(choice, ["Yes"])
+        self.assertFalse(confirm_thread.is_alive())
+
     def test_running_events_are_ignored(self) -> None:
         display = Display()
         display._unhandled = Mock()
