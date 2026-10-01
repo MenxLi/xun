@@ -153,7 +153,7 @@ class HistoryCommandTest(unittest.TestCase):
         with TemporaryDirectory() as directory, patch(
             "xun.store.Store", side_effect=lambda: Store(Path(directory))
         ):
-            commands = CommandRegistry().with_defaults()
+            commands = CommandRegistry().with_fs_extra_defaults()
             commands.get("save").invoke(agent)  # type: ignore[arg-type]
             agent.conversation.clear()
             commands.get("load").invoke(agent, ["latest"])  # type: ignore[arg-type]

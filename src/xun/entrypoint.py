@@ -165,6 +165,7 @@ def _web_display_session(
             display=display,
             workdir=session_workdir,
         )
+        agent.command.with_fs_extra_defaults()
         try:
             yield mount_path, display
         finally:
@@ -172,7 +173,6 @@ def _web_display_session(
     finally:
         if temporary_workspace is not None:
             temporary_workspace.cleanup()
-
 
 def web_session(
     workdir: Path | str | None = None,
@@ -232,24 +232,11 @@ def cli_commands() -> list[Command]:
             inst = _parse_message_input(text)
             _execute_instruction(inst, agent)
 
-    def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
-        if not arguments:
-            agent.error("Please provide a file path to save the rendered HTML.")
-            return
-        html = agent.display.render_history_as_html(title=f"xun · {agent.name}")
-        aim_path = Path(arguments[0])
-        aim_path.write_text(html, encoding="utf-8")
-    
     return [
         Command(
             name="long",
             description="Enter multi-line input mode. Optionally specify an end-of-line marker (default is '.').",
             handler=_long_handler
-        ),
-        Command(
-            name="render",
-            description="Render the conversation history as HTML, output to the specified file path.",
-            handler=_render_handler
         ),
         Command(
             name="exit",
@@ -274,6 +261,7 @@ def main():
         default_commands=True, 
         )
 
+    agent.command.with_fs_extra_defaults()
     agent.command.register(*cli_commands())
     is_tty = sys.stdin.isatty() and sys.stdout.isatty()
     try:

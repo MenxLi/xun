@@ -10,6 +10,7 @@ from xun.entrypoint import main_container, main_serve, web_session
 class _Agent:
     def __init__(self, workdir: Path) -> None:
         self.workspace = type("Workspace", (), {"workdir": workdir})()
+        self.command = Mock()
         self.finalized = False
 
     def finalize(self) -> None:

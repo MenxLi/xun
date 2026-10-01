@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Callable, Any, cast
 import inspect
 from .types import CancelledError
+from pathlib import Path
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -133,9 +134,13 @@ class CommandRegistry:
     def with_defaults(self):
         self.register(*default_commands())
         return self
+    
+    def with_fs_extra_defaults(self):
+        """Register default commands with extra filesystem capabilities (when allow file read/write)."""
+        self.register(*default_commands_with_fs())
+        return self
 
 def default_commands() -> list[Command]:
-    from .store import Store
     from .compact import compact_conversation
     from .display_abstract import ShowExtensionsEvent, ShowHistoryEvent, ShowToolsEvent
     
@@ -206,40 +211,6 @@ def default_commands() -> list[Command]:
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
 
-    def _save_handler(agent: "Agent[Agent.T.Init]") -> None:
-        store = Store()
-        aim_dir = store.next_history_store()
-        aim_dir.mkdir()
-        agent.conversation.dump(aim_dir / "conversation.json")
-        agent.info(f"Dumped to {aim_dir}")
-
-    def _load_handler(agent: "Agent[Agent.T.Init]", idx: list[str]) -> None:
-        store = Store()
-        if not idx:
-            agent.error("Please provide an index or 'latest' to load history.")
-            return
-        target = idx[0]
-        if target.isdigit():
-            aim_dir = store.get_history_store(target)
-            if not aim_dir:
-                agent.error(f"History {target} not found.")
-                return
-        elif target == "latest":
-            latest_dir = store.latest_history_store()
-            if latest_dir is None:
-                agent.info("No history found.")
-                return
-            aim_dir = latest_dir
-        else:
-            agent.error(f"Invalid index '{target}'. Use a number or 'latest'.")
-            return
-        conv_file = aim_dir / "conversation.json"
-        if not conv_file.exists():
-            agent.error(f"No conversation history found in {conv_file}.")
-            return
-        agent.conversation.load(conv_file)
-        agent.info(f"Loaded from {aim_dir}")
-
     def _condense_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         if args[:1] == ['toolcall']:
             reclaimed = agent.conversation.compact_toolcall()
@@ -271,10 +242,71 @@ def default_commands() -> list[Command]:
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
-        Command(name="save", description="Save history.", handler=_save_handler),
-        Command(name="load", description="Load history. (latest, [idx])", handler=_load_handler),
         Command(name="compact", description="Condense conversation. Use 'compact toolcall' to only condense tool call history.", handler=_condense_handler),
         Command(name="yolo", description="Toggle global auto approve (You Only Look Once).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
         Command(name="extensions", description="List discovered extensions with their status.", handler=_extensions_handler),
+    ]
+
+def default_commands_with_fs() -> list[Command]:
+    from .store import Store
+
+    def _save_handler(agent: "Agent[Agent.T.Init]") -> None:
+        """Save current conversation history (experimental)."""
+        store = Store()
+        aim_dir = store.next_history_store()
+        aim_dir.mkdir()
+        agent.conversation.dump(aim_dir / "conversation.json")
+        agent.info(f"Dumped to {aim_dir}")
+
+    def _load_handler(agent: "Agent[Agent.T.Init]", idx: list[str]) -> None:
+        """Load conversation history from save storage (experimental).
+        It supports loading by index or the latest conversation. 
+        e.g. 
+            load latest
+            load 3
+        """
+        store = Store()
+        if not idx:
+            agent.error("Please provide an index or 'latest' to load history.")
+            return
+        target = idx[0]
+        if target.isdigit():
+            aim_dir = store.get_history_store(target)
+            if not aim_dir:
+                agent.error(f"History {target} not found.")
+                return
+        elif target == "latest":
+            latest_dir = store.latest_history_store()
+            if latest_dir is None:
+                agent.info("No history found.")
+                return
+            aim_dir = latest_dir
+        else:
+            agent.error(f"Invalid index '{target}'. Use a number or 'latest'.")
+            return
+        conv_file = aim_dir / "conversation.json"
+        if not conv_file.exists():
+            agent.error(f"No conversation history found in {conv_file}.")
+            return
+        agent.conversation.load(conv_file)
+        agent.info(f"Loaded from {aim_dir}")
+    
+    def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
+        """Render conversation history as HTML and save to a file.
+        Usage: 
+            render <file_path>
+        """
+        if not arguments:
+            agent.error("Please provide a file path to save the rendered HTML.")
+            return
+        assert len(arguments) == 1, "Please provide exactly one file path to save the rendered HTML."
+        html = agent.display.render_history_as_html(title=f"xun · {agent.name}")
+        aim_path = Path(arguments[0])
+        aim_path.write_text(html, encoding="utf-8")
+
+    return [
+        Command(name="render", handler=_render_handler),
+        Command(name="save", handler=_save_handler),
+        Command(name="load", handler=_load_handler),
     ]
