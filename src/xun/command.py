@@ -223,15 +223,28 @@ def default_commands() -> list[Command]:
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
 
-    def _condense_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
-        if args[:1] == ['toolcall']:
-            reclaimed = agent.conversation.compact_toolcall()
-            if reclaimed.reclaimed_count:
-                agent.info(f"Compacted {reclaimed.reclaimed_count} tool call result(s), reclaimed {reclaimed.reclaimed_fraction:.1%} of estimated message length.")
-            else:
-                agent.info("No tool call results to compact.")
-        else:
+    def _compact_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
+        """Compact the conversation history.
+        If 'toolcall' is provided as an argument, only tool call results are compacted.
+        Usage: 
+          /compact           # Compact the entire conversation history
+          /compact toolcall  # Compact only tool call results
+        """
+        if not args:
             compact_conversation(agent)
+            return
+
+        if len(args) == 1:
+            if args[0] == 'toolcall':
+                reclaimed = agent.conversation.compact_toolcall()
+                if reclaimed.reclaimed_count:
+                    agent.info(f"Compacted {reclaimed.reclaimed_count} tool call result(s), reclaimed {reclaimed.reclaimed_fraction:.1%} of estimated message length.")
+                else:
+                    agent.info("No tool call results to compact.")
+            else:
+                raise ValueError(f"Unknown argument for compact: {args[0]}")
+        else:
+            raise ValueError(f"Unknown number of arguments for compact: {len(args)}")
     
     def _yolo_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.config.auto_confirm = not agent.config.auto_confirm
@@ -254,7 +267,7 @@ def default_commands() -> list[Command]:
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
-        Command(name="compact", description="Condense conversation. Use 'compact toolcall' to only condense tool call history.", handler=_condense_handler),
+        Command(name="compact", handler=_compact_handler),
         Command(name="yolo", description="Toggle global auto approve (You Only Look Once).", handler=_yolo_handler),
         Command(name="history", description="Show history.", handler=_history_handler),
         Command(name="extensions", description="List discovered extensions with their status.", handler=_extensions_handler),
