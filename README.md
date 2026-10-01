@@ -35,8 +35,10 @@ pip install xun-agent
 # 2. Install Playwright browsers (if using the default browser tools)
 playwright install
 
-# 3. Configure environment variables (see `Configuration` section below)
-vim .env
+# 3. Configure environment variables (details see `Configuration` section below)
+export XUN_OPENAI_BASE_URL="..."
+export XUN_OPENAI_API_KEY="..."
+export XUN_OPENAI_MODEL="..."
 
 # 4. Run the agent in interactive mode
 xun
