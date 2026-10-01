@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Code, Eye, FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
+import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import MarkdownText from './MarkdownText.vue'
 import { api } from '../api'
@@ -44,10 +44,14 @@ watch(() => props.entry.path, () => {
     <header>
       <span>{{ entry.path }}</span>
       <div class="preview-actions">
-        <button v-if="render" class="icon-button" :title="rendered ? t('preview.showSource') : t('preview.render')" :aria-pressed="rendered" @click="rendered = !rendered">
-          <Code v-if="rendered" :size="14" />
-          <Eye v-else :size="14" />
-        </button>
+        <div v-if="render" class="render-toggle" role="group" :aria-label="t('preview.render')">
+          <button :class="{ active: !rendered }" :title="t('preview.showSource')" :aria-pressed="!rendered" @click="rendered = false">
+            <CodeXml :size="13" />
+          </button>
+          <button :class="{ active: rendered }" :title="t('preview.render')" :aria-pressed="rendered" @click="rendered = true">
+            <BookOpenText :size="13" />
+          </button>
+        </div>
         <button class="icon-button" :title="fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
           <Minimize2 v-if="fullscreen" :size="14" />
           <Maximize2 v-else :size="14" />
