@@ -2,11 +2,11 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DOMPurify from 'dompurify'
-import { marked, Renderer, type Tokens } from 'marked'
+import { marked, Renderer, type Token, type Tokens } from 'marked'
 import { copyText } from '../clipboard'
 import { highlightLanguage } from '../highlight'
 
-const props = defineProps<{ content: string; enabled: boolean; plain?: boolean }>()
+const props = defineProps<{ content: string; enabled: boolean; plain?: boolean; baseHref?: string }>()
 const { t } = useI18n()
 let copyTimer = 0
 
@@ -36,7 +36,18 @@ class CodeBlockRenderer extends Renderer {
 
 const html = computed(() => props.plain
   ? ''
-  : DOMPurify.sanitize(marked.parse(props.content, { async: false, renderer: new CodeBlockRenderer(t('stream.copyCode')) }) as string))
+  : DOMPurify.sanitize(marked.parse(props.content, { async: false, renderer: new CodeBlockRenderer(t('stream.copyCode')), walkTokens }) as string))
+
+function walkTokens(token: Token) {
+  if (!props.baseHref || (token.type !== 'image' && token.type !== 'link')) return
+  const href = (token as Tokens.Image | Tokens.Link).href
+  if (href.startsWith('#')) return
+  try {
+    new URL(href)
+  } catch {
+    ;(token as Tokens.Image | Tokens.Link).href = new URL(href, props.baseHref).href
+  }
+}
 
 function copyCode(button: HTMLElement) {
   const code = button.closest('.code-block')?.querySelector('pre code')?.textContent ?? ''

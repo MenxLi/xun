@@ -16,6 +16,7 @@ const { t } = useI18n()
 const kind = computed(() => previewKind(props.entry.media_type))
 const render = computed(() => renderKind(props.entry.media_type, props.entry.path))
 const contentUrl = computed(() => api.contentUrl(props.agentId, props.entry.path))
+const markdownBase = computed(() => new URL('./', new URL(contentUrl.value, location.origin)).href)
 
 const text = ref('')
 const loading = ref(false)
@@ -63,7 +64,7 @@ watch(() => props.entry.path, () => {
     <template v-else-if="kind === 'text'">
       <div v-if="error" class="preview-error">{{ error }}</div>
       <template v-else-if="rendered && render">
-        <MarkdownText v-if="render === 'markdown'" class="preview-rendered" :content="text" :enabled="!loading" />
+        <MarkdownText v-if="render === 'markdown'" class="preview-rendered" :content="text" :enabled="!loading" :base-href="markdownBase" />
         <iframe v-else class="preview-document" :src="contentUrl" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" />
       </template>
       <pre v-else-if="highlighted" v-html="highlighted" />
