@@ -173,6 +173,8 @@ export default {
     noPreview: 'No preview for {type}',
     noPreviewFallback: 'this file',
     previewOf: 'Preview of {name}',
+    render: 'Render',
+    showSource: 'View source',
   },
   upload: {
     uploading: 'Uploading files',

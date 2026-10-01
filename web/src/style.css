@@ -359,6 +359,7 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-preview pre { min-height: 0; flex: 1; margin: 0; padding: 11px; overflow: auto; color: #eaf0ec; background: var(--code); font-size: 10px; line-height: 1.55; white-space: pre; }
 .file-preview img { min-height: 0; flex: 1; width: 100%; object-fit: contain; padding: 11px; background: var(--panel); }
 .preview-document { min-height: 0; width: 100%; flex: 1; border: 0; background: var(--panel); }
+.preview-rendered { min-height: 0; flex: 1; padding: 11px 14px; overflow: auto; }
 .preview-error { min-height: 0; flex: 1; padding: 11px; overflow: auto; color: var(--danger); font-size: 11px; }
 .preview-unsupported { min-height: 0; flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); font-size: 11px; text-align: center; }
 .file-drop-target { position: absolute; inset: 8px; display: grid; place-content: center; justify-items: center; gap: 8px; border: 2px dashed var(--accent); border-radius: 6px; color: var(--accent-dark); background: rgba(220, 235, 229, .96); z-index: 4; pointer-events: none; }

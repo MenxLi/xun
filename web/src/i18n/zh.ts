@@ -175,6 +175,8 @@ const zh: typeof en = {
     noPreview: '无法预览 {type}',
     noPreviewFallback: '该文件',
     previewOf: '{name} 的预览',
+    render: '渲染',
+    showSource: '查看源码',
   },
   upload: {
     uploading: '正在上传文件',

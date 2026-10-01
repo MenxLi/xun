@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
+import { Code, Eye, FileQuestion, Maximize2, Minimize2, X } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
+import MarkdownText from './MarkdownText.vue'
 import { api } from '../api'
 import { highlightFile } from '../highlight'
-import { previewKind } from '../preview'
+import { previewKind, renderKind } from '../preview'
 import type { FileInfo } from '../types'
 
 const props = defineProps<{ agentId: string; entry: FileInfo }>()
@@ -13,16 +14,19 @@ const emit = defineEmits<{ resize: [delta: number]; close: [] }>()
 const { t } = useI18n()
 
 const kind = computed(() => previewKind(props.entry.media_type))
+const render = computed(() => renderKind(props.entry.media_type, props.entry.path))
 const contentUrl = computed(() => api.contentUrl(props.agentId, props.entry.path))
 
 const text = ref('')
 const loading = ref(false)
 const error = ref('')
 const fullscreen = ref(false)
+const rendered = ref(false)
 const highlighted = computed(() => highlightFile(props.entry.path, text.value))
 
 watch(() => props.entry.path, () => {
   error.value = ''
+  rendered.value = false
   if (kind.value !== 'text') return
   loading.value = true
   text.value = ''
@@ -39,6 +43,10 @@ watch(() => props.entry.path, () => {
     <header>
       <span>{{ entry.path }}</span>
       <div class="preview-actions">
+        <button v-if="render" class="icon-button" :title="rendered ? t('preview.showSource') : t('preview.render')" :aria-pressed="rendered" @click="rendered = !rendered">
+          <Code v-if="rendered" :size="14" />
+          <Eye v-else :size="14" />
+        </button>
         <button class="icon-button" :title="fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
           <Minimize2 v-if="fullscreen" :size="14" />
           <Maximize2 v-else :size="14" />
@@ -54,6 +62,10 @@ watch(() => props.entry.path, () => {
 
     <template v-else-if="kind === 'text'">
       <div v-if="error" class="preview-error">{{ error }}</div>
+      <template v-else-if="rendered && render">
+        <MarkdownText v-if="render === 'markdown'" class="preview-rendered" :content="text" :enabled="!loading" />
+        <iframe v-else class="preview-document" :src="contentUrl" sandbox="" :title="t('preview.previewOf', { name: entry.name })" />
+      </template>
       <pre v-else-if="highlighted" v-html="highlighted" />
       <pre v-else>{{ loading ? t('preview.loading') : text }}</pre>
     </template>
