@@ -2,9 +2,11 @@
 
 import locale
 import os
+import time
 import platform
 from datetime import datetime
 from typing import Callable
+from ..toolcall import ToolCallContext
 from ..toolcall import tool_attr
 
 def _iana_timezone() -> str:
@@ -46,5 +48,25 @@ def system_time() -> str:
     now = datetime.now().astimezone()
     return now.isoformat()
 
+@tool_attr(name="sleep")
+def system_sleep(
+    ctx: ToolCallContext,
+    seconds: float
+    ) -> dict:
+    """Sleep for the specified number of seconds."""
+    INTERVAL = 0.2
+    start_time_str = datetime.now().astimezone().isoformat()
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(INTERVAL, remaining))
+        ctx.agent.check_cancel()
+    return {
+        "start": start_time_str,
+        "now": datetime.now().astimezone().isoformat()
+    }
+
 def expose_system_tools() -> list[Callable]:
-    return [system_info, system_time]
+    return [system_info, system_time, system_sleep]
