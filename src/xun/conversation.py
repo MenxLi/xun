@@ -6,10 +6,6 @@ from pathlib import Path
 from dataclasses import dataclass, asdict, fields
 import uuid, json, time
 from PIL.Image import Image
-import jinja2
-import markdown
-from markupsafe import Markup, escape
-from .config import ASSET_DIR
 from .compact import SummaryCompactResult, ToolCallCompactResult, COMPACTED_SYSTEM_PROMPT
 from .toolbox import ToolResultType
 from .util import image_to_url
@@ -26,18 +22,6 @@ def _remove_empty_tool_calls(message: Any) -> Any:
     if sanitized.get("tool_calls") == []:
         sanitized.pop("tool_calls", None)
     return sanitized
-
-
-def _expand_json_content(content: Any) -> Any:
-    if not isinstance(content, str):
-        return content
-
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
-        return content
-
-    return parsed if isinstance(parsed, (dict, list)) else content
 
 @dataclass
 class CompactionCounter:
@@ -130,38 +114,6 @@ class Conversation:
             return text[:MAX_HISTORY_CONTENT_LENGTH] + "...(truncated)"
         return text
 
-    @classmethod
-    def content_to_html(cls, content: Any) -> Markup:
-        def render_text(text: str) -> Markup:
-            return Markup(markdown.markdown(
-                str(escape(text)),
-                extensions=["fenced_code", "tables"],
-            ))
-
-        if not isinstance(content, list):
-            return render_text(cls.content_to_text(content))
-
-        parts: list[Markup] = []
-        for item in content:
-            if not isinstance(item, dict):
-                parts.append(render_text(cls.content_to_text(item)))
-                continue
-
-            if item.get("type") == "text":
-                parts.append(render_text(str(item.get("text", ""))))
-                continue
-
-            image_url = item.get("image_url", {}).get("url") if isinstance(item.get("image_url"), dict) else None
-            if item.get("type") == "image_url" and isinstance(image_url, str):
-                parts.append(Markup(
-                    '<figure class="message-image"><img src="{}" alt="User-provided image" loading="lazy"></figure>'
-                ).format(escape(image_url)))
-                continue
-
-            parts.append(render_text(cls.content_to_text(item)))
-
-        return Markup("\n").join(parts)
-    
     def append_user_message(self, extra_content: str ):
         if not self.messages or self.messages[-1].get("role") != "user":
             raise ValueError("No user message to append to. Please add a user message first.")
@@ -366,90 +318,3 @@ class Conversation:
                 content=self.content_to_text(content, truncate=truncate),
             ))
         return res
-
-    def render_history_as_html(self) -> str:
-        """ Render the conversation as a standalone HTML page.
-
-        Messages are grouped into render blocks: system prompts, user/assistant
-        messages, and collapsible activity blocks where each tool call is
-        paired with its result (matched by tool_call_id).
-        """
-        blocks: list[dict[str, Any]] = []
-        message_number = 0
-        rows_by_call_id: dict[str, dict[str, Any]] = {}
-        activity: dict[str, Any] | None = None
-
-        def current_activity() -> dict[str, Any]:
-            nonlocal activity
-            if activity is None:
-                activity = {"kind": "activity", "tools": []}
-                blocks.append(activity)
-            return activity
-
-        for message in self.messages:
-            role = message.get("role", "unknown")
-
-            if role == "system":
-                blocks.append({
-                    "kind": "system",
-                    "content": self.content_to_html(message.get("content", "")),
-                })
-                continue
-
-            if role == "tool":
-                tool_call_id = message.get("tool_call_id")
-                row = rows_by_call_id.get(tool_call_id) if tool_call_id else None
-                if row is None:
-                    row = {"name": "Tool result", "args": None, "result": None}
-                    current_activity()["tools"].append(row)
-                    if tool_call_id:
-                        rows_by_call_id[tool_call_id] = row
-                row["result"] = _expand_json_content(message.get("content"))
-                continue
-
-            tool_calls = message.get("tool_calls")
-            if tool_calls:
-                content = message.get("content")
-                if content not in (None, "", []):
-                    blocks.append({
-                        "kind": "message",
-                        "role": role,
-                        "content": self.content_to_html(content),
-                        "message_id": None,
-                        "message_hash": None,
-                    })
-                group = current_activity()
-                for call in tool_calls:
-                    function = call.get("function", {}) or {}
-                    row = {
-                        "name": function.get("name") or "Tool",
-                        "args": _expand_json_content(function.get("arguments")),
-                        "result": None,
-                    }
-                    group["tools"].append(row)
-                    if call.get("id"):
-                        rows_by_call_id[call["id"]] = row
-                continue
-
-            message_id = None
-            message_hash = None
-            if role in {"user", "assistant"}:
-                message_number += 1
-                message_id = f"message-{message_number}"
-                message_hash = f"#{message_number}"
-
-            blocks.append({
-                "kind": "message",
-                "role": role,
-                "content": self.content_to_html(message.get("content", "")),
-                "message_id": message_id,
-                "message_hash": message_hash,
-            })
-
-        template_path = ASSET_DIR / "conversation.template.html"
-        environment = jinja2.Environment(autoescape=True)
-        environment.policies["json.dumps_kwargs"] = {"ensure_ascii": False}
-        return environment.from_string(template_path.read_text(encoding="utf-8")).render(
-            blocks=blocks,
-            meta={"time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), "total_tokens": self.total_tokens},
-        )

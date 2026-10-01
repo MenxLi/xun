@@ -485,7 +485,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(command_called.wait(1))
         self.assertEqual(second_agent.instructions, ["hello"])
         self.assertEqual(self.agent.instructions, [])
-        names = [event.name for event in self.display._store.list()]
+        names = [event.name for event in self.display.events()]
         self.assertIn("UserMessageEvent", names)
         self.assertIn("UserCommandEvent", names)
 
@@ -501,7 +501,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(self.agent.instruction_called.wait(1))
         self.assertTrue(self._wait_until(lambda: any(
             event.name == "ErrorEvent" and "compact failed" in event.payload.message
-            for event in self.display._store.list()
+            for event in self.display.events()
         )))
 
     def test_websocket_dispatches_cancel_immediately(self) -> None:
@@ -547,7 +547,7 @@ class WebDisplayTest(unittest.TestCase):
             receive_event("AgentRunningEndEvent")
 
         self.assertTrue(self._wait_until(lambda: "agent-1" not in self.client.get("api/running").json()))
-        names = [event.name for event in self.display._store.list()]
+        names = [event.name for event in self.display.events()]
         self.assertIn("AgentRunningStartEvent", names)
         self.assertIn("AgentRunningEndEvent", names)
 
@@ -692,7 +692,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(self.agent.instruction_called.wait(1))
         self.assertEqual(self.agent.instructions, ["inspect"])
         self.assertEqual(self.agent.images, [[image_url]])
-        event = self.display._store.list()[-1]
+        event = next(event for event in reversed(self.display.events()) if event.name == "UserMessageEvent")
         self.assertEqual(event.name, "UserMessageEvent")
         self.assertEqual(event.payload.model_dump(), {
             "content": "inspect",

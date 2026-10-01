@@ -56,27 +56,6 @@ WebMessage = Annotated[Union[ChatMessage, CommandMessage, ChoiceMessage, CancelM
 WEB_MESSAGE_ADAPTER = TypeAdapter(WebMessage)
 
 
-class _EventStore:
-    def __init__(self, max_events: int) -> None:
-        self._events: deque[DisplayEvent] = deque(maxlen=max_events)
-        self._lock = threading.Lock()
-
-    def append(self, event: DisplayEvent) -> None:
-        with self._lock:
-            self._events.append(event)
-
-    def list(self) -> list[DisplayEvent]:
-        with self._lock:
-            return list(self._events)
-
-    def clear(self, agent_id: str) -> None:
-        with self._lock:
-            self._events = deque(
-                (event for event in self._events if event.agent.identifier != agent_id), 
-                maxlen=self._events.maxlen
-                )
-
-
 @dataclass
 class _PendingPrompt:
     data: dict[str, Any]
@@ -130,11 +109,11 @@ class WebDisplay(DisplayAbstract):
     def __init__(
         self,
         expose_files: bool = False,
-        max_events: int = 5000,
+        event_buffer_size: int = 5000,
     ) -> None:
         super().__init__()
         self.expose_files = expose_files
-        self._store = _EventStore(max_events)
+        self.set_event_buffer_size(event_buffer_size)
         self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -186,23 +165,17 @@ class WebDisplay(DisplayAbstract):
         super().bind(agent)
         def after_command(args: HookArgs.CommandArgs) -> None:
             if args.command.name == "clear":
-                self._store.clear(agent.identifier)
-                # search for any detached agent, also remove their data from the store
-                agent_all = set(event.agent.identifier for event in self._store.list())
-                agents_detached = agent_all - set(self.agents.keys())
-                for agent_id in agents_detached:
-                    self._store.clear(agent_id)
-
+                self.clear_events(agent.identifier)
+                # also drop events left behind by agents no longer bound to this display
+                agent_all = set(event.agent.identifier for event in self.events())
+                for agent_id in agent_all - set(self.agents.keys()):
+                    self.clear_events(agent_id)
             elif args.command.name == "retry":
                 args.agent.execute()
-
-            else:
-                pass
         agent.hooks.after_command.add(after_command)
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
-        self._store.append(event)
         self._broadcast(payload)
 
     def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
@@ -350,7 +323,7 @@ class WebDisplay(DisplayAbstract):
 
         @router.get("/api/events")
         async def events() -> list[DisplayEvent]:
-            return self._store.list()
+            return self.events()
 
         @router.get("/api/prompts")
         async def pending_prompts() -> list[dict[str, Any]]:

@@ -3,7 +3,7 @@
 A mini LLM agent framework with function-based tools and sub-agent spawning.
 
 The core codebase is compact: 
-less than 4000 lines in `src/xun/*.py` (direct descendant of `src/xun`), 
+less than 5000 lines in `src/xun/*.py` (direct descendant of `src/xun`), 
 mostly hand written, with comprehensive type hints.
 
 <!-- 

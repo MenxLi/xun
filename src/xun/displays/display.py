@@ -13,9 +13,10 @@ import rich.text
 from ..display_abstract import *
 
 class Display(DisplayAbstract):
-    def __init__(self):
+    def __init__(self, event_buffer_size: int = 1000):
         self.console = rich.console.Console()
         self.lock = threading.Lock()
+        self.set_event_buffer_size(event_buffer_size)
 
     def _print(self, *args, **kwargs):
         with self.lock:

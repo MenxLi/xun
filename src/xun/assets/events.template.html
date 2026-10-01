@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{ meta.title }}</title>
+	<script>
+		try {
+			const stored = localStorage.getItem("xun-conversation-theme");
+			if (stored === "light" || stored === "dark") {
+				document.documentElement.dataset.theme = stored;
+			} else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+				document.documentElement.dataset.theme = "dark";
+			}
+		} catch (error) { /* keep light theme */ }
+	</script>
+	<style>
+		/* Palette, typography and stream styles follow web/src/style.css. */
+		:root { color-scheme: light; font-family: "Manrope", -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #222925; background: #edf0ed;
+			--paper: #fffefa; --canvas: #edf0ed; --panel: #f7f8f5; --input: #fff; --hover: #e8ece9; --ink: #222925; --muted: #6d7771;
+			--line: #d7ddd9; --line-strong: #c5cec8; --accent: #176c62; --accent-dark: #10544d; --accent-soft: #dcebe5;
+			--warm: #b8772e; --danger: #b3423d; --code: #18221e; --code-ink: #eef3ef; --shadow: rgba(34, 41, 37, .15); }
+		:root[data-theme="dark"] { color-scheme: dark; color: #e4e8e9; background: #181b1d;
+			--paper: #202426; --canvas: #181b1d; --panel: #252a2d; --input: #292f32; --hover: #30373a; --ink: #e4e8e9; --muted: #9ba4a8;
+			--line: #353c40; --line-strong: #485258; --accent: #68b8ae; --accent-dark: #89c9c0; --accent-soft: #243b3a;
+			--warm: #c79b64; --danger: #e77d76; --code: #101315; --code-ink: #e7ecee; --shadow: rgba(0, 0, 0, .42); }
+		* { box-sizing: border-box; }
+		html { scroll-behavior: smooth; }
+		body { margin: 0; padding: 0 18px; background-color: var(--canvas); background-image: linear-gradient(rgba(34, 41, 37, .028) 1px, transparent 1px); background-size: 100% 30px; }
+		.theme-toggle { position: fixed; top: 12px; right: 14px; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 5px; display: grid; place-items: center; background: var(--paper); color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; box-shadow: 0 4px 14px var(--shadow); z-index: 5; }
+		:root[data-theme="dark"] .icon-sun { display: none; }
+		:root:not([data-theme="dark"]) .icon-moon { display: none; }
+		.stream { width: min(780px, 100%); margin: 0 auto; padding: 34px 0 40px; }
+		.page-head { margin: 0 0 26px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+		.eyebrow { color: var(--muted); font: 500 10px/1 "Fira Code", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .06em; }
+		.page-meta { margin-left: auto; color: var(--muted); font: 500 10px/1 "Fira Code", ui-monospace, monospace; }
+
+		.message { margin: 0 0 22px; overflow-wrap: anywhere; }
+		.message-label { margin-bottom: 6px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 500 10px/1 "Fira Code", ui-monospace, monospace; text-transform: uppercase; letter-spacing: .05em; }
+		.message-label time { margin-left: auto; padding-left: 12px; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
+		.message:not(.user) .message-label time { padding-right: 8px; }
+		.token-usage { color: var(--muted); font: 500 9px/1 "Fira Code", ui-monospace, monospace; letter-spacing: 0; text-transform: none; opacity: .8; }
+		.message.user { width: fit-content; max-width: 84%; margin-left: auto; padding: 11px 14px; border-radius: 7px 7px 2px 7px; background: var(--accent-soft); }
+		.message.user .message-label { color: var(--accent-dark); }
+		.message-images { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 220px)); gap: 8px; }
+		.message-images a { min-width: 0; display: block; border-radius: 5px; overflow: hidden; background: var(--input); }
+		.message-images img { width: 100%; max-height: 260px; display: block; object-fit: contain; }
+
+		.markdown { overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; }
+		.markdown > :first-child { margin-top: 0; } .markdown > :last-child { margin-bottom: 0; }
+		.markdown p, .markdown ul, .markdown ol, .markdown blockquote { margin: 0 0 10px; }
+		.markdown h1, .markdown h2, .markdown h3 { margin: 18px 0 8px; font-family: "Newsreader", Georgia, "Songti SC", serif; line-height: 1.25; }
+		.markdown h1 { font-size: 24px; } .markdown h2 { font-size: 20px; } .markdown h3 { font-size: 17px; }
+		.markdown a { color: var(--accent); text-underline-offset: 2px; }
+		.markdown blockquote { padding-left: 12px; border-left: 2px solid var(--warm); color: var(--muted); }
+		.markdown code, .plain-text, pre, code { font-family: "Fira Code", ui-monospace, monospace; }
+		.markdown :not(pre) > code { padding: 2px 5px; border-radius: 3px; background: var(--hover); font-size: .88em; }
+		.markdown pre, .tool-detail pre, .plain-text.code { max-height: 360px; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+		.markdown table { border-collapse: collapse; margin-bottom: 10px; }
+		.markdown th, .markdown td { padding: 4px 10px; border: 1px solid var(--line-strong); }
+
+		.stream-notice { min-height: 24px; margin: 0 0 22px; padding: 4px 8px 4px 6px; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: 6px; border-radius: 3px; color: var(--muted); background: color-mix(in srgb, var(--panel) 46%, transparent); }
+		.stream-notice + .stream-notice { margin-top: -19px; }
+		.stream-notice > svg { width: 12px; height: 12px; margin-top: 2px; color: var(--muted); opacity: .72; }
+		.stream-notice.warning > svg { color: var(--warm); opacity: .9; }
+		.stream-notice.error > svg { color: var(--danger); opacity: .9; }
+		.notice-content { min-width: 0; }
+		.stream-notice .notice-meta { margin-left: 8px; float: right; display: inline-flex; align-items: center; gap: 4px; }
+		.plain-text { min-width: 0; color: var(--muted); font-family: "Fira Code", ui-monospace, monospace; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+		.stream-notice time { font: 8px/1 "Fira Code", ui-monospace, monospace; opacity: .45; }
+
+		.command-invocation { margin: -4px 0 16px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 11px/1.5 "Fira Code", ui-monospace, monospace; overflow-wrap: anywhere; }
+
+		.activity-batch { margin: 0 0 20px; color: var(--muted); }
+		.message + .activity-batch { margin-top: -8px; }
+		.batch-header, .turn-header { min-height: 28px; overflow: hidden; cursor: pointer; list-style: none; font: 500 10px/1 "Fira Code", ui-monospace, monospace; text-transform: uppercase; white-space: nowrap; }
+		.batch-header { min-height: 32px; padding: 0 7px; border-radius: 3px; transition: background .14s ease; }
+		.turn-header, .batch-heading { display: flex; align-items: center; gap: 5px; }
+		.batch-heading { min-height: 32px; }
+		.turn-header { padding: 0 4px; border-radius: 3px; text-transform: none; }
+		.batch-heading > *, .turn-header > * { flex: none; }
+		.batch-header::-webkit-details-marker, .turn-header::-webkit-details-marker,
+		.reasoning summary::-webkit-details-marker, .tool-row summary::-webkit-details-marker, .confirm-hint > summary::-webkit-details-marker { display: none; }
+		.batch-header:hover, .activity-batch[open] > .batch-header { background: color-mix(in srgb, var(--paper) 42%, transparent); }
+		.activity-batch[open] > .batch-header .chevron, .turn[open] > .turn-header .chevron,
+		.activity-group[open] > summary .chevron, .tool-row[open] > summary .chevron,
+		.reasoning[open] > summary .chevron, .confirm-hint[open] > summary .chevron { transform: rotate(90deg); }
+		.batch-title { color: var(--ink); }
+		.activity-batch.single .batch-title { text-transform: none; }
+		.batch-heading time, .turn-header time { margin-left: auto; padding-left: 12px; font-size: 9px; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: .72; }
+		.turn-approvals { display: inline-flex; align-items: center; gap: 3px; }
+		.batch-agents { margin: 5px 0 0 8px; padding-left: 10px; border-left: 1px solid var(--line); }
+		.batch-agents.single { margin: 3px 0 0; padding-left: 0; border-left: 0; }
+		.turn { margin: 0; border-radius: 3px; color: var(--muted); }
+		.turn + .turn { margin-top: 2px; }
+		.turn-header:hover, .turn[open] > .turn-header { background: color-mix(in srgb, var(--paper) 38%, transparent); }
+		.turn-agent { color: var(--ink); }
+		.turn-steps { position: relative; margin: 2px 0 0 3px; padding-left: 12px; }
+		.batch-agents.single .turn-steps { margin-left: 7px; padding-left: 13px; }
+		.turn-steps::before { content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 1px; border-radius: 999px; background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--line-strong) 90%, transparent) 10%, color-mix(in srgb, var(--line-strong) 90%, transparent) 90%, transparent); }
+		.turn-steps .reasoning, .turn-steps .activity-group, .turn-steps .tool-row, .turn-steps .confirm-hint { margin: 1px 0; }
+		.turn-steps .reasoning { margin-left: -1px; }
+		.turn-steps .confirm-hint { margin-top: 3px; }
+		.turn-steps .activity-list { margin-left: 6px; }
+		.chevron { margin-right: 3px; transition: transform .12s ease; }
+
+		.reasoning { margin: -2px 0 0; color: var(--muted); }
+		.reasoning > summary { opacity: .65; font: 400 10px/1.4 "Manrope", sans-serif; }
+		.reasoning > summary:hover { opacity: 1; }
+		.reasoning .markdown { margin: 3px 0 0 14px; color: var(--muted); font-size: 11px; line-height: 1.55; opacity: .8; }
+
+		.activity-group { color: var(--muted); font: 11px/1.5 "Fira Code", ui-monospace, monospace; }
+		.activity-group > summary, .tool-row > summary, .reasoning > summary { width: fit-content; padding: 4px 0; display: flex; align-items: center; cursor: pointer; list-style: none; }
+		.activity-list { margin: 5px 0 3px 7px; padding-left: 12px; border-left: 1px solid var(--line); }
+		.tool-row { color: var(--muted); font: 10px/1.5 "Fira Code", ui-monospace, monospace; }
+		.tool-row > summary { width: 100%; min-height: 28px; }
+		.tool-name { color: var(--accent-dark); overflow-wrap: anywhere; }
+		.tool-row > summary:hover .tool-name { text-decoration: underline; text-underline-offset: 3px; }
+		.tool-row time { margin-left: auto; padding-left: 12px; font-size: 9px; opacity: .7; }
+		.tool-state { margin-left: 9px; display: inline-flex; align-items: center; gap: 3px; color: var(--warm); font-size: 9px; text-transform: uppercase; }
+		.tool-detail { margin: 0 0 8px 17px; }
+		.tool-detail > span { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+		.tool-detail pre { margin: 0; }
+
+		.confirm-hint { width: fit-content; max-width: 100%; margin: 3px 0; color: var(--muted); font: 10px/1.5 "Fira Code", ui-monospace, monospace; }
+		.confirm-hint > summary { padding: 2px 8px 2px 7px; display: flex; align-items: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 4%, transparent); cursor: pointer; list-style: none; opacity: .8; }
+		.confirm-hint > summary:hover, .confirm-hint[open] > summary { opacity: 1; color: var(--ink); background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); }
+		.confirm-icon { flex: none; color: var(--accent); opacity: .8; }
+		.confirm-pick { max-width: 200px; padding: 0 6px; overflow: hidden; border-left: 1px solid color-mix(in srgb, var(--line) 80%, transparent); color: var(--ink); text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
+		.confirm-hint > summary .chevron { margin: 0 0 0 1px; opacity: .45; }
+		.confirm-hint time { opacity: .6; }
+		.confirm-hint .confirm-choices { align-items: start; }
+		.confirm-hint dl { width: min(460px, 100%); margin: 6px 0 3px 2px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--paper) 60%, transparent); font-size: 10px; }
+		.confirm-hint dl > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 7px; padding: 2px 0; }
+		.confirm-hint dt { color: var(--muted); }
+		.confirm-hint dd { min-width: 0; margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+		.confirm-choices dd { display: flex; flex-wrap: wrap; gap: 4px; }
+		.confirm-choice { padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: var(--panel); line-height: 1.5; }
+		.confirm-choice.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent-dark); background: var(--accent-soft); font-weight: 500; }
+		.confirm-message { max-height: 140px; padding: 4px 6px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+		.panel { margin: 0 0 22px; border: 1px solid var(--line); border-radius: 6px; background: color-mix(in srgb, var(--paper) 72%, transparent); overflow: hidden; }
+		.panel > header { min-height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; }
+		.panel > header span { margin-left: auto; color: var(--muted); font: 9px/1 "Fira Code", ui-monospace, monospace; }
+		.command-line { min-height: 38px; padding: 8px 12px; display: grid; grid-template-columns: 130px 1fr; gap: 12px; border-bottom: 1px solid var(--line); font-size: 11px; }
+		.command-line:last-child { border-bottom: 0; }
+		.command-line code { color: var(--accent); }
+		.command-line span { color: var(--muted); }
+		.tool-listing { padding: 10px 12px; display: grid; grid-template-columns: minmax(150px, 36%) 1fr; gap: 14px; border-bottom: 1px solid var(--line); font-size: 11px; }
+		.tool-listing:last-child { border-bottom: 0; }
+		.tool-listing-name { min-width: 0; display: flex; align-items: flex-start; flex-wrap: wrap; gap: 5px; }
+		.tool-listing-name code { overflow-wrap: anywhere; color: var(--accent-dark); font-size: 10px; }
+		.tool-listing p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
+		.extension-chip { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--muted); font: 8px/1 "Fira Code", ui-monospace, monospace; text-transform: uppercase; }
+		.extension-chip.loaded { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-dark); background: var(--accent-soft); }
+		.extension-chip.failed { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+		.extension-chip.skipped { border-color: color-mix(in srgb, var(--warm) 45%, transparent); color: var(--warm); background: color-mix(in srgb, var(--warm) 8%, transparent); }
+		.extension-reason { margin-top: 4px; color: var(--danger); }
+		.extension-reason.skipped { color: var(--warm); }
+		.history-line { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+		.history-line:last-child { border-bottom: 0; }
+		.history-line > span { color: var(--accent); font: 500 9px/1 "Fira Code", ui-monospace, monospace; text-transform: uppercase; }
+		.history-line pre { margin: 5px 0 0; padding: 0; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+		.panel-empty { padding: 22px 12px; color: var(--muted); font-size: 11px; text-align: center; }
+		.stream-empty { padding: 40px 0; color: var(--muted); font-size: 12px; text-align: center; }
+
+		@media (max-width: 600px) { .message.user { max-width: 100%; } .command-line { grid-template-columns: 1fr; } .tool-listing { grid-template-columns: 1fr; } }
+		@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+	</style>
+</head>
+<body>
+	{% macro render_step(step) %}
+	{% if step.kind == "reason" %}
+	<details class="reasoning">
+		<summary><svg class="chevron" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>Reasoning</summary>
+		<div class="markdown">{{ step.html }}</div>
+	</details>
+	{% elif step.kind == "tools" %}
+	{% if step.tools | length == 1 %}
+	<details class="tool-row">
+		<summary>
+			<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+			<span class="tool-name">{{ step.tools[0].name }}</span>
+			{% if step.tools[0].result is none %}<span class="tool-state">no result</span>{% endif %}
+			<time>{{ step.tools[0].time }}</time>
+		</summary>
+		<div class="tool-detail">
+			<span>Input</span><pre>{{ step.tools[0].args | tojson(indent=2) }}</pre>
+			{% if step.tools[0].result is not none %}
+			<span>Output</span><pre>{% if step.tools[0].result is string %}{{ step.tools[0].result }}{% else %}{{ step.tools[0].result | tojson(indent=2) }}{% endif %}</pre>
+			{% endif %}
+		</div>
+	</details>
+	{% else %}
+	<details class="activity-group">
+		<summary>
+			<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+			<span>{{ step.tools | length }} tool calls</span>
+		</summary>
+		<div class="activity-list">
+			{% for tool in step.tools %}
+			<details class="tool-row">
+				<summary>
+					<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+					<span class="tool-name">{{ tool.name }}</span>
+					{% if tool.result is none %}<span class="tool-state">no result</span>{% endif %}
+					<time>{{ tool.time }}</time>
+				</summary>
+				<div class="tool-detail">
+					<span>Input</span><pre>{{ tool.args | tojson(indent=2) }}</pre>
+					{% if tool.result is not none %}
+					<span>Output</span><pre>{% if tool.result is string %}{{ tool.result }}{% else %}{{ tool.result | tojson(indent=2) }}{% endif %}</pre>
+					{% endif %}
+				</div>
+			</details>
+			{% endfor %}
+		</div>
+	</details>
+	{% endif %}
+	{% elif step.kind == "confirm" %}
+	<details class="confirm-hint">
+		<summary>
+			<svg class="confirm-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
+			<span>Confirmed</span>
+			{% if step.choice %}<span class="confirm-pick" title="{{ step.choice }}">{{ step.choice }}</span>{% endif %}
+			<time>{{ step.time }}</time>
+			<svg class="chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+		</summary>
+		<dl>
+			{% if step.choices %}<div class="confirm-choices"><dt>Choices</dt><dd>{% for choice in step.choices %}<span class="confirm-choice{% if choice == step.choice %} selected{% endif %}">{{ choice }}</span>{% endfor %}</dd></div>{% endif %}
+			{% if step.message %}<div><dt>Message</dt><dd class="confirm-message">{{ step.message }}</dd></div>{% endif %}
+			<div><dt>Prompt</dt><dd>{{ step.prompt }}</dd></div>
+		</dl>
+	</details>
+	{% endif %}
+	{% endmacro %}
+	<button class="theme-toggle" type="button" aria-label="Toggle light or dark theme" onclick="const root=document.documentElement;const next=root.dataset.theme==='dark'?'light':'dark';root.dataset.theme=next;try{localStorage.setItem('xun-conversation-theme',next)}catch(error){}">
+		<span class="icon-sun">☀️</span><span class="icon-moon">🌙</span>
+	</button>
+	<main class="stream">
+		<header class="page-head">
+			<span class="eyebrow">{{ meta.title }}</span>
+			<span class="page-meta">{{ meta.time }}{% if meta.total_tokens %} · {{ meta.total_tokens }} tokens{% endif %}</span>
+		</header>
+		{% if not blocks %}
+		<p class="stream-empty">No events yet.</p>
+		{% endif %}
+		{% for block in blocks %}
+
+		{% if block.kind == "user" %}
+		<article class="message user">
+			<div class="message-label"><span>You</span><time>{{ block.time }}</time></div>
+			<div class="markdown">{{ block.content }}</div>
+			{% if block.images %}
+			<div class="message-images">{% for image in block.images %}<a href="{{ image }}" target="_blank" rel="noopener"><img src="{{ image }}" alt="User-provided image" loading="lazy"></a>{% endfor %}</div>
+			{% endif %}
+		</article>
+
+		{% elif block.kind == "message" %}
+		<article class="message">
+			<div class="message-label"><span>{{ block.label }}</span>{% if block.tokens %}<span class="token-usage">· {{ block.tokens }} tokens</span>{% endif %}<time>{{ block.time }}</time></div>
+			<div class="markdown">{{ block.html }}</div>
+		</article>
+
+		{% elif block.kind == "command" %}
+		<div class="command-invocation"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>/{{ block.name }}{% if block.arguments %} {{ block.arguments }}{% endif %}</span></div>
+
+		{% elif block.kind == "notice" %}
+		<div class="stream-notice {{ block.level }}" role="note">
+			{% if block.level == "info" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+			{% elif block.level == "warning" %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+			{% else %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="10" x2="12" y2="14"/></svg>{% endif %}
+			<div class="notice-content">
+				<span class="notice-meta"><time>{{ block.time }}</time></span>
+				<div class="plain-text">{{ block.html }}</div>
+			</div>
+		</div>
+
+		{% elif block.kind == "html_info" %}
+		<section class="panel">
+			{% if block.title %}<header>{{ block.title }}</header>{% endif %}
+			<div class="markdown">{{ block.html }}</div>
+		</section>
+
+		{% elif block.kind == "help" %}
+		<section class="panel">
+			<header>Available commands</header>
+			{% for command in block.commands %}
+			<div class="command-line"><code>/{{ command.name }}</code><span>{{ command.description }}</span></div>
+			{% endfor %}
+		</section>
+
+		{% elif block.kind == "tools" %}
+		<section class="panel">
+			<header>Tools <span>{{ block.tools | length }}</span></header>
+			{% if not block.tools %}<div class="panel-empty">No tools registered.</div>{% endif %}
+			{% for tool in block.tools %}
+			<div class="tool-listing">
+				<div class="tool-listing-name"><code>{{ tool.name }}</code>{% for capability in tool.required_capabilities %}<span class="extension-chip">{{ capability }}</span>{% endfor %}</div>
+				<p>{{ tool.description or "No description." }}</p>
+			</div>
+			{% endfor %}
+		</section>
+
+		{% elif block.kind == "extensions" %}
+		<section class="panel">
+			<header>Extensions <span>{{ block.extensions | length }}</span></header>
+			{% if not block.extensions %}<div class="panel-empty">No extensions found.</div>{% endif %}
+			{% for ext in block.extensions %}
+			<div class="tool-listing">
+				<div class="tool-listing-name"><code>{{ ext.name }}</code><span class="extension-chip {{ ext.status }}">{{ ext.status }}</span></div>
+				<div>
+					<p>{{ ext.description or "No description." }}</p>
+					{% if ext.reason %}<p class="extension-reason {{ ext.status }}">{{ ext.reason }}</p>{% endif %}
+				</div>
+			</div>
+			{% endfor %}
+		</section>
+
+		{% elif block.kind == "history" %}
+		<section class="panel">
+			<header>Conversation history</header>
+			{% for record in block.history %}
+			<div class="history-line"><span>{{ record.role }}</span><pre>{{ record.content if record.content is string else record.content | tojson(indent=2) }}</pre></div>
+			{% endfor %}
+		</section>
+
+		{% elif block.kind == "batch" %}
+		<details class="activity-batch{% if block.single %} single{% endif %}">
+			<summary class="batch-header">
+				<span class="batch-heading">
+					<svg class="chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+					{% if block.single %}<span class="batch-title">{{ block.agents[0].name }}</span>
+					{% else %}<span class="batch-title">AGENT ACTIVITY</span><span>· {{ block.agents | length }} agents</span>{% endif %}
+					{% if block.details %}<span>· {{ block.details }} details</span>{% endif %}
+					{% if block.approvals %}<span class="turn-approvals" title="Auto-confirmed">· {{ block.approvals }} auto-confirmed</span>{% endif %}
+					{% if block.single and block.agents[0].tokens %}<span>· {{ block.agents[0].tokens }} tokens</span>{% endif %}
+					<time>{{ block.time }}</time>
+				</span>
+			</summary>
+			<div class="batch-agents{% if block.single %} single{% endif %}">
+				{% for agent in block.agents %}
+				{% if block.single %}
+				<div class="turn">
+					<div class="turn-steps">
+						{% for step in agent.steps %}{{ render_step(step) }}{% endfor %}
+					</div>
+				</div>
+				{% else %}
+				<details class="turn">
+					<summary class="turn-header">
+						<svg class="chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+						<span class="turn-agent">{{ agent.name }}</span>
+						{% if agent.details %}<span>· {{ agent.details }} details</span>{% endif %}
+						{% if agent.approvals %}<span class="turn-approvals" title="Auto-confirmed">· {{ agent.approvals }} auto-confirmed</span>{% endif %}
+						{% if agent.tokens %}<span class="token-usage" title="Total tokens used by the conversation">· {{ agent.tokens }} tokens</span>{% endif %}
+						<time>{{ agent.time }}</time>
+					</summary>
+					<div class="turn-steps">
+						{% for step in agent.steps %}{{ render_step(step) }}{% endfor %}
+					</div>
+				</details>
+				{% endif %}
+				{% endfor %}
+			</div>
+		</details>
+
+		{% endif %}
+		{% endfor %}
+	</main>
+</body>
+</html>

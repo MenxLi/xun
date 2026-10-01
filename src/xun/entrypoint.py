@@ -236,7 +236,7 @@ def cli_commands() -> list[Command]:
         if not arguments:
             agent.error("Please provide a file path to save the rendered HTML.")
             return
-        html = agent.conversation.render_history_as_html()
+        html = agent.display.render_history_as_html(title=f"xun · {agent.name}")
         aim_path = Path(arguments[0])
         aim_path.write_text(html, encoding="utf-8")
     
