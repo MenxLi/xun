@@ -42,7 +42,7 @@ def get_internal_env_bool(key: str) -> bool | None:
     return v.lower() in ("1", "true", "yes")
 
 class ConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     def to_json(self) -> str:
         return self.model_dump_json(indent=4)

@@ -184,8 +184,24 @@ def default_commands() -> list[Command]:
         agent.conversation.pop_from_last_user_message(inclusive=False)
         agent.info("Restarted from last user message.")
 
-    def _config_handler(agent: "Agent[Agent.T.Init]") -> None:
-        agent.info(str(agent.config.to_json()))
+    def _config_handler(agent: "Agent[Agent.T.Init]", args: list[str] = []) -> None:
+        """Show or edit the agent's configuration.
+        If no arguments are provided, the current configuration is displayed.
+        To edit a configuration value, provide a single argument in the format 'key.sub=value'.
+        """
+        if not args:
+            agent.info(str(agent.config.to_json()))
+            return
+        
+        if args:
+            assert len(args) == 1, "Expected one argument for config edition. e.g. key.sub=value"
+            key, value = args[0].split("=", 1)
+            key_sp = key.split(".")
+            var = agent.config
+            for k in key_sp[:-1]:
+                var = getattr(var, k)
+            setattr(var, key_sp[-1], value)
+            agent.info(f"Config updated: {key} = {getattr(var, key_sp[-1])!r}")
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
@@ -253,7 +269,7 @@ def default_commands() -> list[Command]:
         Command(name="continue", description="Continue execution.", handler=_continue_handler),
         Command(name="revise", description="Edit last message.", handler=_revise_handler),
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
-        Command(name="config", description="Show configuration.", handler=_config_handler),
+        Command(name="config", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
         Command(name="save", description="Save history.", handler=_save_handler),
         Command(name="load", description="Load history. (latest, [idx])", handler=_load_handler),
