@@ -1,7 +1,5 @@
-import hashlib, datetime, re
-import readline     # noqa
+import hashlib, datetime
 import threading
-from typing import Callable
 import rich
 import rich.box
 import rich.table
@@ -12,73 +10,40 @@ import rich.markup
 import rich.text
 
 from ..display_abstract import *
+from .cli_session import CliSession, CommandProvider
 
 class Display(DisplayAbstract):
     def __init__(self, event_buffer_size: int = 1000):
         self.console = rich.console.Console()
         self.lock = threading.Lock()
-        self.input_lock = threading.RLock()
-        self._input_active = False
-        self._input_prompt = ""
+        self.session = CliSession()
         self.set_event_buffer_size(event_buffer_size)
 
     def _print(self, *args, **kwargs):
         with self.lock:
-            if self._input_active:
-                self.console.file.write("\r\033[2K")
             if isinstance(args[0] if args else None, str):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
-            if self._input_active:
-                self.console.file.write(self._input_prompt + readline.get_line_buffer())
-                self.console.file.flush()
 
     def input(self, prompt: str = "") -> str:
-        with self.input_lock:
-            with self.lock:
-                self._input_prompt = prompt.replace("\001", "").replace("\002", "")
-                self._input_active = True
-            try:
-                return input(prompt)
-            finally:
-                with self.lock:
-                    self._input_active = False
-                    self._input_prompt = ""
+        return self.session.input(prompt)
+
+    def set_command_provider(self, provider: CommandProvider) -> None:
+        self.session.set_command_provider(provider)
 
     def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
         choices = request.choices
-        choices_str = "\n".join(f"  [{i}] {c}" for i, c in enumerate(choices, start=1))
         extra_choice_idx = len(choices) + 1 if request.allow_extra else None
-        if request.allow_extra:
-            choices_str += f"\n  [{extra_choice_idx}] Other (enter your own choice)"
-        full_msg = f"{request.message}\n--- Choices ---\n{choices_str}"
         default_idx = choices.index(request.default) + 1 if request.default in choices else None
-        input_acquired = self.input_lock.acquire(blocking=False)
-        if not input_acquired:
-            waiting_msg = f"{request.prompt}\n--- Choices ---\n{choices_str}\n[dim]Waiting for current input to finish.[/dim]"
-            self._print(rich.panel.Panel(
-                waiting_msg,
-                border_style="yellow",
-                title=f"[bold yellow]{request.title or 'Confirmation required'}[/bold yellow]",
-                subtitle=f"[dim]{request.subtitle}[/dim]" if request.subtitle else None,
-            ))
-            self.input_lock.acquire()
-        try:
+        with self.session.takeover_input():
             with self.lock:
                 if request.message:
-                    _note(self.console, full_msg, request.title, request.subtitle)
-            choice_idx = _choose_from_int(
-                self.console, 
-                prompt = request.prompt, 
-                n_choices=len(choices) + (1 if request.allow_extra else 0),
-                default=default_idx,
-                input_func=self.input)
+                    _note(self.console, request.message, request.title, request.subtitle)
+            prompt_choices = choices + (["Other (enter your own choice)"] if request.allow_extra else [])
+            choice_idx = self.session.choose(_rl_prompt(self.console, request.prompt), prompt_choices, default_idx or 1)
             if request.allow_extra and choice_idx == extra_choice_idx:
-                extra_choice = _ask_text(self.console, "Enter your choice", self.input)
-                return extra_choice
+                return self.session.transient_input(_rl_prompt(self.console, "Enter your choice "))
             return choices[choice_idx - 1]
-        finally:
-            self.input_lock.release()
         
 
     def on_event(self, event: DisplayEvent):
@@ -239,44 +204,14 @@ class Display(DisplayAbstract):
             pairs.append(f"[bold yellow]{k}[/bold yellow]: {v}")
         return ", ".join(pairs)
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
 def _rl_prompt(console: rich.console.Console, markup: str) -> str:
-    """Render markup to an ANSI prompt for `input()`; escapes wrapped in \\001..\\002 so readline ignores their width."""
+    """Render rich markup to an ANSI prompt for prompt_toolkit."""
     text = rich.text.Text.from_markup(markup)
-    rendered = "".join(
+    return "".join(
         (seg.style.render(seg.text) if seg.style else seg.text)
         for seg in console.render(text, options=console.options.update(no_wrap=True, justify=None))
         if isinstance(seg.text, str)
     ).rstrip("\n")
-    return _ANSI_RE.sub(lambda m: "\x01" + m.group(0) + "\x02", rendered)
-
-def _ask_text(
-    console: rich.console.Console,
-    prompt: str,
-    input_func: Callable[[str], str] | None = None,
-) -> str:
-    return (input_func or input)(_rl_prompt(console, prompt + " "))
-
-def _choose_from_int(
-    console: rich.console.Console, 
-    prompt: str, 
-    n_choices: int,
-    default: Optional[int] = None,
-    input_func: Callable[[str], str] | None = None,
-    ) -> int:
-    if default is None:
-        default = 1
-    valid = {str(i) for i in range(1, n_choices + 1)}
-    choices_str = "/".join(sorted(valid, key=int))
-    prompt_str = _rl_prompt(console, f"{prompt} [bold magenta][{choices_str}][/bold magenta] [bold cyan]({default})[/bold cyan]: ")
-    while True:
-        answer = (input_func or input)(prompt_str).strip() or str(default)
-        if answer in valid:
-            break
-        console.print("[red]Please select one of the available options[/red]")
-    console.print()
-    return int(answer)
 
 def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
     panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)

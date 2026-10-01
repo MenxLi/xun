@@ -3,6 +3,8 @@ import threading
 import io
 from pathlib import Path
 from unittest.mock import Mock, patch
+from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.document import Document
 import rich.console
 
 from xun.display_abstract import (
@@ -16,26 +18,24 @@ from xun.display_abstract import (
     ToolResultEvent,
     UserMessageEvent,
 )
+from xun.displays.cli_session import _ActivePrompt, CliSession, SlashCommandCompleter, _PromptInterrupted, _PromptTakeover
 from xun.displays.display import Display
 
 
 class DisplayTest(unittest.TestCase):
-    def test_events_render_and_redraw_during_console_input(self) -> None:
+    def test_events_render_during_console_input(self) -> None:
         display = Display()
         output = io.StringIO()
         display.console = rich.console.Console(file=output, force_terminal=True)
         input_started = threading.Event()
         release_input = threading.Event()
 
-        def blocking_input(_prompt: str) -> str:
+        def blocking_prompt(*_args, **_kwargs) -> str:
             input_started.set()
             self.assertTrue(release_input.wait(1))
             return "hello"
 
-        with (
-            patch("builtins.input", side_effect=blocking_input),
-            patch("xun.displays.display.readline.get_line_buffer", return_value="partial"),
-        ):
+        with patch.object(display.session._main_session, "prompt", side_effect=blocking_prompt):
             input_thread = threading.Thread(target=display.input, args=(">>> ",))
             input_thread.start()
             self.assertTrue(input_started.wait(1))
@@ -47,59 +47,12 @@ class DisplayTest(unittest.TestCase):
             event_thread.join(1)
 
             self.assertFalse(event_thread.is_alive())
-            self.assertTrue(output.getvalue().endswith(">>> partial"))
+            self.assertIn("background", output.getvalue())
 
             release_input.set()
             input_thread.join(1)
 
         self.assertFalse(input_thread.is_alive())
-
-    def test_confirm_is_shown_while_console_input_is_active(self) -> None:
-        display = Display()
-        output = io.StringIO()
-        display.console = rich.console.Console(file=output, force_terminal=True, width=100)
-        input_started = threading.Event()
-        release_input = threading.Event()
-        input_calls = 0
-
-        def controlled_input(_prompt: str) -> str:
-            nonlocal input_calls
-            input_calls += 1
-            if input_calls == 1:
-                input_started.set()
-                self.assertTrue(release_input.wait(1))
-                return "draft"
-            return "1"
-
-        request = Display.ChoiceRequest(
-            agent_info=AGENT,
-            prompt="Allow command?",
-            choices=["Yes", "No"],
-        )
-        choice: list[str] = []
-        with (
-            patch("builtins.input", side_effect=controlled_input),
-            patch("xun.displays.display.readline.get_line_buffer", return_value="partial"),
-        ):
-            input_thread = threading.Thread(target=display.input, args=(">>> ",))
-            input_thread.start()
-            self.assertTrue(input_started.wait(1))
-
-            confirm_thread = threading.Thread(target=lambda: choice.append(display.get_choice(request)))
-            confirm_thread.start()
-            confirm_thread.join(0.05)
-
-            self.assertTrue(confirm_thread.is_alive())
-            self.assertIn("Allow command?", output.getvalue())
-            self.assertIn("Waiting for current input to finish.", output.getvalue())
-            self.assertTrue(output.getvalue().endswith(">>> partial"))
-
-            release_input.set()
-            input_thread.join(1)
-            confirm_thread.join(1)
-
-        self.assertEqual(choice, ["Yes"])
-        self.assertFalse(confirm_thread.is_alive())
 
     def test_running_events_are_ignored(self) -> None:
         display = Display()
@@ -114,6 +67,121 @@ class DisplayTest(unittest.TestCase):
             ))
 
         display._unhandled.assert_not_called()
+
+
+class CliSessionTest(unittest.TestCase):
+    def test_confirm_takeover_saves_console_input(self) -> None:
+        session = CliSession()
+        active_app = Mock()
+        active_app.is_running = True
+        active_app.current_buffer.document = Document("draft", cursor_position=2)
+        active_app.loop.call_soon_threadsafe.side_effect = lambda callback: callback()
+        ready = threading.Event()
+        ready.set()
+        session._active_prompt = _ActivePrompt(active_app, ready, preemptible=True)
+
+        takeover = session._request_takeover()
+
+        self.assertIsNotNone(takeover)
+        assert takeover is not None
+        self.assertEqual(takeover.document, Document("draft", cursor_position=2))
+        interrupted = active_app.exit.call_args.kwargs["exception"]
+        self.assertIs(interrupted.takeover, takeover)
+
+    def test_confirm_waits_for_prompt_start_before_takeover(self) -> None:
+        session = CliSession()
+        active_app = Mock()
+        active_app.is_running = False
+        active_app.loop = None
+        ready = threading.Event()
+        session._active_prompt = _ActivePrompt(active_app, ready, preemptible=True)
+        takeovers: list[_PromptTakeover | None] = []
+
+        takeover_thread = threading.Thread(target=lambda: takeovers.append(session._request_takeover()))
+        takeover_thread.start()
+        takeover_thread.join(0.05)
+        self.assertTrue(takeover_thread.is_alive())
+
+        active_app.is_running = True
+        active_app.loop = Mock()
+        active_app.loop.call_soon_threadsafe.side_effect = lambda callback: callback()
+        active_app.current_buffer.document = Document("draft")
+        ready.set()
+        takeover_thread.join(1)
+
+        self.assertFalse(takeover_thread.is_alive())
+        self.assertIsNotNone(takeovers[0])
+        active_app.exit.assert_called_once()
+
+    def test_console_input_resumes_after_confirm_takeover(self) -> None:
+        session = CliSession()
+        takeover = _PromptTakeover(document=Document("draft", cursor_position=2))
+        result: list[str] = []
+
+        with patch.object(
+            session,
+            "_prompt",
+            side_effect=[_PromptInterrupted(takeover), "draft"],
+        ) as prompt:
+            input_thread = threading.Thread(target=lambda: result.append(session.input(">>> ")))
+            input_thread.start()
+            self.assertTrue(takeover.released.wait(1))
+            self.assertTrue(input_thread.is_alive())
+
+            takeover.done.set()
+            input_thread.join(1)
+
+        self.assertEqual(result, ["draft"])
+        self.assertEqual(prompt.call_args_list[1].args[2], takeover.document)
+        self.assertFalse(input_thread.is_alive())
+
+    def test_main_prompt_waits_for_pending_takeover(self) -> None:
+        session = CliSession()
+        results: list[str] = []
+        with session._state_changed:
+            session._takeover_waiters = 1
+
+        with patch.object(session._main_session, "prompt", return_value="hello") as prompt:
+            input_thread = threading.Thread(target=lambda: results.append(session.input(">>> ")))
+            input_thread.start()
+            input_thread.join(0.05)
+            self.assertTrue(input_thread.is_alive())
+            prompt.assert_not_called()
+
+            with session._state_changed:
+                session._takeover_waiters = 0
+                session._state_changed.notify_all()
+            input_thread.join(1)
+
+        self.assertEqual(results, ["hello"])
+        self.assertFalse(input_thread.is_alive())
+
+    def test_slash_command_completion_uses_current_commands(self) -> None:
+        commands = [("help", "Show help")]
+        completer = SlashCommandCompleter(lambda: commands)
+
+        first = list(completer.get_completions(Document("/he"), CompleteEvent()))
+        commands.append(("history", "Show history"))
+        second = list(completer.get_completions(Document("/hi"), CompleteEvent()))
+
+        self.assertEqual([(item.text, item.display_meta_text) for item in first], [("help", "Show help")])
+        self.assertEqual([(item.text, item.display_meta_text) for item in second], [("history", "Show history")])
+
+    def test_choose_uses_prompt_toolkit_choice(self) -> None:
+        session = CliSession()
+        with patch("xun.displays.cli_session.prompt_choice", return_value=2) as prompt_choice:
+            self.assertEqual(session.choose("Choose: ", ["Yes", "No"], default=2), 2)
+
+        self.assertEqual(prompt_choice.call_args.kwargs["options"], [(1, "Yes"), (2, "No")])
+        self.assertEqual(prompt_choice.call_args.kwargs["default"], 2)
+
+    def test_choose_rejects_empty_choices(self) -> None:
+        with self.assertRaisesRegex(ValueError, "At least one choice"):
+            CliSession().choose("Choose: ", [])
+
+    def test_choose_rejects_invalid_default(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Default choice is out of range"):
+            CliSession().choose("Choose: ", ["Yes", "No"], default=3)
 
 
 AGENT = AgentInfo(name="Xun", identifier="agent-1", workdir=Path.cwd())

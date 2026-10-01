@@ -1,6 +1,3 @@
-# import for arrow key support in input()
-import readline     # noqa
-
 import argparse, shlex, sys, hashlib, tempfile, uuid
 from contextlib import contextmanager, nullcontext, suppress
 from pathlib import Path
@@ -79,7 +76,6 @@ def input_to_instruction(raw_input: str) -> Instruction:
 
 def get_instruction(display: DisplayAbstract | None = None) -> Instruction:
     while True:
-        print("Input (`/help` for help).")
         raw_input = (display.input(">>> ") if isinstance(display, Display) else input(">>> ")).strip()
         if raw_input:
             return input_to_instruction(raw_input)
@@ -133,6 +129,14 @@ def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
             agent.error(f"Invalid instruction: {inst}")
 
 def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
+    if isinstance(agent.display, Display):
+        agent.display.set_command_provider(
+            lambda: (
+                (("help", "Show available commands"),)
+                + tuple((command.name, command.description) for command in agent.command.commands.values())
+            )
+        )
+        agent.display.console.print("[dim]Type a message or / for commands. Use Up to search history.[/dim]")
     if task:
         inst = input_to_instruction(task)
     else:
