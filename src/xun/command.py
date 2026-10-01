@@ -343,12 +343,15 @@ def default_commands_with_fs() -> list[Command]:
             handoff [file_name]
         """
         if not arguments:
-            file_name = f"handoff_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.zip"
+            file_path = f"handoff_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.zip"
         else:
             assert len(arguments) == 1, "Please provide exactly one file name for the handoff package."
-            file_name = arguments[0]
-        agent.workspace.resolve(Path(file_name), raise_on_invalid=True)
-        prompt = get_handoff_prompt(file_name)
+            file_path = arguments[0]
+        resolved = agent.workspace.resolve(Path(file_path), raise_on_invalid=True)
+        if not resolved.in_workdir:
+            raise ValueError("The resolved path is not within the workspace directory.")
+        rel_path = resolved.path.resolve().relative_to(agent.workspace.workdir)
+        prompt = get_handoff_prompt(str(rel_path))
         agent.instruct(prompt, _emit_event=False).execute()
 
     return [
