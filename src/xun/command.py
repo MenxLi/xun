@@ -180,16 +180,28 @@ def default_commands() -> list[Command]:
                     agent.info("No temporary files to clear.")
                     
 
-    def _revise_handler(agent: "Agent[Agent.T.Init]") -> None:
+    def _revise_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
+        """Edit or roll back to the last user message.
+        If no arguments are provided, the last user message is removed and execution pauses for re-entry.
+        If arguments are provided, the last user message is replaced with the given content.
+        Use '/continue' afterwards to proceed.
+        Usage:
+            revise
+            revise <new content>
+        """
         records = agent.conversation.pop_from_last_user_message()
         assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
-        agent.info("Revised to last user message.")
+        if not args:
+            agent.info("Revised to last user message.")
+            return
+        agent.instruct(" ".join(args))
+        agent.info("Revised last user message. Use /continue to proceed.")
 
     def _retry_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.conversation.pop_from_last_user_message(inclusive=False)
         agent.info("Restarted from last user message.")
 
-    def _config_handler(agent: "Agent[Agent.T.Init]", args: list[str] = []) -> None:
+    def _config_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         """Show or edit the agent's configuration.
         If no arguments are provided, the current configuration is displayed.
         To edit a configuration value, provide a single argument in the format 'key.sub=value'.
@@ -238,7 +250,7 @@ def default_commands() -> list[Command]:
         Command(name="tokens", description="Show tokens used in conversation.", handler=_token_query_handler),
         Command(name="clear", description="Clear conversation history. Use 'clear all' to also remove temporary files.", handler=_clear_handler),
         Command(name="continue", description="Continue execution.", handler=_continue_handler),
-        Command(name="revise", description="Edit last message.", handler=_revise_handler),
+        Command(name="revise", handler=_revise_handler),
         Command(name="retry", description="Retry last message.", handler=_retry_handler),
         Command(name="config", handler=_config_handler),
         Command(name="tools", description="List registered tools.", handler=_tools_handler),
