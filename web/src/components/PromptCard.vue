@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown } from 'lucide-vue-next'
+import { Check, ChevronDown, CircleHelp } from 'lucide-vue-next'
 import type { PendingPrompt } from '../types'
 
 const props = defineProps<{ prompt: PendingPrompt; agentName?: string; submitting?: boolean; error?: string }>()
@@ -9,6 +9,8 @@ const emit = defineEmits<{ submit: [value: string] }>()
 const { t } = useI18n()
 const selected = ref('')
 const extra = ref('')
+const activeChoice = computed(() => extra.value.trim() ? '' : selected.value)
+const message = computed(() => props.prompt.message || props.prompt.prompt)
 
 watch(() => props.prompt, prompt => {
   selected.value = prompt.default || ''
@@ -23,19 +25,28 @@ function submit() {
 
 <template>
   <section class="prompt-card" :aria-labelledby="`prompt-title-${prompt.id}`">
-    <span class="eyebrow">{{ agentName ? t('prompt.agentAsking', { name: agentName }) : t('prompt.agentRequest') }}</span>
-    <h2 :id="`prompt-title-${prompt.id}`">{{ prompt.title || t('prompt.choiceRequired') }}</h2>
-    <p v-if="prompt.subtitle" class="prompt-subtitle">{{ prompt.subtitle }}</p>
-    <details v-if="(prompt.message || prompt.prompt).length > 500" class="prompt-message-long">
-      <summary>{{ t('prompt.viewFull') }} <ChevronDown :size="13" /></summary>
-      <p>{{ prompt.message || prompt.prompt }}</p>
-    </details>
-    <p v-else>{{ prompt.message || prompt.prompt }}</p>
-    <div class="prompt-choices">
-      <button v-for="choice in prompt.choices" :key="choice" :class="{ selected: selected === choice }" @click="selected = choice">{{ choice }}</button>
+    <div class="prompt-heading">
+      <span class="eyebrow">{{ agentName ? t('prompt.agentAsking', { name: agentName }) : t('prompt.agentRequest') }}</span>
+      <span class="prompt-icon" aria-hidden="true"><CircleHelp :size="14" /></span>
+      <h2 :id="`prompt-title-${prompt.id}`">{{ prompt.title || t('prompt.choiceRequired') }}</h2>
     </div>
-    <input v-if="prompt.allow_extra" v-model="extra" :placeholder="t('prompt.extraPlaceholder')" @keydown.enter="submit">
+    <p v-if="prompt.subtitle" class="prompt-subtitle">{{ prompt.subtitle }}</p>
+    <details v-if="message.length > 500" class="prompt-message-long">
+      <summary>{{ t('prompt.viewFull') }} <ChevronDown :size="13" /></summary>
+      <p class="prompt-message">{{ message }}</p>
+    </details>
+    <p v-else class="prompt-message">{{ message }}</p>
+    <div class="prompt-choices" role="group" :aria-label="prompt.title || t('prompt.choiceRequired')">
+      <button v-for="(choice, index) in prompt.choices" :key="choice" type="button" :class="{ selected: activeChoice === choice }" :aria-pressed="activeChoice === choice" :disabled="submitting" @click="selected = choice; extra = ''">
+        <span class="prompt-choice-index" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
+        <span class="prompt-choice-label">{{ choice }}</span>
+        <Check v-if="activeChoice === choice" :size="15" aria-hidden="true" />
+      </button>
+    </div>
     <p v-if="error" class="prompt-error" role="alert">{{ error }}</p>
-    <button class="primary-button" :disabled="submitting || (!selected && !extra.trim())" @click="submit">{{ submitting ? t('prompt.submitting') : t('prompt.submit') }}</button>
+    <div class="prompt-footer">
+      <input v-if="prompt.allow_extra" v-model="extra" :disabled="submitting" :placeholder="t('prompt.extraPlaceholder')" :aria-label="t('prompt.extraPlaceholder')" @keydown.enter="submit">
+      <button class="primary-button" :disabled="submitting || (!selected && !extra.trim())" @click="submit">{{ submitting ? t('prompt.submitting') : t('prompt.submit') }}</button>
+    </div>
   </section>
 </template>

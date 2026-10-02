@@ -381,21 +381,34 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .mobile-close, .mobile-scrim { display: none; }
 .spinning { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.prompt-stream { width: min(780px, calc(100% - 40px)); margin: 0 auto; padding: 0 0 26px; display: grid; gap: 14px; }
-.prompt-card { padding: 18px; border: 1px solid var(--line-strong); border-left: 3px solid var(--warm); border-radius: 7px; background: var(--paper); box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 45%, transparent); overflow: hidden; }
-.prompt-card h2 { margin: 6px 0 3px; font: 600 20px/1.2 'Newsreader', serif; }
-.prompt-card p { margin: 9px 0; color: var(--ink); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
-.prompt-card .prompt-subtitle { margin-top: 0; color: var(--muted); }
-.prompt-message-long summary { width: fit-content; margin: 10px 0; display: flex; align-items: center; gap: 4px; color: var(--accent); font-size: 10px; font-weight: 700; cursor: pointer; list-style: none; }
+.prompt-stream { width: min(500px, calc(100% - 32px)); margin: 0 auto; padding: 0 0 20px; display: grid; gap: 10px; }
+.prompt-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 2px 12px color-mix(in srgb, var(--shadow) 16%, transparent); }
+.prompt-heading { min-width: 0; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 3px; }
+.prompt-heading .eyebrow { grid-column: 2; }
+.prompt-icon { width: 24px; height: 24px; grid-column: 1; grid-row: 2; display: grid; place-items: center; border-radius: 6px; background: var(--accent-soft); color: var(--accent-dark); }
+.prompt-card h2 { min-width: 0; margin: 0; grid-column: 2; grid-row: 2; font-size: 13px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.prompt-card p { margin: 9px 0 0; color: var(--ink); font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prompt-card .prompt-subtitle { margin: 3px 0 0 33px; color: var(--muted); font-size: 10px; }
+.prompt-card .prompt-message { margin-top: 12px; }
+.prompt-message-long summary { width: fit-content; margin: 8px 0 0; display: flex; align-items: center; gap: 4px; color: var(--accent); font-size: 10px; font-weight: 700; cursor: pointer; list-style: none; }
 .prompt-message-long summary::-webkit-details-marker { display: none; }
 .prompt-message-long[open] summary svg { transform: rotate(180deg); }
-.prompt-choices { margin: 14px 0; display: grid; gap: 6px; }
-.prompt-choices button { padding: 9px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--input); color: var(--ink); cursor: pointer; text-align: left; }
-.prompt-choices button.selected { border-color: var(--accent); background: var(--accent-soft); }
-.prompt-card input { width: 100%; height: 38px; margin-bottom: 12px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--input); color: var(--ink); }
-.prompt-card .prompt-error { margin: 0 0 10px; color: var(--danger); font-size: 10px; }
+.prompt-choices { margin-top: 14px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.prompt-choices button { width: 100%; min-height: 38px; padding: 7px 11px; display: flex; align-items: center; gap: 11px; border: 0; background: transparent; color: var(--ink); font-size: 11px; line-height: 1.4; cursor: pointer; text-align: left; }
+.prompt-choices button + button { border-top: 1px solid var(--line); }
+.prompt-choices button:hover:not(:disabled) { background: var(--hover); }
+.prompt-choices button.selected { background: color-mix(in srgb, var(--accent-soft) 75%, var(--paper)); color: var(--accent-dark); }
+.prompt-choice-index { flex: none; color: var(--muted); font: 10px/1 'Fira Code', monospace; }
+.prompt-choices button.selected .prompt-choice-index { color: var(--accent-dark); }
+.prompt-choice-label { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.prompt-choices button svg { flex: none; }
+.prompt-choices button:disabled { cursor: default; }
+.prompt-footer { margin-top: 12px; padding-top: 12px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--line); }
+.prompt-card input { min-width: 0; height: 34px; padding: 0 10px; flex: 1; border: 1px solid var(--line); border-radius: 6px; background: var(--input); color: var(--ink); font-size: 11px; }
+.prompt-card .prompt-error { margin-top: 8px; color: var(--danger); font-size: 10px; }
+.prompt-footer .primary-button { min-width: 72px; height: 34px; padding: 0 12px; flex: none; color: var(--paper); font-size: 11px; }
 .primary-button { min-width: 82px; height: 36px; border: 0; border-radius: 5px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
-.primary-button:disabled { opacity: .35; }
+.primary-button:disabled { opacity: .35; cursor: default; }
 @media (max-width: 899px) { .session-sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100% - 42px)); box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .file-browser { position: fixed; inset: 0 0 0 auto; width: min(330px, calc(100% - 42px)) !important; box-shadow: -18px 0 45px rgba(25, 33, 29, .18); } .resize-handle.horizontal { display: none; } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } .topbar { padding: 0 12px; } .agent-controls { max-width: 360px; margin-left: 12px; margin-right: 0; } .agent-controls select { min-width: 0; max-width: none; } .stream-filter, .token-badge, .connection { display: none; } .topbar-actions { gap: 4px; } }
 @media (max-width: 720px) { .agent-controls { margin-left: 10px; } }
 @media (max-width: 600px) { .topbar { height: 56px; padding: 0 8px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; } .agent-controls { width: 100%; margin: 0; } .agent-controls select { min-width: 0; max-width: none; flex: 1; } .stream-filter { display: none; } .topbar-actions { gap: 2px; } .connection { display: none; } .settings-menu { position: fixed; top: 64px; right: 10px; left: 10px; width: auto; padding: 10px; } .stream { width: calc(100% - 24px); padding-top: 22px; } .message.user { max-width: 94%; } .composer-area { padding: 9px 9px 11px; } .composer-hint { display: none; } .command-menu button { grid-template-columns: 100px 1fr; } .command-line { grid-template-columns: 105px 1fr; } .tool-listing { grid-template-columns: 1fr; gap: 6px; } }
