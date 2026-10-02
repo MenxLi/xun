@@ -11,7 +11,7 @@ from functools import wraps
 import inspect
 from openai.types.chat import ChatCompletionToolParam
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError, create_model
-from .types import ModelCapabilityType
+from .types import ModelCapabilityType, ToolResultType
 from .util import parse_list_str
 if TYPE_CHECKING:
     from .agent import Agent
@@ -82,10 +82,10 @@ def tool_attr(
 
 @dataclass(frozen=True)
 class Function:
-    func: Callable
+    func: Callable[..., ToolResultType]
     name: str
     description: str
-    args_model: type[BaseModel]
+    args_model: type[BaseModel] | None
     tool_schema: ChatCompletionToolParam
     context_param: Optional[str]
     required_capabilities: set[ModelCapabilityType]
@@ -160,6 +160,11 @@ class Function:
             raise ValueError(
                 f"Tool '{self.name}' arguments must decode to a JSON object, got {type(parsed_args).__name__}."
             )
+        
+        if self.args_model is None:
+            if self.context_param:
+                return self.func(**parsed_args, **{self.context_param: context})
+            return self.func(**parsed_args)
 
         try:
             validated = self.args_model.model_validate(parsed_args, strict=True)
@@ -168,8 +173,7 @@ class Function:
 
         if self.context_param:
             return self.func(**validated.model_dump(), **{self.context_param: context})
-        else:
-            return self.func(**validated.model_dump())
+        return self.func(**validated.model_dump())
 
 
 def _sequence_coercer(is_tuple: bool):

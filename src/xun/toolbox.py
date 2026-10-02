@@ -56,23 +56,34 @@ class ToolBox:
         return self
 
     def register(self, *funcs: Callable):
+        functions = [
+            Function.from_function(f if is_except_safe_wrapper(f) else except_safe(f)) 
+            for f in funcs
+            ]
+        for f in functions:
+            self.register_raw(f)
+        return self
+    
+    def register_raw(self, *funcs: Function):
         for f in funcs:
-            fn = f if is_except_safe_wrapper(f) else except_safe(f)
-            wrapped = Function.from_function(fn)
-            old = self._tools.get(wrapped.name)
+            old = self._tools.get(f.name)
             if old is None:
-                self._tools[wrapped.name] = wrapped
+                self._tools[f.name] = f
                 continue
-            if wrapped.override:
-                self._tools[wrapped.name] = wrapped
-                msg = f"Overriding tool '{wrapped.name}'"
+            if f.override:
+                self._tools[f.name] = f
+                msg = f"Overriding tool '{f.name}'"
             elif old.override:
-                msg = f"Kept existing override for '{wrapped.name}', skipped incoming"
+                msg = f"Kept existing override for '{f.name}', skipped incoming"
             else:
-                raise ValueError(f"Conflict tool name: {wrapped.name}")
+                raise ValueError(f"Conflict tool name: {f.name}")
             if get_internal_env_bool('INFO_TOOL_OVERRIDE'):
                 rich.print(f"[blue]Info: {msg}[/blue]")
         return self
+    
+    def pop(self, tool_name: str) -> Function | None:
+        self._disabled_tools.discard(tool_name)
+        return self._tools.pop(tool_name, None)
 
     def tool[F: Callable](self, func: F) -> F:
         """Decorator to register a function as a tool."""
