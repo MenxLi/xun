@@ -84,6 +84,9 @@ As mentioned above, Xun provides multiple entrypoints for different usage scenar
 | `xunc` | Container session | Run `xuns` in an isolated Docker container. |
 | `xunx` | Multiplexed service | Proxy per-user containers through one server. |
 
+The agent respects `AGENTS.md` at its working directory, 
+to turn off this behavior, set `load_project_instructions: false` in the agent's configuration.
+
 ## API
 
 **Basic**: Quickly set up an agent with plain functions as tools — no decorators, no classes needed. 
@@ -98,9 +101,6 @@ def add(a: int, b: int) -> int:
 agent = setup_agent(tools = [add])
 agent.instruct("Add 2 and 3.").execute()
 ```
-
-If `AGENTS.md` exists in the agent's working directory, 
-they will be loaded into system prompt (set `load_project_instructions: false` to disable). 
 
 **Advanced**: The framework is flexible and extensible.
 Additional features are shown in [demo.ipynb](demo.ipynb), including:
@@ -231,7 +231,7 @@ The config supports `${XUN_...}` placeholders which are substituted from environ
 | `enable_extensions` | — | Load extensions from `$XUN_HOME/extensions/`. Internal helper agents set this to `false` automatically. |
 | `load_project_instructions` | — | Automatically load `AGENTS.md` from the working directory into the system prompt. |
 
-More configuration options are available; see the source code at [src/xun/config.py](src/xun/config.py).
+More configuration options are available; see the source code of `AgentConfig` at [src/xun/config.py](src/xun/config.py).
 
 ## Extensions
 
