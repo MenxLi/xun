@@ -1,5 +1,6 @@
 import hashlib, datetime
 import threading
+from typing import TYPE_CHECKING
 import rich
 import rich.box
 import rich.table
@@ -11,6 +12,9 @@ import rich.text
 
 from ..display_abstract import *
 from .cli_session import CliSession, CommandProvider
+if TYPE_CHECKING:
+    from ..agent import Agent
+    from ..agent_state import T
 
 class Display(DisplayAbstract):
     def __init__(self, event_buffer_size: int = 1000):
@@ -25,8 +29,9 @@ class Display(DisplayAbstract):
                 self.console.print(f"[dim][{datetime.datetime.now().strftime('%H:%M:%S')}][/dim]", end=" ")
             self.console.print(*args, **kwargs)
 
-    def input(self, prompt: str = "") -> str:
-        return self.session.input(prompt)
+    def input(self, prompt: str = "", agent: "Agent[T.Init] | None" = None) -> str:
+        """Read console input; `agent` owns this prompt and roots `@` file completion."""
+        return self.session.input(prompt, agent=agent)
 
     def set_command_provider(self, provider: CommandProvider) -> None:
         self.session.set_command_provider(provider)

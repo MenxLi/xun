@@ -1,6 +1,7 @@
 import unittest
 import threading
 import io
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 from prompt_toolkit.completion import CompleteEvent
@@ -18,7 +19,15 @@ from xun.display_abstract import (
     ToolResultEvent,
     UserMessageEvent,
 )
-from xun.displays.cli_session import _ActivePrompt, CliSession, SlashCommandCompleter, _PromptInterrupted, _PromptTakeover
+from xun.displays.cli_session import (
+    _ActivePrompt,
+    CliCompleter,
+    CliSession,
+    FileMentionCompleter,
+    SlashCommandCompleter,
+    _PromptInterrupted,
+    _PromptTakeover,
+)
 from xun.displays.display import Display
 
 
@@ -166,6 +175,48 @@ class CliSessionTest(unittest.TestCase):
 
         self.assertEqual([(item.text, item.display_meta_text) for item in first], [("help", "Show help")])
         self.assertEqual([(item.text, item.display_meta_text) for item in second], [("history", "Show history")])
+
+    def test_file_mention_completes_workdir_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "src").mkdir()
+            (root / "src" / "main.py").write_text("")
+            (root / "README.md").write_text("")
+            completer = FileMentionCompleter(lambda: root)
+
+            def complete(text: str, after: str = "") -> list[tuple[str, str]]:
+                doc = Document(text + after, cursor_position=len(text))
+                return [(c.text, c.display_meta_text) for c in completer.get_completions(doc, CompleteEvent())]
+
+            self.assertEqual(complete("analyze @"), [("README.md ", "file"), ("src/", "dir")])
+            # substring match, like the web composer
+            self.assertEqual(complete("@readme"), [("README.md ", "file")])
+            self.assertEqual(complete("@src/"), [("main.py ", "file")])
+            # trailing whitespace already present: no extra space appended
+            self.assertEqual(complete("@src/", " "), [("main.py", "file")])
+            # no trigger, invalid directory, missing root: nothing to complete
+            self.assertEqual(complete("analyze src/"), [])
+            self.assertEqual(complete("@nope/"), [])
+            self.assertEqual(list(FileMentionCompleter(lambda: None).get_completions(Document("@"), CompleteEvent())), [])
+
+    def test_input_sets_completion_root_per_call(self) -> None:
+        session = CliSession()
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = Mock()
+            agent.workspace.workdir = Path(tmp)
+            with patch.object(session._main_session, "prompt", return_value="hello"):
+                self.assertEqual(session.input(">>> ", agent=agent), "hello")
+                self.assertEqual(session._prompt_workdir(), None)
+                self.assertEqual(session.input(">>> "), "hello")
+
+    def test_cli_completer_serves_both_triggers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "notes.txt").write_text("")
+            completer = CliCompleter(lambda: [("help", "Show help")], lambda: Path(tmp))
+            slash = list(completer.get_completions(Document("/he"), CompleteEvent()))
+            file_ref = list(completer.get_completions(Document("see @not"), CompleteEvent()))
+            self.assertEqual([c.display_meta_text for c in slash], ["Show help"])
+            self.assertEqual([c.text for c in file_ref], ["notes.txt "])
 
     def test_choose_uses_prompt_toolkit_choice(self) -> None:
         session = CliSession()

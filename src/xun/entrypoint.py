@@ -77,9 +77,12 @@ def input_to_instruction(raw_input: str) -> Instruction:
     return _parse_message_input(raw_input)
 
 
-def get_instruction(display: DisplayAbstract | None = None) -> Instruction:
+def get_instruction(
+    display: DisplayAbstract | None = None,
+    agent: "Agent[Agent.T.Init] | None" = None,
+) -> Instruction:
     while True:
-        raw_input = (display.input(">>> ") if isinstance(display, Display) else input(">>> ")).strip()
+        raw_input = (display.input(">>> ", agent=agent) if isinstance(display, Display) else input(">>> ")).strip()
         if raw_input:
             return input_to_instruction(raw_input)
 
@@ -139,11 +142,11 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
                 + tuple((command.name, command.description) for command in agent.command.commands.values())
             )
         )
-        agent.display.console.print("[dim]Type a message or / for commands. Use Up to search history.[/dim]")
+        agent.display.console.print("[dim]Type a message, / for commands, or @ for files. Use Up to search history.[/dim]")
     if task:
         inst = input_to_instruction(task)
     else:
-        inst = get_instruction(agent.display)
+        inst = get_instruction(agent.display, agent=agent)
 
     while True:
         try:
@@ -152,7 +155,7 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
             agent.error("Execution interrupted by user.")
-        inst = get_instruction(agent.display)
+        inst = get_instruction(agent.display, agent=agent)
 
 
 @contextmanager
@@ -230,7 +233,7 @@ def cli_commands() -> list[Command]:
         print(f"Multi-line input mode (end with a line containing only {eol!r}):")
         lines: list[str] = []
         while True:
-            line = agent.display.input("... ") if isinstance(agent.display, Display) else input("... ")
+            line = agent.display.input("... ", agent=agent) if isinstance(agent.display, Display) else input("... ")
             if line == eol:
                 break
             lines.append(line)
