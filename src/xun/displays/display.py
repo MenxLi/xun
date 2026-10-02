@@ -53,7 +53,7 @@ class Display(DisplayAbstract):
             case ShowExtensionsEvent(): self._show_extensions(event)
             case ShowHistoryEvent(): self._show_history(event)
             case ToolCallEvent(): self._show_tool_call(event)
-            case ModelWorkingEvent(): self._show_model_working(event)
+            case ModelWorkingEvent(): ...
             case ModelMessageEvent(): self._show_model_message(event)
             case ToolResultEvent(): self._show_tool_result(event)
             case InfoEvent(): self._show_info(event)
@@ -65,7 +65,8 @@ class Display(DisplayAbstract):
             case UserCommandEvent(): ... # Shown by input
             case AgentBindEvent(): self._agent_bind(event)
             case AgentUnbindEvent(): self._agent_unbind(event)
-            case AgentRunningStartEvent() | AgentRunningEndEvent(): ...
+            case AgentRunningStartEvent(): self._show_agent_running_start(event)
+            case AgentRunningEndEvent(): ...
             case _: self._unhandled(event)
 
     def _show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:
@@ -133,17 +134,27 @@ class Display(DisplayAbstract):
         tool_id = hashlib.sha1(ev.tool_call_id.encode()).hexdigest()[:6]
         self._print(f":wrench: {event.agent.name} [dim]{tool_id}[/dim] [bold green]{ev.tool_name}[/bold green]({self._arg_str(ev.args)})")
 
-    def _show_model_working(self, event: DisplayEvent[ModelWorkingEvent]) -> None:
-        ev = event.payload
+    def _show_agent_running_start(self, event: DisplayEvent[AgentRunningStartEvent]) -> None:
         msg = f":green_circle: {event.agent.name} running"
-        if ev.remaining_iterations and ev.remaining_iterations < 8:
-            msg += f" (max {ev.remaining_iterations})"
         self._print(msg)
 
     def _show_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
         ev = event.payload
-        if ev.content.strip():
-            self._print(rich.panel.Panel(rich.markdown.Markdown(ev.content, code_theme="monokai", hyperlinks=True), title=f" {event.agent.name} ", border_style="blue"))
+        def fmt_tokens(t: int):
+            if t > 1000:
+                return f"{t/1000:.1f}k"
+            return f"{t}"
+        if not ev.content.strip(): 
+            return
+        self._print(rich.panel.Panel(
+            rich.markdown.Markdown(
+                ev.content, code_theme="monokai", hyperlinks=True
+                ), 
+            title=f" {event.agent.name} ", 
+            border_style="blue", 
+            subtitle=f"[dim]{fmt_tokens(ev.total_tokens)}[/dim]",
+            subtitle_align="right"
+            ))
 
     def _show_warning(self, event: DisplayEvent[WarningEvent]) -> None:
         self._print(f":yellow_circle: {event.payload.message}")
@@ -168,8 +179,6 @@ class Display(DisplayAbstract):
             self._print(f":information_source: {text}")
 
     def _show_confirm(self, event: DisplayEvent[ConfirmEvent]) -> None:
-        if event.payload.source == "user":
-            return
         self._print(f"[dim]Confirmed by {event.payload.source}: {event.payload.choice!r} for {event.payload.prompt!r}[/dim]")
     
     def _agent_bind(self, event: DisplayEvent[AgentBindEvent]) -> None:
