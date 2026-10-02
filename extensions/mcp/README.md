@@ -11,8 +11,8 @@ because xun's own API is synchronous).
 
 Copy this directory to `$XUN_HOME/extensions/mcp/`. It needs a xun build that has
 `ToolBox.register_raw`, `ToolBox.pop`, `ToolBox.is_disabled` and
-`AgentConfig.extension_settings` — all on main after the 1.2.1 release. On an older xun the
-extension prints which API it is missing and leaves the agent alone.
+`AgentConfig.extension_settings` — all on main after commit `2ef8fd369ce9` 
+(Will be ready on v1.3.0 release).
 
 ## Configure
 
@@ -53,6 +53,8 @@ Two rules about `$` — the whole config file goes through `string.Template`:
 in `servers.*.env` in a multi-tenant deployment.
 
 ### Example: Blender
+
+> Prerequisites: Blender and the `mcp-for-blender` addon installed, plus `uvx` available in your PATH
 
 Blender's `mcp-for-blender` server speaks stdio and bridges to a socket inside Blender
 (default `localhost:9876`), so it drops straight into the transport above:

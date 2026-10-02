@@ -236,6 +236,8 @@ More configuration options are available; see the source code of `AgentConfig` a
 
 ## Extensions
 
+**Extension is the best way to customize and extend xun's functionality.**
+
 Drop a Python file under `$XUN_HOME/extensions/` and every agent picks up its effects (tools, hooks, commands, config tweaks) at initialization — no wiring needed. Extensions are trusted code, like a shell rc file.
 
 ```python
@@ -254,3 +256,10 @@ The optional `extensions/skills/` extension discovers standard [Agent Skills](ht
 
 Install it under `$XUN_HOME/extensions/skills/` and install its dependency with `pip install pyyaml`. 
 It progressively discloses instructions through `activate_skill`, exposes bundled files and scripts only after activation, and adds `/skill` for listing and activation.
+
+## MCP
+
+The optional `extensions/mcp/` extension allows xun to communicate with [Model Context Protocol](https://modelcontextprotocol.io) servers. 
+
+Install it under `$XUN_HOME/extensions/mcp/` and configure servers in `config.json` under `extension_settings.mcp`. 
+See [extensions/mcp/README.md](extensions/mcp/README.md) for full details.
