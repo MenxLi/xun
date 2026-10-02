@@ -124,6 +124,6 @@ runs the command handler.
 
 ## Tests
 
-`extensions/mcp/test_mcp_extension.py` (runs with `make test`) covers large
+`extensions/mcp/test_mcp_extension.py` (runs with `make test-ext`) covers large
 stdio image responses, read failures, reconnects, status, and restart using a subprocess.
 The Windows event-loop path (`ProactorEventLoop` in a worker thread) is untested.

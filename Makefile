@@ -1,4 +1,4 @@
-.PHONY: build-web build-docker test doc doc-dist doc-clean doc-update
+.PHONY: build-web build-docker test test-ext doc doc-dist doc-clean doc-update
 
 DOC_PATH := src/xun/assets/docs
 
@@ -46,3 +46,6 @@ doc-clean:
 
 test:
 	uv run python -m unittest discover -s test -t . -v
+
+test-ext:
+	uv run python -m unittest test.test_extensions extensions.mcp.test_mcp_extension extensions.skills.test_skills -v
