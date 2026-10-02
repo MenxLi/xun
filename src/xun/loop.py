@@ -28,7 +28,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         result = ""
         finished = False
         if params.schema is not None:
-            # in-prompt fallback: some backends/models have poor response_format support
+            # prompt-injected schema
             agent.conversation.set_response_schema(params.schema)
         for iteration in range(params.max_iterations):
             agent.check_cancel()
@@ -71,17 +71,18 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 "model": config.model.name,
                 "messages": agent.conversation.completion_params(),
             }
-            if (tools_json := agent.toolbox.list_tools_json(config.model.capabilities)) and len(tools_json) > 0:
+            tools_json = agent.toolbox.list_tools_json(config.model.capabilities)
+            if tools_json:
                 model_params["tools"] = tools_json
                 model_params["tool_choice"] = "auto"
             if config.model.temperature is not None:
                 model_params["temperature"] = config.model.temperature
             if config.model.reasoning_effort is not None:
                 model_params["reasoning_effort"] = config.model.reasoning_effort
-            if params.schema is not None:
-                # structured output: let the provider enforce the schema. 
-                # strict=False keeps arbitrary schemas (and non-strict tools) usable,
-                # the result is still repaired/validated below.
+            if params.schema is not None and not tools_json:
+                # No tools to protect: 
+                # let the provider enforce on top of prompt-injected schema
+                # With tools registered, response_format may suppress tool calls
                 model_params["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {

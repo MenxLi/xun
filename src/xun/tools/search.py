@@ -6,12 +6,10 @@ region and reports structured results.
 
 Two hard-won design points:
 
-- The sub-agent runs WITHOUT `schema=`: passing a schema makes the execution
-  loop send `response_format: json_schema` and inject "respond in JSON now",
-  which some OpenAI-compatible backends honor by answering immediately and
-  skipping tool calls entirely — the agent then "searches" from model memory
-  in ~1s without ever opening the browser. A plain `execute()` keeps the
-  normal tool-calling loop; the final answer is requested as JSON in text.
+- The sub-agent runs WITHOUT `schema=`: its "respond in JSON now" instruction
+  can bias models toward answering early instead of completing the mandatory
+  browsing steps. The final answer is requested as JSON in text and parsed
+  leniently by `_extract_json`.
 
 - Fabrication guard: tool-call hooks record whether a real `browser_snapshot`
   ever returned page content. Results with no browse evidence are still
@@ -202,9 +200,7 @@ def web_search(ctx: ToolCallContext, query: str, max_results: int = 5) -> WebSea
         f"Return up to {max_results} relevant results as the final JSON object."
     )
 
-    # NOTE: deliberately execute() without schema= — schema mode forces JSON
-    # response_format and suppresses the sub-agent's tool calls (see module doc).
-    # execute() is except_safe-wrapped, so it returns Result[str, ErrorInfo].
+    # no schema= here: it biases models toward skipping the browsing steps
     last_error = ""
     with agent as initialized:
         worker = initialized.instruct(task, _emit_event=False)
