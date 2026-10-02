@@ -5,12 +5,12 @@ Conversation compaction.
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Optional
 
 from .types import CancelledError
-from .conversation_message import AbstractMessage
+from .conversation_message import AbstractMessage, SystemPrompt
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -99,7 +99,10 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) ->
         compactor.config.auto_compact.enabled = False
         compactor.config.enable_extensions = False
         compactor.config.auto_confirm = True
-        compactor.conversation.messages = messages.copy()
+        compactor.conversation.messages = [
+            replace(m, persist_sections={}) if isinstance(m, SystemPrompt) and m.persist_sections else m
+            for m in messages
+        ]
 
         with compactor as ready:
             result = ready.instruct(CONDENSE_PROMPT, _emit_event=False).execute(max_iterations=1)

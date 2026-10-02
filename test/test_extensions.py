@@ -241,13 +241,13 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
         self._write_ext("shown", '"""Show me."""\ndef setup_extension(ctx): pass\n')
         self._write_ext("broken", '"""no entry fn."""\nx = 1\n')
         event = self._run_command()
-        self.assertEqual(event.model_dump(), {"extensions": [
-            {"name": "broken", "description": "", "status": "failed", "reason": "has no callable 'setup_extension()'"},
-            {"name": "shown", "description": "Show me.", "status": "uninitialized", "reason": None},
+        self.assertEqual(event.model_dump(), {"title": "Extensions", "extensions": [
+            {"name": "broken", "description": "", "status": "failed", "reason": "has no callable 'setup_extension()'", "source": None},
+            {"name": "shown", "description": "Show me.", "status": "uninitialized", "reason": None, "source": None},
         ]})
 
     def test_empty_listing(self) -> None:
-        self.assertEqual(self._run_command().model_dump(), {"extensions": []})
+        self.assertEqual(self._run_command().model_dump(), {"title": "Extensions", "extensions": []})
 
     def test_command_registered_by_default(self) -> None:
         self.assertIsNotNone(CommandRegistry().with_defaults().get("extensions"))

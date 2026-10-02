@@ -158,6 +158,7 @@
 		.tool-listing-name code { overflow-wrap: anywhere; color: var(--accent-dark); font-size: 10px; }
 		.tool-listing p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
 		.extension-chip { padding: 2px 4px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--muted); font: 8px/1 "Fira Code", ui-monospace, monospace; text-transform: uppercase; }
+		.extension-chip.ready { border-color: color-mix(in srgb, var(--muted) 40%, transparent); }
 		.extension-chip.loaded { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent-dark); background: var(--accent-soft); }
 		.extension-chip.failed { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
 		.extension-chip.skipped { border-color: color-mix(in srgb, var(--warm) 45%, transparent); color: var(--warm); background: color-mix(in srgb, var(--warm) 8%, transparent); }
@@ -310,8 +311,8 @@
 
 		{% elif block.kind == "extensions" %}
 		<section class="panel">
-			<header>Extensions <span>{{ block.extensions | length }}</span></header>
-			{% if not block.extensions %}<div class="panel-empty">No extensions found.</div>{% endif %}
+			<header>{{ block.title or "Extensions" }} <span>{{ block.extensions | length }}</span></header>
+			{% if not block.extensions %}<div class="panel-empty">Nothing found.</div>{% endif %}
 			{% for ext in block.extensions %}
 			<div class="tool-listing">
 				<div class="tool-listing-name"><code>{{ ext.name }}</code><span class="extension-chip {{ ext.status }}">{{ ext.status }}</span></div>

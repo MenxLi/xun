@@ -98,6 +98,6 @@ class Workspace:
         else:
             in_tempdir = False
         in_workdir = resolved_abs.is_relative_to(cwd_abs)
-        if raise_on_invalid and not in_workdir and not in_tempdir:
+        if raise_on_invalid and not (in_workdir or in_tempdir):
             raise ValueError(f"Path {resolved_abs} is not within the agent's workspace (workdir or temporary directory).")
         return ResolvedPath(resolved, in_workdir, in_tempdir)

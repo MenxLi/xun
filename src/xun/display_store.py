@@ -247,7 +247,7 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
                 blocks.append(Block(kind="tools", tools=tuple(t.model_dump() for t in p.tools), time=stamp))
             case ShowExtensionsEvent() as p:
                 close_batch()
-                blocks.append(Block(kind="extensions", extensions=tuple(e.model_dump() for e in p.extensions), time=stamp))
+                blocks.append(Block(kind="extensions", title=p.title, extensions=tuple(e.model_dump() for e in p.extensions), time=stamp))
             case ShowHistoryEvent() as p:
                 close_batch()
                 blocks.append(Block(kind="history", history=tuple(dict(r) for r in p.history), time=stamp))

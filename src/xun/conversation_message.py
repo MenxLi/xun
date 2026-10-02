@@ -70,6 +70,7 @@ Context management notes:
 class SystemPrompt(AbstractMessage):
     content: str
     is_compressed: bool = False
+    persist_sections: dict[str, str] = field(default_factory=dict)
 
     @property
     def role(self) -> str:
@@ -80,13 +81,21 @@ class SystemPrompt(AbstractMessage):
             content = COMPACTED_SYSTEM_PROMPT.format(summary=self.content)
         else:
             content = self.content
+        sections = "\n\n".join(self.persist_sections.values())
+        if sections:
+            content = f"{content}\n\n{sections}" if content else sections
         return {
             'role': 'system',
             'content': content
         }
 
     def to_json(self) -> dict:
-        return {"kind": "system", "content": self.content, "is_compressed": self.is_compressed}
+        return {
+            "kind": "system",
+            "content": self.content,
+            "is_compressed": self.is_compressed,
+            "persist_sections": self.persist_sections,
+        }
 
 
 RESPONSE_SCHEMA_PROMPT = """
@@ -128,7 +137,11 @@ class UserMessage(AbstractMessage):
 def message_from_json(data: dict) -> AbstractMessage:
     kind = data.get("kind", "raw")
     if kind == "system":
-        return SystemPrompt(content=data["content"], is_compressed=data.get("is_compressed", False))
+        return SystemPrompt(
+            content=data["content"],
+            is_compressed=data.get("is_compressed", False),
+            persist_sections=data.get("persist_sections", {}),
+        )
     if kind == "user":
         return UserMessage(
             text=data.get("text", ""),

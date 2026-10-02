@@ -469,29 +469,34 @@ def _terminate_and_collect(process: subprocess.Popen[str]) -> tuple[str, str]:
     return stdout, stderr
 
 
-def _run_shell_command(
-    spec: CommandSpec, 
-    timeout: float, 
-    cwd: Path, 
+def run_command(
+    target: str | Sequence[str],
+    timeout: float,
+    cwd: Path,
     env_overrides: Optional[dict[str, str]],
     cancel_check: Callable[[], bool],
     ) -> subprocess.CompletedProcess[str]:
+    """Run `target` to completion: a string goes through bash, an argv sequence is
+    exec'd directly (no shell, each item stays one literal argument).
+    The command line shown in messages and the result follows the same rule."""
+    command_line = target if isinstance(target, str) else shlex.join(target)
     envs = os.environ.copy()
     if env_overrides:
         envs.update(env_overrides)
-    popen_kwargs = {
-        "shell": True,
-        "executable": shutil.which("bash") or "/bin/sh",
+
+    popen_kwargs: dict[str, object] = {
         "text": True,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "env": envs,
         "cwd": cwd,
     }
+    if isinstance(target, str):
+        popen_kwargs.update(shell=True, executable=shutil.which("bash") or "/bin/sh")
     if os.name != "nt":
         popen_kwargs["start_new_session"] = True
 
-    process = subprocess.Popen(spec.command_line, **popen_kwargs)  # type: ignore[call-overload]  # nosec B602
+    process = subprocess.Popen(target, **popen_kwargs)  # type: ignore[call-overload]  # nosec B602
     deadline = time.monotonic() + timeout
     try:
         while True:
@@ -502,7 +507,7 @@ def _run_shell_command(
                 if cancel_check():
                     _terminate_and_collect(process)
                     raise CancelledError(
-                        f"Command `{spec.command_line}` was cancelled by user."
+                        f"Command `{command_line}` was cancelled by user."
                     )
                 if time.monotonic() >= deadline:
                     raise
@@ -512,11 +517,11 @@ def _run_shell_command(
     except subprocess.TimeoutExpired:
         _terminate_and_collect(process)
         raise RuntimeError(
-            f"Command `{spec.command_line}` timed out after {timeout:g}s and was terminated."
+            f"Command `{command_line}` timed out after {timeout:g}s and was terminated."
         )
 
     return subprocess.CompletedProcess(
-        args=spec.command_line,
+        args=command_line,
         returncode=process.returncode,
         stdout=stdout,
         stderr=stderr,
@@ -528,6 +533,15 @@ class CmdExecResult(TypedDict):
     stdout: str
     stderr: str
     returncode: int
+
+
+def truncate_output(text: str, max_output_size: Optional[int]) -> str:
+    """Preserve head and tail, with a marker in between, when over the limit."""
+    if max_output_size is not None and len(text) > max_output_size:
+        assert max_output_size > 0, "max_output_size must be positive"
+        part_size = max_output_size // 2
+        return f"{text[:part_size]}\n[... truncated output ...]\n{text[-part_size:]}"
+    return text
 
 
 # Unlisted commands, unsupported shell operators, and path-based commands still require confirmation.
@@ -575,25 +589,18 @@ def bash(
     for exe in spec.commands:
         _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=cwd)
 
-    result = _run_shell_command(
-        spec, 
-        timeout=timeout, 
-        cwd=cwd, 
+    result = run_command(
+        spec.command_line,
+        timeout=timeout,
+        cwd=cwd,
         env_overrides=envs,
         cancel_check=ctx.agent.cancel_event.is_set,
-        )
-    
-    def truncate_output(input_str: str):
-        if max_output_size is not None and len(input_str) > max_output_size:
-            assert max_output_size > 0, "max_output_size must be positive"
-            part_size = max_output_size // 2
-            return f"{input_str[:part_size]}\n[... truncated output ...]\n{input_str[-part_size:]}"
-        return input_str
+    )
 
     return CmdExecResult(
         args=spec.command_line,
-        stdout=truncate_output(result.stdout.strip()),
-        stderr=truncate_output(result.stderr.strip()),
+        stdout=truncate_output(result.stdout.strip(), max_output_size),
+        stderr=truncate_output(result.stderr.strip(), max_output_size),
         returncode=result.returncode,
     )
 

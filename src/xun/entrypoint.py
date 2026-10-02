@@ -39,12 +39,17 @@ class CommandInstruction(BaseModel):
 Instruction = MessageInstruction | CommandInstruction
 
 
-def _parse_image_block(image_block: str) -> list[str] | None:
-    images = []
-    for token in shlex.split(image_block):
-        if not token.startswith(IMAGE_PREFIX) or len(token) <= len(IMAGE_PREFIX):
+def _parse_image_block(block: str) -> list[str] | None:
+    images: list[str] = []
+    try:
+        tokens = shlex.split(block)
+    except ValueError:
+        return None
+    for token in tokens:
+        if token.startswith(IMAGE_PREFIX) and len(token) > len(IMAGE_PREFIX):
+            images.append(token[len(IMAGE_PREFIX):])
+        else:
             return None
-        images.append(token[len(IMAGE_PREFIX):])
     return images or None
 
 
@@ -52,15 +57,13 @@ def _parse_message_input(raw_input: str) -> MessageInstruction:
     content = raw_input.strip()
     if not content.startswith("["):
         return MessageInstruction(content=raw_input)
-    image_block_end = content.find("]")
-    if image_block_end < 0:
-        raise ValueError("Invalid image syntax: missing closing ']'.")
-    image_block = content[1:image_block_end].strip()
-    images = _parse_image_block(image_block)
+    block_end = content.find("]")
+    if block_end < 0:
+        raise ValueError("Invalid input syntax: missing closing ']'.")
+    images = _parse_image_block(content[1:block_end].strip())
     if images is None:
         return MessageInstruction(content=raw_input)
-    return MessageInstruction(content=content[image_block_end + 1:].strip(), images=images)
-
+    return MessageInstruction(content=content[block_end + 1:].strip(), images=images)
 
 def input_to_instruction(raw_input: str) -> Instruction:
     if raw_input.startswith("/"):

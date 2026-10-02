@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, PlainSerializer
 from pathlib import Path
 from PIL.Image import Image
 from .command import Command
-from .extension import ExtensionStatus
 from .types import JsonType, ModelCapabilityType
 from .util import image_to_url
 from .conversation import Conversation
@@ -45,23 +44,29 @@ class ShowHistoryEvent(BaseModel):
     history: list[Conversation.MessageRecord]
 
 class ShowExtensionsEvent(BaseModel):
+    """Listing of discovered extensions or skills, shared by both `/extensions` and `/skills`."""
     class ExtensionRecord(BaseModel):
         name: str
         description: str
-        status: ExtensionStatus
+        status: str
+        """`ExtensionStatus` or `SkillStatus` value, rendered as a string."""
         reason: Optional[str] = None
-        """Detail for `FAILED` or `SKIPPED` extensions."""
+        """Detail for `FAILED` or `SKIPPED` items."""
+        source: Optional[str] = None
+        """'project' or 'user', for skills."""
 
+    title: str = "Extensions"
     extensions: list[ExtensionRecord] = Field(default_factory=list)
 
     @classmethod
-    def from_infos(cls, infos: Sequence["ExtensionInfo"]) -> "ShowExtensionsEvent":
-        return cls(extensions=[
+    def from_infos(cls, infos: Sequence[Any], title: str = "Extensions") -> "ShowExtensionsEvent":
+        return cls(title=title, extensions=[
             cls.ExtensionRecord(
                 name=info.name,
                 description=info.description,
-                status=info.status,
+                status=getattr(info.status, "value", info.status),
                 reason=info.reason,
+                source=getattr(info, "source", None),
             )
             for info in infos
         ])

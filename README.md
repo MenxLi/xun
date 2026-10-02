@@ -241,3 +241,10 @@ def setup_extension(ctx: ExtensionContext) -> None:
 ```
 
 See [extensions/README.md](extensions/README.md) for the full mechanics.
+
+## Skills
+
+The optional `extensions/skills/` extension discovers standard [Agent Skills](https://agentskills.io) `SKILL.md` folders from `$XUN_HOME/skills/`, `<workdir>/.agents/skills/`, and `~/.agents/skills/`. 
+
+Install it under `$XUN_HOME/extensions/skills/` and install its dependency with `pip install pyyaml`. 
+It progressively discloses instructions through `activate_skill`, exposes bundled files and scripts only after activation, and adds `/skill` for listing and activation.

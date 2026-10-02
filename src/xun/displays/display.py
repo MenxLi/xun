@@ -97,16 +97,19 @@ class Display(DisplayAbstract):
 
     def _show_extensions(self, event: DisplayEvent[ShowExtensionsEvent]) -> None:
         exts = event.payload.extensions
+        title = event.payload.title
         if not exts:
-            self._print(rich.panel.Panel("[dim]No extensions found.[/dim]", title="Extensions", border_style="green", box=rich.box.ROUNDED))
+            self._print(rich.panel.Panel(f"[dim]No {title.lower()} found.[/dim]", title=title, border_style="green", box=rich.box.ROUNDED))
             return
-        table = rich.table.Table(title="Extensions", box=rich.box.SIMPLE_HEAD, header_style="bold green", expand=True)
+        table = rich.table.Table(title=title, box=rich.box.SIMPLE_HEAD, header_style="bold green", expand=True)
         table.add_column("Name", style="bold cyan", no_wrap=True)
         table.add_column("Description", ratio=1)
         table.add_column("Status", no_wrap=True)
         for ext in exts:
             color = {"failed": "red", "loaded": "green", "skipped": "yellow"}.get(ext.status, "dim")
             description = ext.description or "[dim]No description provided.[/dim]"
+            if ext.source:
+                description = f"{description}\n[dim]{ext.source}[/dim]"
             if ext.reason:
                 description = f"{description}\n[{color}]{rich.markup.escape(ext.reason)}[/{color}]"
             table.add_row(ext.name, description, f"[{color}]{ext.status}[/{color}]")

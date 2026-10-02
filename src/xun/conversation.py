@@ -78,11 +78,29 @@ class Conversation:
             self.loads(f.read())
     
     def set_system_message_content(self, content: str, is_compressed: bool = False):
-        prompt = SystemPrompt(content=content, is_compressed=is_compressed)
+        persist_sections = (
+            self.messages[0].persist_sections
+            if self.messages and isinstance(self.messages[0], SystemPrompt) else {}
+        )
+        prompt = SystemPrompt(content=content, is_compressed=is_compressed, persist_sections=persist_sections)
         if self.messages and isinstance(self.messages[0], SystemPrompt):
             self.messages[0] = prompt
         else:
             self.messages.insert(0, prompt)
+
+    def set_persistent_section(self, name: str, content: str) -> None:
+        if self.messages and isinstance(self.messages[0], SystemPrompt):
+            sections = self.messages[0].persist_sections
+        elif content:
+            prompt = SystemPrompt(content="")
+            self.messages.insert(0, prompt)
+            sections = prompt.persist_sections
+        else:
+            return
+        if content:
+            sections[name] = content
+        else:
+            sections.pop(name, None)
 
     def completion_params(self) -> list[chat.chat_completion_message_param.ChatCompletionMessageParam]:
         return [msg.completion_param() for msg in self.messages]

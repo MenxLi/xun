@@ -90,6 +90,7 @@ const zh: typeof en = {
     noTools: '没有已注册的工具。',
     extensions: '扩展',
     noExtensions: '未发现扩展。',
+    noListedItems: '未发现条目。',
     noDescription: '未提供描述。',
     conversationHistory: '对话历史',
     copyMessage: '复制消息',

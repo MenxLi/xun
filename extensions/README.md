@@ -37,6 +37,10 @@ def setup_extension(ctx: ExtensionContext) -> None:
 
 The first line of the module docstring becomes the extension's description, shown by the `/extensions` command.
 
+## Skills
+
+`skills/` is an optional extension implementing progressive disclosure for standard `SKILL.md` bundles. Copy it to `$XUN_HOME/extensions/skills/`, then install its dependency with `pip install pyyaml`.
+
 ## Version compatibility
 
 Declare the xun versions an extension supports on the entry function; both bounds are inclusive:

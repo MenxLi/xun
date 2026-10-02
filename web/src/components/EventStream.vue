@@ -317,8 +317,8 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
         </section>
 
         <section v-else-if="item.data.name === 'ShowExtensionsEvent'" class="extensions-result">
-          <header><Puzzle :size="15" /> {{ t('stream.extensions') }} <span>{{ item.data.payload.extensions.length }}</span></header>
-          <div v-if="!item.data.payload.extensions.length" class="tools-empty">{{ t('stream.noExtensions') }}</div>
+          <header><Puzzle :size="15" /> {{ item.data.payload.title || t('stream.extensions') }} <span>{{ item.data.payload.extensions.length }}</span></header>
+          <div v-if="!item.data.payload.extensions.length" class="tools-empty">{{ item.data.payload.title ? t('stream.noListedItems') : t('stream.noExtensions') }}</div>
           <div v-for="ext in item.data.payload.extensions" v-else :key="ext.name" class="tool-listing">
             <div class="tool-listing-name">
               <code>{{ ext.name }}</code>

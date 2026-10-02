@@ -18,8 +18,9 @@ export interface ToolInfo {
 export interface ExtensionRecord {
   name: string
   description: string
-  status: 'uninitialized' | 'loaded' | 'skipped' | 'failed'
+  status: 'uninitialized' | 'ready' | 'loaded' | 'skipped' | 'failed'
   reason?: string | null
+  source?: string | null
 }
 
 type EventEnvelope<Name extends string, Payload> = {
@@ -57,7 +58,7 @@ export type DisplayEvent =
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
   | EventEnvelope<'ShowHelpEvent', { commands: CommandInfo[] }>
   | EventEnvelope<'ShowToolsEvent', { tools: ToolInfo[] }>
-  | EventEnvelope<'ShowExtensionsEvent', { extensions: ExtensionRecord[] }>
+  | EventEnvelope<'ShowExtensionsEvent', { title?: string; extensions: ExtensionRecord[] }>
   | EventEnvelope<'UserCommandEvent', { name: string; arguments?: string | null }>
   | EventEnvelope<'UserMessageEvent', { content: string; images: ImageDescriptor[] }>
   | EventEnvelope<'InfoEvent', { message: string }>

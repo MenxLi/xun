@@ -83,7 +83,7 @@ RUN pip install --upgrade pip setuptools wheel playwright
 RUN playwright install chromium --with-deps
 
 # my extra deps
-RUN pip install httpx[socks] 
+RUN pip install pyyaml httpx[socks] 
 RUN pip install zai-sdk
 RUN pip install pymupdf matplotlib
 RUN pip install mkdocs mkdocs-material mkdocs-static-i18n

@@ -88,6 +88,7 @@ export default {
     noTools: 'No tools registered.',
     extensions: 'Extensions',
     noExtensions: 'No extensions found.',
+    noListedItems: 'Nothing found.',
     noDescription: 'No description provided.',
     conversationHistory: 'Conversation history',
     copyMessage: 'Copy message',
