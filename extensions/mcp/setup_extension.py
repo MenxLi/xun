@@ -17,7 +17,7 @@ from typing import Any
 
 import rich
 
-from xun import ExtensionContext, Result, ToolBox, ToolCallContext, tool_attr
+from xun import Command, ExtensionContext, Result, ToolBox, ToolCallContext, tool_attr
 from xun.error_catch import except_safe
 from xun.toolcall import Function
 from xun.tools.cmd import truncate_output
@@ -110,7 +110,7 @@ def _to_result(res: dict, ctx: ToolCallContext, tool: str) -> Any:
     return out
 
 
-def _make_tool(server: str, spec: dict, timeout: float) -> Function:
+def _make_tool(server: str, spec: dict, cfg: dict) -> Function:
     tool = spec["name"]
     schema = spec.get("inputSchema") or {"type": "object", "properties": {}}
     name = _tool_name(server, tool)
@@ -124,7 +124,8 @@ def _make_tool(server: str, spec: dict, timeout: float) -> Function:
         args, dropped = _prune(kwargs, schema)
         if dropped:
             ctx.agent.info(f"[MCP {tool}] dropped undeclared arguments: {dropped}")
-        return _to_result(MANAGER.call(server, tool, args, timeout), ctx, name)
+        MANAGER.ensure(server, _transport_kwargs(cfg))
+        return _to_result(MANAGER.call(server, tool, args, _timeout(cfg)), ctx, name)
 
     _impl.__doc__ = description
     # args_model=None keeps inputSchema verbatim: pydantic cannot express anyOf/$ref,
@@ -172,7 +173,7 @@ def _reconcile(box: ToolBox, prefix: str, wanted: dict[str, Function]) -> tuple[
 
 
 def _wanted(server: str, specs: list[dict], cfg: dict) -> dict[str, Function]:
-    return {_tool_name(server, s["name"]): _make_tool(server, s, _timeout(cfg))
+    return {_tool_name(server, s["name"]): _make_tool(server, s, cfg)
             for s in specs if isinstance(s, dict) and s.get("name")}
 
 
@@ -216,7 +217,31 @@ def setup_extension(ctx: ExtensionContext) -> None:
         _reconcile(box, _prefix(server), wanted)
         loaded += len(wanted)
 
+    box.register(mcp_refresh)
+    def command(agent: Any, args: list[str]) -> None:
+        configured = _servers(ctx)
+        if args == ["status"]:
+            agent.info("\n".join(f"{name}: {MANAGER.status(name)}"
+                                 for name in sorted(configured)))
+            return
+        if len(args) == 2 and args[0] in {"status", "restart"}:
+            name = args[1]
+            if name not in configured:
+                raise ValueError(f"No configured MCP server '{name}'")
+            if args[0] == "status":
+                agent.info(f"{name}: {MANAGER.status(name)}")
+                return
+            specs = MANAGER.restart(name, _transport_kwargs(configured[name]))
+            added, replaced, removed = _reconcile(
+                agent.toolbox, _prefix(name), _wanted(name, specs, configured[name]))
+            agent.info(f"{name}: restarted (added {added}, replaced {replaced}, "
+                       f"removed {removed})")
+            return
+        raise ValueError("Usage: /mcp status [server] | /mcp restart <server>")
+
+    ctx.agent.command.register(Command(
+        "mcp", command, "Show MCP status or restart a server.",
+        "Usage: /mcp status [server] | /mcp restart <server>"))
     if loaded:
-        box.register(mcp_refresh)
         rich.print(f"[green]MCP:[/green] {loaded} tools from {len(servers)} server(s) "
                    f"on '{ctx.agent.name}'")

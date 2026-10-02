@@ -89,12 +89,20 @@ runs the command handler.
   `toolbox.disable("mcp_github__*")` call switches a whole server off.
 - `mcp_refresh(server)` re-reads one server's tool list and reports
   `{"added": …, "replaced": …, "removed": …}`.
+- `/mcp status [server]` shows the last known state of one or all configured servers
+  without contacting them. A running but unresponsive process may still show as connected.
+- `/mcp restart <server>` stops and restarts a configured server, then syncs its tools
+  into the current agent. The command is available even when initial startup failed.
+  A dead connection also reconnects before the next tool call; failed calls are not
+  automatically replayed, since a tool may have already changed state before failing.
 - Re-initialization is idempotent: an unchanged tool is left alone (so a tool you disabled
   stays disabled), a changed schema is replaced with your disable-flag restored, and a tool
   the server dropped is removed without leaving a stale flag behind.
 - Results: text (truncated at 16k chars like xun's own shell tool), `structuredContent`
   preserved, `image` blocks attached to the conversation rather than stuffed into the tool
   result, and `isError` returned as a real failure so hooks and the UI treat it as one.
+- Stdio responses are read one JSON line at a time, with a 16 MiB line limit so base64
+  screenshots fit; larger responses fail the call rather than leaving it waiting forever.
 - A server that will not start is reported and skipped; others still load, and the failure
   is retried at most once per 30s so one broken server does not tax every sub-agent.
 
@@ -116,6 +124,6 @@ runs the command handler.
 
 ## Tests
 
-`test/test_mcp_extension.py` (runs with the normal suite, `make test`). Most cases fake
-the transport; one class spawns `test/mcp_test_server.py` as a real stdio server. Verified on
-Linux; the Windows event-loop path (`ProactorEventLoop` in a worker thread) is untested.
+`extensions/mcp/test_mcp_extension.py` (runs with `make test`) covers large
+stdio image responses, read failures, reconnects, status, and restart using a subprocess.
+The Windows event-loop path (`ProactorEventLoop` in a worker thread) is untested.
