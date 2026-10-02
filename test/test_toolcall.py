@@ -23,33 +23,22 @@ class ToolCallSequenceArgsTest(unittest.TestCase):
     def call(self, args: dict) -> str:
         return self.function.call(json.dumps(args), self.context)
 
-    def test_list_accepts_json_array(self) -> None:
-        self.assertEqual(self.call({"choices": ["A", "B"]}), "['A', 'B'] None None 1")
-
-    def test_list_accepts_stringified_json_array(self) -> None:
-        self.assertEqual(self.call({"choices": '["A", "B"]'}), "['A', 'B'] None None 1")
-
-    def test_list_accepts_delimiter_separated(self) -> None:
-        self.assertEqual(self.call({"choices": "A, B"}), "['A', 'B'] None None 1")
-
-    def test_single_string_becomes_single_item_list(self) -> None:
+    def test_list_accepts_all_argument_formats(self) -> None:
+        for args in (["A", "B"], '["A", "B"]', "A, B"):
+            self.assertEqual(self.call({"choices": args}), "['A', 'B'] None None 1")
         self.assertEqual(self.call({"choices": "A"}), "['A'] None None 1")
 
-    def test_tuple_accepts_json_array_of_ints(self) -> None:
+    def test_tuple_accepts_array_or_stringified_array(self) -> None:
         # JSON-decoded arrays arrive as lists; strict tuple would reject them without coercion.
-        self.assertEqual(self.call({"choices": ["A"], "crop": [0, 0.5, 1, 0.5]}), "['A'] (0.0, 0.5, 1.0, 0.5) None 1")
-
-    def test_tuple_accepts_stringified_array(self) -> None:
-        self.assertEqual(self.call({"choices": ["A"], "crop": "[0.0, 0.5, 1.0, 0.5]"}), "['A'] (0.0, 0.5, 1.0, 0.5) None 1")
+        for crop in ([0, 0.5, 1, 0.5], "[0.0, 0.5, 1.0, 0.5]"):
+            self.assertEqual(self.call({"choices": ["A"], "crop": crop}), "['A'] (0.0, 0.5, 1.0, 0.5) None 1")
 
     def test_tuple_wrong_length_still_fails(self) -> None:
         with self.assertRaises(ValueError):
             self.call({"choices": ["A"], "crop": [0.0]})
 
-    def test_str_or_list_union_keeps_plain_string(self) -> None:
+    def test_str_or_list_union_keeps_plain_string_or_list(self) -> None:
         self.assertEqual(self.call({"choices": ["A"], "value": "Enter"}), "['A'] None Enter 1")
-
-    def test_str_or_list_union_accepts_list(self) -> None:
         self.assertEqual(self.call({"choices": ["A"], "value": ["x", "y"]}), "['A'] None ['x', 'y'] 1")
 
     def test_non_sequence_strictness_unchanged(self) -> None:

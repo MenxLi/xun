@@ -60,6 +60,8 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.execution_result: object = None
         self.config = AgentConfig(
             auto_confirm=False,
+            enable_extensions=False,
+            load_project_instructions=False,
             auto_compact=AutoCompactionConfig(enabled=False, token_threshold=200_000),
             provider=ProviderConfig(openai_base_url="http://localhost", openai_api_key="test-key"),
             model=ModelConfig(name="test-model", capabilities={"vision"}),

@@ -226,11 +226,9 @@ class CliSessionTest(unittest.TestCase):
         self.assertEqual(prompt_choice.call_args.kwargs["options"], [(1, "Yes"), (2, "No")])
         self.assertEqual(prompt_choice.call_args.kwargs["default"], 2)
 
-    def test_choose_rejects_empty_choices(self) -> None:
+    def test_choose_rejects_empty_choices_or_invalid_default(self) -> None:
         with self.assertRaisesRegex(ValueError, "At least one choice"):
             CliSession().choose("Choose: ", [])
-
-    def test_choose_rejects_invalid_default(self) -> None:
         with self.assertRaisesRegex(ValueError, "Default choice is out of range"):
             CliSession().choose("Choose: ", ["Yes", "No"], default=3)
 

@@ -115,10 +115,9 @@ class CompactionCounterTest(unittest.TestCase):
         self.assertEqual(restored.compaction_counter.tool_rounds, 1)
         self.assertEqual(restored.compaction_counter.summary_rounds, 2)
 
-    def test_counter_defaults_for_legacy_files(self) -> None:
-        restored = Conversation()
-        restored.loads(json.dumps({"messages": [], "tokens_used": 5}))
-        self.assertEqual(restored.compaction_counter, CompactionCounter())
+        legacy = Conversation()
+        legacy.loads(json.dumps({"messages": [], "tokens_used": 5}))
+        self.assertEqual(legacy.compaction_counter, CompactionCounter())
 
     def test_clear_resets_counter(self) -> None:
         conversation = Conversation()
@@ -146,18 +145,13 @@ class AutoCompactionTest(unittest.TestCase):
         )
         return summary
 
-    def test_disabled_never_compacts(self) -> None:
-        agent = self._agent(1_000, 9_999_999)
-        agent.config.auto_compact.enabled = False
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
-            AutoCompactor().auto_compact(agent)
-        compact_conversation.assert_not_called()
-
-    def test_under_threshold_never_compacts(self) -> None:
-        agent = self._agent(100_000, 5_000)
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
-            AutoCompactor().auto_compact(agent)
-        compact_conversation.assert_not_called()
+    def test_disabled_or_under_threshold_never_compacts(self) -> None:
+        for disable, tokens in ((True, 9_999_999), (False, 5_000)):
+            agent = self._agent(100_000, tokens)
+            agent.config.auto_compact.enabled = not disable
+            with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+                AutoCompactor().auto_compact(agent)
+            compact_conversation.assert_not_called()
 
     def test_no_escalation_when_cheap_pass_brings_estimate_under_threshold(self) -> None:
         # the tool chain's reclaim fraction is large enough that the estimated token

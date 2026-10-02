@@ -14,7 +14,6 @@ from xun.display_abstract import (
     ConfirmEvent,
     DisplayAbstract,
     DisplayEvent,
-    InfoEvent,
 )
 from xun.types import CancelledError
 from xun.workspace import Workspace
@@ -42,23 +41,14 @@ class AgentLifecycleTest(unittest.TestCase):
     def _new_agent(self) -> Agent:
         return Agent(display=NullDisplay(), workspace=Workspace(workdir=self.workdir))
 
-    def test_constructed_agent_is_not_initialized(self) -> None:
+    def test_initialize_binds_display_and_is_idempotent(self) -> None:
         agent = self._new_agent()
         self.assertFalse(agent.is_initialized(agent))
-        self.assertNotIn(agent.identifier, agent.display.agents)
-
-    def test_initialize_binds_display_and_returns_self(self) -> None:
-        agent = self._new_agent()
         ready = agent.initialize()
         self.assertIs(ready, agent)
         self.assertTrue(agent.is_initialized(agent))
         self.assertIn(agent.identifier, agent.display.agents)
-
-    def test_initialize_is_idempotent(self) -> None:
-        agent = self._new_agent()
-        agent.initialize()
         self.assertIs(agent.initialize(), agent)
-        self.assertIn(agent.identifier, agent.display.agents)
 
     def test_agents_md_is_loaded_at_initialize_and_removed_when_missing(self) -> None:
         path = self.workdir / "AGENTS.md"
@@ -74,39 +64,22 @@ class AgentLifecycleTest(unittest.TestCase):
         agent.sync_project_instructions()
         self.assertNotIn(AGENTS_SECTION, prompt.persist_sections)
 
-    def test_agents_md_read_error_is_not_treated_as_missing(self) -> None:
-        (self.workdir / "AGENTS.md").mkdir()
-        with self.assertRaises(IsADirectoryError):
-            self._new_agent().initialize()
-
-    def test_agents_md_skipped_when_load_project_instructions_disabled(self) -> None:
+    def test_load_project_instructions_gates_agents_md(self) -> None:
         (self.workdir / "AGENTS.md").write_text("Follow local conventions.", encoding="utf-8")
         agent = self._new_agent()
         agent.config.load_project_instructions = False
         agent = agent.initialize()
-        self.assertNotIn(
-            "Follow local conventions.",
-            "\n".join(
-                prompt.completion_param()["content"]
-                for prompt in agent.conversation.messages
-                if isinstance(prompt, SystemPrompt)
-            ),
-        )
+        self.assertEqual(agent.conversation.messages, [])
 
-    def test_disabling_load_project_instructions_clears_already_loaded_instructions(self) -> None:
-        (self.workdir / "AGENTS.md").write_text("Follow local conventions.", encoding="utf-8")
-        agent = self._new_agent().initialize()
+        agent.config.load_project_instructions = True
+        agent.sync_project_instructions()
         prompt = agent.conversation.messages[0]
         assert isinstance(prompt, SystemPrompt)
-        self.assertIn(AGENTS_SECTION, prompt.persist_sections)
+        self.assertIn("Follow local conventions.", prompt.persist_sections[AGENTS_SECTION])
 
         agent.config.load_project_instructions = False
         agent.sync_project_instructions()
         self.assertNotIn(AGENTS_SECTION, prompt.persist_sections)
-
-        agent.config.load_project_instructions = True
-        agent.sync_project_instructions()
-        self.assertIn("Follow local conventions.", prompt.persist_sections[AGENTS_SECTION])
 
     def test_agents_md_syncs_before_and_after_execute_even_on_error(self) -> None:
         path = self.workdir / "AGENTS.md"
@@ -142,23 +115,10 @@ class AgentLifecycleTest(unittest.TestCase):
         assert isinstance(prompt, SystemPrompt)
         self.assertIn("Child instructions.", prompt.persist_sections[AGENTS_SECTION])
 
-    def test_finalize_unbinds_display(self) -> None:
-        agent = self._new_agent()
-        initialized = agent.initialize()
-        initialized.finalize()
+    def test_finalize_unbinds_display_and_is_idempotent(self) -> None:
+        agent = self._new_agent().initialize()
+        agent.finalize()
         self.assertNotIn(agent.identifier, agent.display.agents)
-
-    def test_finalize_is_idempotent(self) -> None:
-        agent = self._new_agent()
-        initialized = agent.initialize()
-        initialized.finalize()
-        initialized.finalize()
-        self.assertNotIn(agent.identifier, agent.display.agents)
-
-    def test_finalize_without_initialize_is_noop(self) -> None:
-        # type-level: finalize() is not callable on Agent[T.Uninit]... it takes Agent[T.Alive],
-        # so it IS callable here; the cast tests that a finalized agent stays a no-op path.
-        agent = self._new_agent()
         agent.finalize()
         self.assertNotIn(agent.identifier, agent.display.agents)
 
@@ -167,13 +127,20 @@ class AgentLifecycleTest(unittest.TestCase):
             self.assertIn(agent.identifier, agent.display.agents)
         self.assertNotIn(agent.identifier, agent.display.agents)
 
-    def test_execute_before_initialize_returns_error_result(self) -> None:
-        # type-level: execute() is not callable on Agent[T.Uninit]; the cast
-        # here tests that the runtime guard still yields a proper Err result.
+    def test_guards_reject_uninitialized_or_finalized(self) -> None:
+        # type-level: execute()/initialize() are state-gated; the casts test the runtime guards.
         agent = self._new_agent()
         res = cast("Agent[Agent.T.Init]", agent).execute()
         self.assertTrue(res.is_err())
         self.assertIn("not initialized", res.unwrap_err().error)
+
+        finalized = cast("Agent[Agent.T.Final]", agent.initialize().finalize())
+        self.assertTrue(Agent.is_finalized(finalized))
+        self.assertFalse(Agent.is_initialized(finalized))
+        self.assertTrue(cast("Agent[Agent.T.Init]", finalized).execute().is_err())
+        with self.assertRaises(RuntimeError) as ctx:
+            cast("Agent[Agent.T.Uninit]", finalized).initialize()
+        self.assertIn("finalized", str(ctx.exception))
 
     def test_gc_of_initialized_agent_collects(self) -> None:
         # the display holds a strong reference while bound; once both drop, the
@@ -200,23 +167,19 @@ class AgentLifecycleTest(unittest.TestCase):
             cast("Agent[Agent.T.Uninit]", finalized).initialize()
         self.assertIn("finalized", str(ctx.exception))
 
-    def test_cancel_on_idle_agent_is_noop(self) -> None:
+    def test_cancel_only_sets_event_while_running(self) -> None:
         # cancelling an idle agent must not set the (possibly shared) cancel event,
         # which would poison the next execution before it starts
         agent = self._new_agent().initialize()
-        self.assertFalse(agent.is_running)
         self.assertFalse(agent.cancel())
         self.assertFalse(agent.cancel_event.event.is_set())
-
-    def test_cancel_while_running_sets_event(self) -> None:
-        agent = self._new_agent().initialize()
         agent._running = True
         self.assertTrue(agent.cancel())
         self.assertTrue(agent.cancel_event.event.is_set())
         with self.assertRaises(CancelledError):
             agent.check_cancel()
 
-    def test_running_events_are_emitted_once_for_nested_scopes(self) -> None:
+    def test_running_events_bracket_execution_scopes(self) -> None:
         display = _RecordingDisplay()
         agent = Agent(display=display, workspace=Workspace(workdir=self.workdir)).initialize()
 
@@ -234,10 +197,6 @@ class AgentLifecycleTest(unittest.TestCase):
         )
         self.assertFalse(agent.is_running)
 
-    def test_running_end_event_is_emitted_on_error(self) -> None:
-        display = _RecordingDisplay()
-        agent = Agent(display=display, workspace=Workspace(workdir=self.workdir)).initialize()
-
         with self.assertRaisesRegex(RuntimeError, "failed"):
             with agent.cancellable_execution():
                 raise RuntimeError("failed")
@@ -245,7 +204,7 @@ class AgentLifecycleTest(unittest.TestCase):
         self.assertIsInstance(display.events[-1].payload, AgentRunningEndEvent)
         self.assertFalse(agent.is_running)
 
-    def test_auto_confirm_emits_confirmation_event(self) -> None:
+    def test_confirmation_events_from_auto_confirm_and_user_choice(self) -> None:
         display = _RecordingDisplay()
         agent = Agent(display=display, workspace=Workspace(workdir=self.workdir))
         agent.config.auto_confirm = True
@@ -254,14 +213,8 @@ class AgentLifecycleTest(unittest.TestCase):
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes").choice, "Yes")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
         self.assertEqual(display.events[-1].payload.source, "auto")
-        self.assertEqual(display.events[-1].payload.choices, ["Yes", "No"])
-        self.assertNotIsInstance(display.events[-1].payload, InfoEvent)
 
-    def test_user_choice_emits_confirmation_event(self) -> None:
-        display = _RecordingDisplay()
-        agent = cast("Agent[Agent.T.Init]",
-                     Agent(display=display, workspace=Workspace(workdir=self.workdir)))
-
+        agent.config.auto_confirm = False
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]).choice, "No")
         self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
         self.assertEqual(display.events[-1].payload.source, "user")

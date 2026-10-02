@@ -53,11 +53,10 @@ class DiscoveryTest(_ExtensionsTestBase):
 
     def test_description_defaults_to_first_docstring_line(self) -> None:
         self._write_ext("doc", '"""Line one.\nLine two."""\ndef setup_extension(ctx): pass\n')
-        self.assertEqual(default_loader.imported()[0].description, "Line one.")
-
-    def test_no_docstring_empty_description(self) -> None:
         self._write_ext("nodoc", "def setup_extension(ctx): pass\n")
-        self.assertEqual(default_loader.imported()[0].description, "")
+        imported = {e.name: e.description for e in default_loader.imported()}
+        self.assertEqual(imported["doc"], "Line one.")
+        self.assertEqual(imported["nodoc"], "")
 
     def test_missing_entry_function_skipped(self) -> None:
         self._write_ext("broken", '"""no entry fn here."""\nx = 1\n')
@@ -115,46 +114,36 @@ class ExtensionStatusTest(_ExtensionsTestBase):
     def _infos(self) -> dict[str, ExtensionInfo]:
         return {info.name: info for info in default_loader.infos()}
 
-    def test_uninitialized_before_setup(self) -> None:
+    def test_status_lifecycle_uninitialized_to_loaded(self) -> None:
         self._write_ext("idle", '"""Idle."""\ndef setup_extension(ctx): pass\n')
         info = self._infos()["idle"]
         self.assertEqual(info.status, ExtensionStatus.UNINITIALIZED)
         self.assertIsNone(info.reason)
-
-    def test_loaded_after_setup(self) -> None:
-        self._write_ext("good", '"""Good."""\ndef setup_extension(ctx): pass\n')
         self._new_agent().initialize()
-        info = self._infos()["good"]
+        info = self._infos()["idle"]
         self.assertEqual(info.status, ExtensionStatus.LOADED)
         self.assertIsNone(info.reason)
 
-    def test_setup_failure_records_status_and_error(self) -> None:
+    def test_setup_failure_records_status_and_survives_later_success(self) -> None:
+        # a FAILED status must not be erased by unrelated later runs
         self._write_ext("bad", "def setup_extension(ctx): raise RuntimeError('boom')\n")
         self._new_agent().initialize()
         info = self._infos()["bad"]
         self.assertEqual(info.status, ExtensionStatus.FAILED)
         self.assertIn("boom", info.reason)
-
-    def test_import_failure_listed_as_failed(self) -> None:
-        self._write_ext("broken", '"""no entry fn."""\nx = 1\n')
-        info = self._infos()["broken"]
-        self.assertEqual(info.status, ExtensionStatus.FAILED)
-        self.assertIn("setup_extension", info.reason)
-
-    def test_import_error_listed_as_failed(self) -> None:
-        self._write_ext("boom", "raise RuntimeError('kaboom')\n")
-        info = self._infos()["boom"]
-        self.assertEqual(info.status, ExtensionStatus.FAILED)
-        self.assertIn("kaboom", info.reason)
-
-    def test_setup_error_survives_later_success(self) -> None:
-        # a FAILED status must not be erased by unrelated later runs
-        self._write_ext("bad", "def setup_extension(ctx): raise RuntimeError('boom')\n")
-        self._new_agent().initialize()
         self._write_ext("good", "def setup_extension(ctx): pass\n")
         ext_mod.default_loader.clear_scan_cache()
         self._new_agent().initialize()
         self.assertEqual(self._infos()["bad"].status, ExtensionStatus.FAILED)
+
+    def test_import_failures_listed_as_failed(self) -> None:
+        self._write_ext("noentry", '"""no entry fn."""\nx = 1\n')
+        self._write_ext("boom", "raise RuntimeError('kaboom')\n")
+        infos = self._infos()
+        self.assertEqual(infos["noentry"].status, ExtensionStatus.FAILED)
+        self.assertIn("setup_extension", infos["noentry"].reason)
+        self.assertEqual(infos["boom"].status, ExtensionStatus.FAILED)
+        self.assertIn("kaboom", infos["boom"].reason)
 
 
 class ApplyTest(_ExtensionsTestBase):

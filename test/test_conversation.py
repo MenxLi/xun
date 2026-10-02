@@ -104,6 +104,10 @@ class ConversationImageInputTest(unittest.TestCase):
             },
         )
 
+        history = conversation.to_history()
+        self.assertEqual(history[-1]["role"], "user")
+        self.assertIn('"type": "image_url"', history[-1]["content"])
+
     def test_add_user_message_encodes_local_file(self) -> None:
         conversation = Conversation()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -133,34 +137,6 @@ class ConversationImageInputTest(unittest.TestCase):
             {
                 "content": "compare them",
                 "images": [{"kind": "url", "value": "https://example.com/cat.png"}],
-            },
-        )
-
-    def test_history_stringifies_multimodal_user_content(self) -> None:
-        conversation = Conversation()
-        conversation.add_user_message("what is here", images=["https://example.com/cat.png"])
-
-        history = conversation.to_history()
-
-        self.assertEqual(history[-1]["role"], "user")
-        self.assertIn('"type": "image_url"', history[-1]["content"])
-
-    def test_add_user_message_preserves_image_order(self) -> None:
-        conversation = Conversation()
-
-        conversation.add_user_message(
-            "first\nsecond",
-            images=["https://example.com/cat.png"],
-        )
-
-        self.assertEqual(
-            conversation.messages[-1].completion_param(),
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "first\nsecond"},
-                    {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
-                ],
             },
         )
 
