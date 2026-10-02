@@ -48,7 +48,8 @@ def session(agent: Any) -> Session:
     return agent.state.setdefault("skills-extension", Session())
 
 
-def _roots(agent: Any) -> list[tuple[Path, str]]:
+def roots(agent: Any) -> list[tuple[Path, str]]:
+    """Where `skills` looks for bundles, highest precedence first."""
     return [
         (Path(os.environ.get("XUN_HOME", Path.cwd() / ".xun")) / "skills", "user"),
         (agent.workspace.workdir / ".agents" / "skills", "project"),
@@ -75,7 +76,7 @@ def skills(agent: Any) -> tuple[list[Skill], list[tuple[str, str]]]:
     discovered: list[Skill] = []
     issues: list[tuple[str, str]] = []
     names: set[str] = set()
-    for root, source in _roots(agent):
+    for root, source in roots(agent):
         if not root.is_dir():
             continue
         for path in sorted(root.rglob(SKILL_FILE)):

@@ -30,7 +30,7 @@ def get_home_dir() -> Path:
     else:
         return Path.cwd() / f".{BRAND.lower()}"
 
-HOME_COPY_INCLUDE = {"config.json", "extensions"}
+HOME_COPY_INCLUDE = {"config.json", "extensions", "skills"}
 """What to copy from the host home dir into a container; skips x/ and conversation/."""
 
 def get_internal_env(key: str) -> str | None:

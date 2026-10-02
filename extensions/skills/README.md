@@ -34,13 +34,16 @@ requires activation. Script execution is argv-based rather than shell-based and
 requires an explicit confirmation; a user may grant a specific script for the
 current session.
 
-`setup_extension.py` is intentionally small: it registers the tools and the
-`/skill` command only when at least one skill is available. Missing PyYAML makes
-this extension fail to import, while the core agent continues to start normally.
+`setup_extension.py` is intentionally small: it always registers the `/skill`
+command, while the model-facing tools follow the catalog through `sync_tools` and
+only appear once at least one skill has been discovered. A bundle is usually created
+after the agent has started, so `/skill reload` re-runs `sync_tools` and the new
+bundle gains its tools without a restart. Missing PyYAML makes this extension fail
+to import, while the core agent continues to start normally.
 
-`/skill` lists discovered skills. Use `/skill info <name>` to inspect metadata
-without changing the session, `/skill activate <name>` to load instructions,
-and `/skill reload` to rescan the roots.
+`/skill` lists discovered skills, printing the roots it searched whenever the
+catalog is empty. Use `/skill info <name>` to inspect metadata without changing the
+session, `/skill activate <name>` to load instructions, `/skill reload` to rescan.
 
 ## Test
 
