@@ -184,6 +184,10 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
         return new_agent
 
     def sync_project_instructions(self) -> None:
+        if not self.config.load_project_instructions:
+            self.conversation.set_persistent_section(AGENTS_SECTION, "")
+            return
+
         name_varients = ["AGENTS.md", "Agents.md", "agents.md"]
         path = next(
             (self.workspace.workdir / name for name in name_varients if (self.workspace.workdir / name).exists()), 

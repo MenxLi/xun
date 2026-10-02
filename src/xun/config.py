@@ -90,10 +90,12 @@ class ModelConfig(ConfigModel):
 FALLBACK_ENV = { f"{BRAND}_OPENAI_MODEL": "", f"{BRAND}_AUTO_CONFIRM": "false" }
 class AgentConfig(ConfigModel):
     auto_confirm: bool
-    enable_extensions: bool = True
     auto_compact: AutoCompactionConfig
     provider: ProviderConfig
     model: ModelConfig
+    enable_extensions: bool
+    load_project_instructions: bool
+    """Whether to automatically load AGENTS.md"""
 
     @classmethod
     def from_template(
@@ -132,6 +134,7 @@ def _default_config_template() -> dict:
     return {
         "auto_confirm": r"${XUN_AUTO_CONFIRM}",
         "enable_extensions": True,
+        "load_project_instructions": True,
         "auto_compact": {
             "enabled": True,
             "token_threshold": 192_000,

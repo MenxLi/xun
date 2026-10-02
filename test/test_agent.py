@@ -79,6 +79,35 @@ class AgentLifecycleTest(unittest.TestCase):
         with self.assertRaises(IsADirectoryError):
             self._new_agent().initialize()
 
+    def test_agents_md_skipped_when_load_project_instructions_disabled(self) -> None:
+        (self.workdir / "AGENTS.md").write_text("Follow local conventions.", encoding="utf-8")
+        agent = self._new_agent()
+        agent.config.load_project_instructions = False
+        agent = agent.initialize()
+        self.assertNotIn(
+            "Follow local conventions.",
+            "\n".join(
+                prompt.completion_param()["content"]
+                for prompt in agent.conversation.messages
+                if isinstance(prompt, SystemPrompt)
+            ),
+        )
+
+    def test_disabling_load_project_instructions_clears_already_loaded_instructions(self) -> None:
+        (self.workdir / "AGENTS.md").write_text("Follow local conventions.", encoding="utf-8")
+        agent = self._new_agent().initialize()
+        prompt = agent.conversation.messages[0]
+        assert isinstance(prompt, SystemPrompt)
+        self.assertIn(AGENTS_SECTION, prompt.persist_sections)
+
+        agent.config.load_project_instructions = False
+        agent.sync_project_instructions()
+        self.assertNotIn(AGENTS_SECTION, prompt.persist_sections)
+
+        agent.config.load_project_instructions = True
+        agent.sync_project_instructions()
+        self.assertIn("Follow local conventions.", prompt.persist_sections[AGENTS_SECTION])
+
     def test_agents_md_syncs_before_and_after_execute_even_on_error(self) -> None:
         path = self.workdir / "AGENTS.md"
         agent = self._new_agent().initialize()
