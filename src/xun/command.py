@@ -318,6 +318,7 @@ def default_commands_with_fs() -> list[Command]:
             agent.error(f"No conversation history found in {conv_file}.")
             return
         agent.conversation.load(conv_file)
+        agent.sync_project_instructions()
         agent.info(f"Loaded from {aim_dir}")
     
     def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:

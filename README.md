@@ -99,6 +99,9 @@ agent = setup_agent(tools = [add])
 agent.instruct("Add 2 and 3.").execute()
 ```
 
+If `AGENTS.md` exists in the agent's working directory, 
+they will be loaded into system prompt. 
+
 **Advanced**: The framework is flexible and extensible.
 Additional features are shown in [demo.ipynb](demo.ipynb), including:
 - `Agent` configuration

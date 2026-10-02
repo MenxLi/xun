@@ -4,7 +4,10 @@ import weakref
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
+from unittest.mock import patch
 from xun import Agent, NullDisplay
+from xun.agent import AGENTS_SECTION
+from xun.conversation_message import SystemPrompt
 from xun.display_abstract import (
     AgentRunningEndEvent,
     AgentRunningStartEvent,
@@ -56,6 +59,59 @@ class AgentLifecycleTest(unittest.TestCase):
         agent.initialize()
         self.assertIs(agent.initialize(), agent)
         self.assertIn(agent.identifier, agent.display.agents)
+
+    def test_agents_md_is_loaded_at_initialize_and_removed_when_missing(self) -> None:
+        path = self.workdir / "AGENTS.md"
+        path.write_text("Follow local conventions.", encoding="utf-8")
+        agent = self._new_agent().initialize()
+        prompt = agent.conversation.messages[0]
+        self.assertIsInstance(prompt, SystemPrompt)
+        assert isinstance(prompt, SystemPrompt)
+        self.assertIn("Follow local conventions.", prompt.persist_sections[AGENTS_SECTION])
+        self.assertIn("Follow local conventions.", prompt.completion_param()["content"])
+
+        path.unlink()
+        agent.sync_project_instructions()
+        self.assertNotIn(AGENTS_SECTION, prompt.persist_sections)
+
+    def test_agents_md_read_error_is_not_treated_as_missing(self) -> None:
+        (self.workdir / "AGENTS.md").mkdir()
+        with self.assertRaises(IsADirectoryError):
+            self._new_agent().initialize()
+
+    def test_agents_md_syncs_before_and_after_execute_even_on_error(self) -> None:
+        path = self.workdir / "AGENTS.md"
+        agent = self._new_agent().initialize()
+        path.write_text("Before execution.", encoding="utf-8")
+
+        def execute_with_edit(_params: object) -> str:
+            prompt = agent.conversation.messages[0]
+            assert isinstance(prompt, SystemPrompt)
+            self.assertIn("Before execution.", prompt.persist_sections[AGENTS_SECTION])
+            path.write_text("After execution.", encoding="utf-8")
+            return "done"
+
+        with patch("xun.agent.execution_loop", side_effect=execute_with_edit):
+            self.assertEqual(agent.execute().unwrap(), "done")
+        prompt = agent.conversation.messages[0]
+        assert isinstance(prompt, SystemPrompt)
+        self.assertIn("After execution.", prompt.persist_sections[AGENTS_SECTION])
+
+        def execute_with_error(_params: object) -> str:
+            path.unlink()
+            raise RuntimeError("execution failed")
+
+        with patch("xun.agent.execution_loop", side_effect=execute_with_error):
+            self.assertTrue(agent.execute().is_err())
+        self.assertNotIn(AGENTS_SECTION, prompt.persist_sections)
+
+    def test_subagent_loads_shared_workdir_agents_md(self) -> None:
+        parent = self._new_agent().initialize()
+        (self.workdir / "AGENTS.md").write_text("Child instructions.", encoding="utf-8")
+        child = Agent.inherit(parent).initialize()
+        prompt = child.conversation.messages[0]
+        assert isinstance(prompt, SystemPrompt)
+        self.assertIn("Child instructions.", prompt.persist_sections[AGENTS_SECTION])
 
     def test_finalize_unbinds_display(self) -> None:
         agent = self._new_agent()

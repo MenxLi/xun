@@ -28,6 +28,7 @@ from .extension import default_loader, ExtensionLoader
 
 DEFAULT_MAX_ITERATIONS = 512 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
 DEFAULT_API_CALL_LIMIT = 3
+AGENTS_SECTION = "agents-md"
 
 _AUTO_CONFIRM_WARNED = False
 
@@ -129,6 +130,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
 
         initialized_self = self._cast_self(_Init)
         self.hooks.after_initialize.invoke(HookArgs.AfterInitializeArgs(agent=initialized_self))
+        self.sync_project_instructions()
         return initialized_self
 
     @staticmethod
@@ -180,6 +182,21 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
         if inherit_cancel_event:
             new_agent.cancel_event.parent = parent_agent.cancel_event
         return new_agent
+
+    def sync_project_instructions(self) -> None:
+        name_varients = ["AGENTS.md", "Agents.md", "agents.md"]
+        path = next(
+            (self.workspace.workdir / name for name in name_varients if (self.workspace.workdir / name).exists()), 
+            self.workspace.workdir / "AGENTS.md"
+            )
+
+        try:
+            content = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            content = ""
+        self.conversation.set_persistent_section(
+            AGENTS_SECTION, f"## Project instructions ({path.name})\n\n{content}" if content.strip() else ""
+        )
     
     @overload
     @except_safe
@@ -204,6 +221,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
         if not Agent.is_initialized(self):
             raise RuntimeError(f"Agent '{self.name}' is not initialized. Call agent.initialize() or use 'with agent:'.")
 
+        self.sync_project_instructions()
         try:
             with self.cancellable_execution():
                 return execution_loop(ExecutionLoopParams(
@@ -212,6 +230,8 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
         except CancelledError:
             self.error("Execution cancelled by user.")
             raise
+        finally:
+            self.sync_project_instructions()
 
     def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)
@@ -275,4 +295,3 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
         # weakref callback: the agent's state is unknown at GC time
         if (agent := agent_ref()) is not None and Agent.is_initialized(agent):
             agent.finalize()
-
