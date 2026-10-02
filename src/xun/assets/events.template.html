@@ -56,8 +56,14 @@
 		.markdown code, .plain-text, pre, code { font-family: "Fira Code", ui-monospace, monospace; }
 		.markdown :not(pre) > code { padding: 2px 5px; border-radius: 3px; background: var(--hover); font-size: .88em; }
 		.markdown pre, .tool-detail pre, .plain-text.code { max-height: 360px; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-		.markdown table { border-collapse: collapse; margin-bottom: 10px; }
-		.markdown th, .markdown td { padding: 4px 10px; border: 1px solid var(--line-strong); }
+		/* Tables: auto-layout squeezes columns to min-content (one char wide with CJK) in narrow
+		   containers. Lay tables out at max-content and scroll horizontally instead. */
+		.markdown table { display: block; width: max-content; max-width: 100%; margin: 0 0 10px; overflow-x: auto; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); font-size: 13px; line-height: 1.55; }
+		.markdown th, .markdown td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: break-word; }
+		.markdown thead th { background: var(--panel); color: var(--muted); font-size: 12px; white-space: nowrap; }
+		.markdown tbody tr:last-child > * { border-bottom: 0; }
+		.markdown tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, transparent); }
+		.markdown td code { white-space: nowrap; }
 
 		.stream-notice { min-height: 24px; margin: 0 0 22px; padding: 4px 8px 4px 6px; display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: 6px; border-radius: 3px; color: var(--muted); background: color-mix(in srgb, var(--panel) 46%, transparent); }
 		.stream-notice + .stream-notice { margin-top: -19px; }

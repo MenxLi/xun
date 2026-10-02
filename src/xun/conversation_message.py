@@ -29,6 +29,8 @@ class AbstractMessage(ABC):
 
     @abstractmethod
     def completion_param(self) -> chat.chat_completion_message_param.ChatCompletionMessageParam:
+        """Build the OpenAI request param. The result may alias message state
+        (RawOpenAIMessage), so callers must treat it as read-only."""
         ...
 
     @abstractmethod
