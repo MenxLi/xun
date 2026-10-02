@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM ubuntu:noble
 
 RUN sed -i \
     -e 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' \
