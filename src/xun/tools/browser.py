@@ -47,6 +47,52 @@ MAX_LOG_ENTRIES = 500
 _RUNTIME_HOOKS_STATE_KEY = "_browser_runtime_hooks"
 DEFAULT_VIEWPORT: ViewportSize = {"width": 1280, "height": 720}
 
+# page.evaluate has no native timeout: a never-settling expression would wedge the
+# worker thread forever. These wrappers race the expression against a timer in JS,
+# so the call always returns. They mirror native semantics: the expression is
+# evaluated, and a resulting function is called with (argument), or (element,
+# argument) for the element variant. A synchronous infinite loop cannot be
+# interrupted by JS; only settled-later async work is bounded.
+_EVALUATE_TIMEOUT_JS = """
+async ([expression, argument, timeout]) => {
+  let timer;
+  const expiry = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`browser_evaluate timed out after ${timeout}ms`)), timeout);
+  });
+  try {
+    return await Promise.race([
+      (async () => {
+        const value = eval(expression);
+        return await (typeof value === 'function' ? value(argument) : value);
+      })(),
+      expiry,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+"""
+
+_ELEMENT_EVALUATE_TIMEOUT_JS = """
+async (element, [expression, argument, timeout]) => {
+  let timer;
+  const expiry = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`browser_evaluate timed out after ${timeout}ms`)), timeout);
+  });
+  try {
+    return await Promise.race([
+      (async () => {
+        const value = eval(expression);
+        return await (typeof value === 'function' ? value(element, argument) : value);
+      })(),
+      expiry,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+"""
+
 
 class BrowserViewport(TypedDict):
     width: int
@@ -478,14 +524,30 @@ class BrowserRuntime:
         argument: JsonType,
         selector: str | None,
         page_id: str | None,
+        timeout_ms: int,
     ) -> JsonType:
+        if timeout_ms < 0:
+            raise ValueError("timeout_ms must be greater than or equal to 0.")
+
         def action() -> JsonType:
             page = self._get_page(agent_id, page_id).page
-            result = (
-                page.locator(selector).evaluate(expression, argument)
-                if selector is not None
-                else page.evaluate(expression, argument)
-            )
+            if timeout_ms == 0:
+                result = (
+                    page.locator(selector).evaluate(expression, argument)
+                    if selector is not None
+                    else page.evaluate(expression, argument)
+                )
+            elif selector is not None:
+                result = page.locator(selector).evaluate(
+                    _ELEMENT_EVALUATE_TIMEOUT_JS,
+                    [expression, argument, timeout_ms],
+                    timeout=timeout_ms,
+                )
+            else:
+                result = page.evaluate(
+                    _EVALUATE_TIMEOUT_JS,
+                    [expression, argument, timeout_ms],
+                )
             return cast(JsonType, result)
 
         return self._submit(action)
@@ -712,6 +774,7 @@ def expose_browser_tools() -> list[Callable]:
         argument: JsonType = None,
         selector: str | None = None,
         page_id: str | None = None,
+        timeout_ms: int = 15000,
     ) -> JsonType:
         """
         Evaluate JavaScript in the active or selected page and return JSON-compatible data.
@@ -719,9 +782,12 @@ def expose_browser_tools() -> list[Callable]:
         Without selector, expression runs with page.evaluate, for example `() => document.title`.
         With selector, it runs on the matched element, for example `element => element.textContent`.
         argument is passed as the function argument (or second argument for element evaluation).
+        The call fails if the expression has not settled within timeout_ms; the timed-out
+        async work keeps running in the page, and a synchronous infinite loop cannot be
+        interrupted. Set timeout_ms=0 to remove the limit.
         Use this for developer inspection or operations not covered by browser_interact.
         """
-        return runtime.evaluate(prepare(ctx), expression, argument, selector, page_id)
+        return runtime.evaluate(prepare(ctx), expression, argument, selector, page_id, timeout_ms)
 
     def browser_logs(
         ctx: Context,

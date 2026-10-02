@@ -3,14 +3,14 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from PIL import Image
 
 from xun.conversation import Conversation
 from xun.hooks import HookArgs, Hooks
 from xun.toolcall import ToolCallContext
-from xun.tools.browser import BrowserRuntime, ScreenshotCapture, expose_browser_tools
+from xun.tools.browser import BrowserPage, BrowserRuntime, ScreenshotCapture, expose_browser_tools
 from xun.types import Result
 
 
@@ -100,6 +100,40 @@ class BrowserRuntimeTest(unittest.TestCase):
 
         resize.assert_called_once_with("agent-1", 640, 480, None)
 
+    def test_evaluate_bounds_js_with_timeout(self) -> None:
+        runtime = BrowserRuntime()
+        try:
+            page = MagicMock()
+            page.evaluate.return_value = "ok"
+            with patch.object(BrowserRuntime, "_get_page", return_value=BrowserPage("page-1", page)):
+                result = runtime.evaluate("agent-1", "() => 1", None, None, None, 1234)
+
+            self.assertEqual(result, "ok")
+            expression, argument = page.evaluate.call_args.args
+            self.assertIn("Promise.race", expression)
+            self.assertEqual(argument, ["() => 1", None, 1234])
+
+            element_page = MagicMock()
+            element_page.locator.return_value.evaluate.return_value = "el"
+            with patch.object(BrowserRuntime, "_get_page", return_value=BrowserPage("page-2", element_page)):
+                runtime.evaluate("agent-1", "el => 1", "a", "#x", None, 200)
+
+            element_page.locator.assert_called_once_with("#x")
+            expression, argument = element_page.locator.return_value.evaluate.call_args.args
+            self.assertIn("Promise.race", expression)
+            self.assertEqual(argument, ["el => 1", "a", 200])
+            self.assertEqual(element_page.locator.return_value.evaluate.call_args.kwargs["timeout"], 200)
+
+            raw_page = MagicMock()
+            with patch.object(BrowserRuntime, "_get_page", return_value=BrowserPage("page-3", raw_page)):
+                runtime.evaluate("agent-1", "1 + 2", None, None, None, 0)
+            self.assertEqual(raw_page.evaluate.call_args.args, ("1 + 2", None))
+
+            with self.assertRaisesRegex(ValueError, "timeout_ms"):
+                runtime.evaluate("agent-1", "() => 1", None, None, None, -1)
+        finally:
+            runtime.shutdown()
+
     def test_page_reload_targets_active_page(self) -> None:
         agent = SimpleNamespace(identifier="agent-1", state={}, hooks=Hooks())
         context = ToolCallContext(agent, "browser_page", None)
@@ -109,6 +143,23 @@ class BrowserRuntimeTest(unittest.TestCase):
             browser_page(context, "reload", wait_until="load", timeout_ms=5000)
 
         reload.assert_called_once_with("agent-1", None, "load", 5000)
+
+    def test_evaluate_tool_defaults_and_passes_timeout(self) -> None:
+        agent = SimpleNamespace(identifier="agent-1", state={}, hooks=Hooks())
+        context = ToolCallContext(agent, "browser_evaluate", None)
+        browser_evaluate = expose_browser_tools()[4]
+
+        with patch.object(BrowserRuntime, "evaluate", return_value=None) as evaluate:
+            browser_evaluate(context, "() => 1")
+            browser_evaluate(context, "() => 1", timeout_ms=999)
+
+        self.assertEqual(
+            evaluate.call_args_list,
+            [
+                call("agent-1", "() => 1", None, None, None, 15000),
+                call("agent-1", "() => 1", None, None, None, 999),
+            ],
+        )
 
     def test_tasks_from_different_threads_run_on_one_worker(self) -> None:
         runtime = BrowserRuntime()
