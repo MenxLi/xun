@@ -170,7 +170,6 @@ class AutoCompactor(CompactorAbstract):
 
         # Cheap first: shrinking old tool results costs no API call. Escalate to a summary
         # once enough cheap rounds pile up, or when the reclaim did not sufficiently reduce the estimated token count.
-        agent.info("Auto-compaction of old tool results...")
         reclaimed = conv.compact_toolcall(keep_max = toolcall_keep_max)
         estimated_token_after_reclaim = int(conv.total_tokens * (1 - reclaimed.reclaimed_fraction))
         agent.info(

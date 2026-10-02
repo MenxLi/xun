@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-import json
+import json, time
 import json_repair
 from pydantic import BaseModel
 
@@ -66,6 +66,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
 
     agent = params.agent
 
+    completion_retry_backoff = 0.5
     n_completion_max_retries = 3
 
     while True:
@@ -176,11 +177,16 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             raise
 
         except Exception as e:
-            agent.display_event(ErrorEvent(message=f"Error during chat completion: {e}."))
-            if n_completion_max_retries > 0 and agent.get_confirm("Retry?", default=True).choice:
+            if n_completion_max_retries > 0:
+                agent.warning(f"Error during chat completion: {e}, will retry in {completion_retry_backoff}s")
+                time.sleep(completion_retry_backoff)
                 n_completion_max_retries -= 1
+                completion_retry_backoff *= 2
                 continue
             else:
+                agent.error(message=f"Error during chat completion: {e}.")
+                if agent.get_confirm("Retry?").choice:
+                    continue
                 raise e
 
     if usage:
