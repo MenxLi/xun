@@ -219,6 +219,14 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(created.json(), {"path": "notes"})
         self.assertTrue((self.root / "notes").is_dir())
 
+        nested = self.client.post(
+            "api/files/agent-1/create-directory",
+            json={"path": ".agents/skills"},
+        )
+        self.assertEqual(nested.status_code, 200)
+        self.assertEqual(nested.json(), {"path": ".agents/skills"})
+        self.assertTrue((self.root / ".agents" / "skills").is_dir())
+
         source = self.root / "draft.txt"
         source.write_text("draft", encoding="utf-8")
         moved = self.client.post(
@@ -244,6 +252,13 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertEqual(duplicate.status_code, 409)
 
+        (self.root / "occupied").write_text("file", encoding="utf-8")
+        invalid_parent = self.client.post(
+            "api/files/agent-1/create-directory",
+            json={"path": "occupied/child"},
+        )
+        self.assertEqual(invalid_parent.status_code, 404)
+
         invalid = self.client.post(
             "api/files/agent-1/move",
             json={"path": "existing", "destination": "existing/child"},
@@ -264,6 +279,10 @@ class WebDisplayTest(unittest.TestCase):
                 "api/files/agent-1/move",
                 json={"path": "source.txt", "destination": "escape/moved.txt"},
             )
+            created = self.client.post(
+                "api/files/agent-1/create-directory",
+                json={"path": "escape/new-folder/child"},
+            )
             deleted = self.client.post(
                 "api/files/agent-1/delete",
                 json={"path": "escape/secret.txt"},
@@ -271,6 +290,7 @@ class WebDisplayTest(unittest.TestCase):
             listing = self.client.get("api/files/agent-1").json()
 
             self.assertEqual(moved.status_code, 400)
+            self.assertEqual(created.status_code, 400)
             self.assertEqual(deleted.status_code, 400)
             self.assertTrue(source.is_file())
             self.assertEqual(secret.read_text(encoding="utf-8"), "keep")

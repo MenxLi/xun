@@ -332,11 +332,12 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         _agent, target, root = entry(agent_id, request.path)
         if target == root:
             raise HTTPException(400, "Cannot modify the workdir")
-        if target.exists() or target.is_symlink():
-            raise HTTPException(409, "Path already exists")
-        if not target.parent.is_dir():
-            raise HTTPException(404, "Parent directory not found")
-        target.mkdir()
+        try:
+            target.mkdir(parents=True)
+        except FileExistsError as exc:
+            raise HTTPException(409, "Path already exists") from exc
+        except NotADirectoryError as exc:
+            raise HTTPException(404, "Parent directory not found") from exc
         return {"path": target.relative_to(root).as_posix()}
 
     @router.post("/api/files/{agent_id}/move")
