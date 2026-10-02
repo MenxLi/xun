@@ -152,13 +152,24 @@ class ToolBox:
         """Enable previously-disabled tools by exact name or glob pattern. wildcard patterns are supported."""
         self._disabled_tools.difference_update(self._resolve_tool_names(*tool_names))
         return self
+    
+    def is_disabled(self, tool_name: str) -> bool:
+        """Check if a tool is disabled by exact name."""
+        return tool_name in self._disabled_tools
 
-    def list_tools(self, model_capabilities: set[ModelCapabilityType] | None = None) -> list[Function]:
+    def list_tools(
+        self, 
+        capabilities: set[ModelCapabilityType] | None = None, 
+        include_disabled: bool = False,
+        ) -> list[Function]:
         return [
             tool
             for name, tool in self._tools.items()
-            if name not in self._disabled_tools and 
-            (model_capabilities is None or tool.required_capabilities.issubset(model_capabilities))
+            if (include_disabled or name not in self._disabled_tools) and 
+            (
+                capabilities is None or 
+                tool.required_capabilities.issubset(capabilities)
+            )
         ]
 
     def call_tool(
@@ -178,5 +189,5 @@ class ToolBox:
             ToolCallContext(agent=agent, tool_name=tool_name, v=context)
         )
 
-    def list_tools_json(self, model_capabilities: set[ModelCapabilityType] | None = None):
-        return [ tool.tool_schema for tool in self.list_tools(model_capabilities) ]
+    def list_tools_json(self, capabilities: set[ModelCapabilityType] | None = None):
+        return [ tool.tool_schema for tool in self.list_tools(capabilities) ]
