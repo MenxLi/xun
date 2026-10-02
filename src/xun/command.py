@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Optional, Callable, Any, cast
 import inspect
 from .types import CancelledError
 from .prompt import get_handoff_prompt
+from .conversation_message import UserMessage
 import datetime
 from pathlib import Path
 if TYPE_CHECKING:
@@ -192,7 +193,7 @@ def default_commands() -> list[Command]:
             revise <new content>
         """
         records = agent.conversation.pop_from_last_user_message()
-        assert records and isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and records[0].get("role") == "user"
+        assert records and isinstance(records[0], UserMessage)
         if not args:
             agent.info("Revised to last user message.")
             return

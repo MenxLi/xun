@@ -5,11 +5,12 @@ Conversation compaction.
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from .types import CancelledError
+from .conversation_message import AbstractMessage
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -38,20 +39,22 @@ SCHEMA (in markdown format):
 - tone_context: brief note on communication style or constraints (e.g., "formal", "prefers bullet points", "avoid technical jargon")
 """
 
-COMPACTED_SYSTEM_PROMPT = """\
-You are an assistant having a conversation with a user. Earlier conversation history has been compacted into the summary below:
-
-{summary}
-
----
-Context management notes:
-- The most recent user message is always preserved verbatim and is authoritative for the current task. Messages around it may change: earlier turns are replaced by the summary above, and older tool results after it may be trimmed. 
-- Older tool results may appear as [Compacted, ID: ...] placeholders. When such content is still needed, call `extract_compacted_tool_result` with that ID or re-run the tool / re-read the file. Never rely on memory of compacted output.
-- This conversation will be compacted again when the context limit is reached. Persist important state to files rather than keeping it only in the context window.
-"""
-
 ESCALATION_RATIO = 0.95
 """Token estimate must fall under this fraction of the threshold to count as progress."""
+
+@dataclass
+class CompactionCounter:
+    """Cadence counters for auto-compaction: escalate to a summary after enough
+    cheap tool-call rounds; a summary resets the tool round count."""
+    tool_rounds: int = 0
+    summary_rounds: int = 0
+
+    def to_json(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_json(cls, data: dict) -> "CompactionCounter":
+        return cls(**{f.name: data[f.name] for f in fields(cls) if f.name in data})
 
 @dataclass(frozen=True)
 class SummaryCompactResult:
@@ -86,7 +89,7 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) ->
 
     agent.info("Condensing conversation history...")
 
-    def summarize(messages: list[Any]) -> Optional[str]:
+    def summarize(messages: list[AbstractMessage]) -> Optional[str]:
         compactor = Agent.inherit(
             agent,
             share_display=False,

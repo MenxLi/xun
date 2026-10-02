@@ -5,8 +5,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from xun import Agent, NullDisplay
-from xun.conversation import Conversation, CompactionCounter
-from xun.compact import AutoCompactor, CompactorAbstract, SummaryCompactResult, compact_conversation
+from xun.conversation import Conversation
+from xun.conversation_message import RawOpenAIMessage, SystemPrompt
+from xun.compact import AutoCompactor, CompactionCounter, CompactorAbstract, SummaryCompactResult, compact_conversation
 from xun.hooks import HookArgs, Hooks
 from xun.workspace import Workspace
 
@@ -19,12 +20,12 @@ def _conversation_with_tool_chain(tool_rounds: int, tool_size: int = 500) -> Con
     conversation.set_system_message_content("sys")
     conversation.add_user_message("do the thing")
     for i in range(tool_rounds):
-        conversation.messages.append({
+        conversation.messages.append(RawOpenAIMessage(raw={
             "role": "assistant",
             "content": "",
             "tool_calls": [{"id": f"call_{i}", "type": "function", "function": {"name": "x", "arguments": "{}"}}],
-        })
-        conversation.messages.append({"role": "tool", "tool_call_id": f"call_{i}", "content": "x" * tool_size})
+        }))
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "tool", "tool_call_id": f"call_{i}", "content": "x" * tool_size}))
     return conversation
 
 
@@ -33,12 +34,16 @@ class ConversationCompactTest(unittest.TestCase):
         conversation = Conversation()
         conversation.set_system_message_content("sys")
         conversation.add_user_message("first")
-        conversation.messages.append({"role": "assistant", "content": "a" * 100})
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "a" * 100}))
         conversation.add_user_message("second")
 
         self.assertTrue(conversation.compact(lambda messages: "SUMMARY", keep_recent=KEEP_RECENT).compacted)
-        self.assertEqual([m["role"] for m in conversation.messages], ["system", "user"])
-        self.assertIn("SUMMARY", conversation.messages[0].get("content") or "")
+        self.assertEqual([m.role for m in conversation.messages], ["system", "user"])
+        # the raw summary is stored; the compaction wrapper applies at completion_param time
+        system_message = conversation.messages[0]
+        self.assertIsInstance(system_message, SystemPrompt)
+        self.assertEqual(system_message.content, "SUMMARY")
+        self.assertTrue(system_message.is_compressed)
         # summary supersedes cheap rounds: tool count resets, summary count advances
         self.assertEqual(conversation.compaction_counter.tool_rounds, 0)
         self.assertEqual(conversation.compaction_counter.summary_rounds, 1)
@@ -49,12 +54,13 @@ class ConversationCompactTest(unittest.TestCase):
         self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT).compacted)
         self.assertLessEqual(len(conversation.messages), KEEP_RECENT + 2)  # system + carried user + retained tail
         # the kept tail never opens with an orphaned tool result
-        self.assertNotEqual(conversation.messages[1]["role"], "tool")
+        self.assertNotEqual(conversation.messages[1].role, "tool")
         # every tool result in the tail keeps its owning assistant message
         tail = conversation.messages[1:]
         for index, message in enumerate(tail):
-            if message["role"] == "tool":
-                self.assertTrue(tail[index - 1].get("tool_calls"))
+            if message.role == "tool":
+                prev = tail[index - 1]
+                self.assertTrue(isinstance(prev, RawOpenAIMessage) and prev.raw.get("tool_calls"))
 
     def test_compact_keeps_a_user_message_for_deep_tool_chains(self) -> None:
         # a single user instruction under a long tool chain: the last user message is
@@ -63,7 +69,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
         self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT).compacted)
-        self.assertIn("user", [m["role"] for m in conversation.messages])
+        self.assertIn("user", [m.role for m in conversation.messages])
 
     def test_nothing_to_condense_leaves_history_untouched(self) -> None:
         conversation = Conversation()
@@ -73,13 +79,13 @@ class ConversationCompactTest(unittest.TestCase):
         result = conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT)
         self.assertEqual(result.status, SummaryCompactResult.Status.NOTHING_TO_CONDENSE)
         self.assertFalse(result.compacted)
-        self.assertEqual([m["role"] for m in conversation.messages], ["system", "user"])
+        self.assertEqual([m.role for m in conversation.messages], ["system", "user"])
 
     def test_failed_summary_rolls_back_and_clears_token_count(self) -> None:
         conversation = _conversation_with_tool_chain(tool_rounds=3)
         conversation.total_tokens = 12345
         # give the cut point something to condense, so the summarizer actually runs
-        conversation.messages.append({"role": "assistant", "content": "done"})
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "done"}))
         conversation.add_user_message("keep going")
         before = list(conversation.messages)
 
@@ -92,7 +98,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation = _conversation_with_tool_chain(tool_rounds=3)
         conversation.total_tokens = 99999
         # give the cut point something to condense: a turn before the last user message
-        conversation.messages.append({"role": "assistant", "content": "done"})
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "done"}))
         conversation.add_user_message("keep going")
 
         self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=KEEP_RECENT).compacted)
@@ -288,7 +294,7 @@ class SummarizerConfigTest(unittest.TestCase):
         parent.conversation.set_system_message_content("sys")
         parent.conversation.add_user_message("start")
         for i in range(40):
-            parent.conversation.messages.append({"role": "assistant", "content": "a" * 100})
+            parent.conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "a" * 100}))
             parent.conversation.add_user_message("next")
 
         seen: dict = {}

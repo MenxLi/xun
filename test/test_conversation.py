@@ -10,6 +10,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from xun.conversation import Conversation
+from xun.conversation_message import UserMessage
 from xun.display_abstract import UserMessageEvent
 from xun.entrypoint import MessageInstruction, input_to_instruction
 from xun.hooks import HookArgs, Hooks
@@ -35,8 +36,8 @@ class ConversationImageInputTest(unittest.TestCase):
         conversation.add_tool_result("call_1", Result.Ok("OK"))
         agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
 
-        self.assertEqual([message["role"] for message in conversation.messages], ["tool", "user"])
-        parts = cast(list[dict[str, Any]], conversation.messages[-1]["content"])
+        self.assertEqual([message.role for message in conversation.messages], ["tool", "user"])
+        parts = cast(list[dict[str, Any]], conversation.messages[-1].completion_param()["content"])
         url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
         # The processed image (not the original URL) is attached as a data URL.
         self.assertTrue(url.startswith("data:image/png;base64,"))
@@ -54,7 +55,7 @@ class ConversationImageInputTest(unittest.TestCase):
         def sent_image() -> Image.Image:
             conversation.add_tool_result("call_1", Result.Ok("OK"))
             agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
-            parts = cast(list[dict[str, Any]], conversation.messages[-1]["content"])
+            parts = cast(list[dict[str, Any]], conversation.messages[-1].completion_param()["content"])
             url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
             return Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1])))
 
@@ -76,7 +77,8 @@ class ConversationImageInputTest(unittest.TestCase):
 
         conversation.add_user_message("hello")
 
-        self.assertEqual(conversation.messages[-1], {"role": "user", "content": "hello"})
+        self.assertEqual(conversation.messages[-1], UserMessage(text="hello"))
+        self.assertEqual(conversation.messages[-1].completion_param(), {"role": "user", "content": "hello"})
 
     def test_add_user_message_supports_image_urls(self) -> None:
         conversation = Conversation()
@@ -86,8 +88,12 @@ class ConversationImageInputTest(unittest.TestCase):
             images=["https://example.com/cat.png", "https://example.com/dog.png"],
         )
 
+        self.assertEqual(conversation.messages[-1], UserMessage(
+            text="compare them",
+            images=["https://example.com/cat.png", "https://example.com/dog.png"],
+        ))
         self.assertEqual(
-            conversation.messages[-1],
+            conversation.messages[-1].completion_param(),
             {
                 "role": "user",
                 "content": [
@@ -108,7 +114,7 @@ class ConversationImageInputTest(unittest.TestCase):
 
             conversation.add_user_message("", images=[str(image_path)])
 
-        content = cast(list[dict[str, Any]], cast(dict[str, Any], conversation.messages[-1])["content"])
+        content = cast(list[dict[str, Any]], cast(dict[str, Any], conversation.messages[-1].completion_param())["content"])
         assert isinstance(content, list)
         image_url = content[0]["image_url"]["url"]
         self.assertEqual(
@@ -148,7 +154,7 @@ class ConversationImageInputTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            conversation.messages[-1],
+            conversation.messages[-1].completion_param(),
             {
                 "role": "user",
                 "content": [
@@ -166,13 +172,7 @@ class ConversationImageInputTest(unittest.TestCase):
 
         self.assertEqual(
             removed,
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "describe this"},
-                    {"type": "image_url", "image_url": {"url": "https://example.com/cat.png"}},
-                ],
-            },
+            UserMessage(text="describe this", images=["https://example.com/cat.png"]),
         )
         self.assertEqual(conversation.messages, [])
 

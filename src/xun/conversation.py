@@ -1,41 +1,23 @@
 from __future__ import annotations
 from openai.types import chat
+from pydantic import BaseModel
 from typing import Any, Callable, Sequence, cast
 from typing_extensions import TypedDict
 from pathlib import Path
-from dataclasses import dataclass, asdict, fields
 import uuid, json, time
 from PIL.Image import Image
-from .compact import SummaryCompactResult, ToolCallCompactResult, COMPACTED_SYSTEM_PROMPT
+from .compact import CompactionCounter, SummaryCompactResult, ToolCallCompactResult
+from .conversation_message import (
+    AbstractMessage, RawOpenAIMessage, SystemPrompt, UserMessage,
+    message_from_json, remove_empty_tool_calls,
+)
 from .toolbox import ToolResultType
 from .util import image_to_url
 from .openai_helper import ChatCompletionMessageWithReasoning
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
-def _remove_empty_tool_calls(message: Any) -> Any:
-    # some provider does not allow empty list for tool_calls
-    if not isinstance(message, dict):
-        return message
 
-    sanitized = dict(message)
-    if sanitized.get("tool_calls") == []:
-        sanitized.pop("tool_calls", None)
-    return sanitized
-
-@dataclass
-class CompactionCounter:
-    """Cadence counters for auto-compaction: escalate to a summary after enough
-    cheap tool-call rounds; a summary resets the tool round count."""
-    tool_rounds: int = 0
-    summary_rounds: int = 0
-
-    def to_json(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_json(cls, data: dict) -> "CompactionCounter":
-        return cls(**{f.name: data[f.name] for f in fields(cls) if f.name in data})
 
 class Conversation:
     class MessageRecord(TypedDict):
@@ -43,11 +25,10 @@ class Conversation:
         content: str
 
     def __init__(self):
-        self.messages: list[chat.chat_completion_message_param.ChatCompletionMessageParam] = []
+        self.messages: list[AbstractMessage] = []
         self.conversation_id: str = uuid.uuid4().hex
 
-        # will update after each model call, 
-        # but not guaranteed to be accurate if user edits the conversation
+        # refreshed after each model call, stale once the history is edited
         self.total_tokens: int | None = None     
 
         self._compacted_toolcalls: dict[str, str] = {}
@@ -55,7 +36,7 @@ class Conversation:
     
     def clear(self):
         """ Clear messages, keeping the leading system message if present. """
-        if self.messages and self.messages[0].get("role") == "system":
+        if self.messages and isinstance(self.messages[0], SystemPrompt):
             del self.messages[1:]
         else:
             self.messages.clear()
@@ -68,7 +49,7 @@ class Conversation:
             "conversation_id": self.conversation_id,
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "tokens_used": self.total_tokens,
-            "messages": self.messages,
+            "messages": [msg.to_json() for msg in self.messages],
             "compacted_toolcalls": self._compacted_toolcalls,
             "compaction": self.compaction_counter.to_json(),
         }
@@ -82,10 +63,9 @@ class Conversation:
     
     def load_json(self, data: dict):
         self.conversation_id = data.get("conversation_id", self.conversation_id)
-        self.messages = [_remove_empty_tool_calls(msg) for msg in data.get("messages", [])]
+        self.messages = [message_from_json(msg) for msg in data.get("messages", [])]
         # "tokens_used" is the on-disk key, kept stable for previously saved conversations
         self.total_tokens = data.get("tokens_used", None)
-        # conversations saved before compaction existed have no originals to restore
         self._compacted_toolcalls = dict(data.get("compacted_toolcalls", {}))
         self.compaction_counter = CompactionCounter.from_json(data.get("compaction", {}))
     
@@ -97,11 +77,15 @@ class Conversation:
         with open(file_path, "r") as f:
             self.loads(f.read())
     
-    def set_system_message_content(self, content: str):
-        if self.messages and self.messages[0]["role"] == "system":
-            self.messages[0]["content"] = content
+    def set_system_message_content(self, content: str, is_compressed: bool = False):
+        prompt = SystemPrompt(content=content, is_compressed=is_compressed)
+        if self.messages and isinstance(self.messages[0], SystemPrompt):
+            self.messages[0] = prompt
         else:
-            self.messages.insert(0, {"role": "system", "content": content})
+            self.messages.insert(0, prompt)
+
+    def completion_params(self) -> list[chat.chat_completion_message_param.ChatCompletionMessageParam]:
+        return [msg.completion_param() for msg in self.messages]
 
     @staticmethod
     def content_to_text(content: Any, truncate: bool = False) -> str:
@@ -114,22 +98,11 @@ class Conversation:
             return text[:MAX_HISTORY_CONTENT_LENGTH] + "...(truncated)"
         return text
 
-    def append_user_message(self, extra_content: str ):
-        if not self.messages or self.messages[-1].get("role") != "user":
-            raise ValueError("No user message to append to. Please add a user message first.")
-
-        last_message = self.messages[-1]
-        last_content = last_message.get("content", "")
-        if isinstance(last_content, str):
-            last_message["content"] = last_content + extra_content
-        elif isinstance(last_content, list):
-            for item in last_content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    assert "text" in item, "Text content missing in user message part."
-                    item["text"] = item.get("text", "") + extra_content
-                    break
-        else:
-            raise ValueError(f"Unexpected content type in last user message: {type(last_content)}")
+    def set_response_schema(self, schema: type[BaseModel]) -> None:
+        """Require the trailing user message to be answered as JSON matching `schema`."""
+        if not self.messages or not isinstance((last_msg:=self.messages[-1]), UserMessage):
+            raise ValueError("No user message to attach a response schema to. Please add a user message first.")
+        last_msg.response_schema = json.dumps(schema.model_json_schema())
 
     def add_user_message(
         self,
@@ -137,104 +110,85 @@ class Conversation:
         images: Sequence[str | Image] | None = None,
     ) -> None:
         normalized_images = [image_to_url(image) for image in images or ()]
-        user_content: str | list[dict[str, Any]]
-        if not normalized_images:
-            user_content = content
-        else:
-            parts: list[dict[str, Any]] = []
-            if content:
-                parts.append({"type": "text", "text": content})
-            parts.extend({
-                "type": "image_url", 
-                "image_url": {"url": image}
-                } for image in normalized_images)
-            user_content = parts
-
-        self.messages.append(cast(chat.ChatCompletionUserMessageParam, {"role": "user", "content": user_content}))
+        self.messages.append(UserMessage(text=content, images=normalized_images))
     
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage | ChatCompletionMessageWithReasoning):
-        self.messages.append(_remove_empty_tool_calls(msg.model_dump()))     # type: ignore
+        self.messages.append(RawOpenAIMessage(raw=remove_empty_tool_calls(msg.model_dump())))
     
     def add_tool_result(self, tool_call_id: str, content: ToolResultType):
-        """ Add tool call result, the tool call is recorded via assistant message """
+        """The tool call itself is recorded by the preceding assistant message."""
         try:
             content_str = content.value_str()
         except Exception as e:
             content_str = f"[Error] Failed to serialize tool result: {str(e)}"
-        self.messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": content_str
-        })
+        self.messages.append(
+            RawOpenAIMessage(
+                raw={
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": content_str
+                }
+            )
+        )
 
-    def pop_last_message_if_user(self) -> dict[str, Any] | None:
-        if not self.messages or self.messages[-1].get("role") != "user":
+    def pop_last_message_if_user(self) -> UserMessage | None:
+        if not self.messages or not isinstance(self.messages[-1], UserMessage):
             return None
-        return cast(dict[str, Any], self.messages.pop())
+        return cast(UserMessage, self.messages.pop())
     
-    def pop_from_last_user_message(self, inclusive: bool = True) -> list[Any]:
-        """
-        inclusive=True: pop the last user message as well as afterwards
-        inclusive=False: keep the last user message, pop afterwards
-        """
+    def pop_from_last_user_message(self, inclusive: bool = True) -> list[AbstractMessage]:
+        """Pop everything after the last user message; `inclusive` also pops the message itself."""
         for i in range(len(self.messages)-1, -1, -1):
-            if self.messages[i]["role"] == "user":
-                old = self.messages
-                if inclusive:
-                    self.messages = self.messages[:i]
-                    return old[i:]
-                else:
-                    if i == len(self.messages) - 1:
-                        return []
-                    self.messages = self.messages[:i+1]
-                    return old[i+1:]
+            if isinstance(self.messages[i], UserMessage):
+                keep = i if inclusive else i + 1
+                popped = self.messages[keep:]
+                self.messages = self.messages[:keep]
+                return popped
         return []
     
     @classmethod
-    def _estimate_message_length(cls, message: dict | list[dict]) -> int:
-        """Rough text-length proxy for a message's token contribution. """
+    def _estimate_message_length(cls, message: AbstractMessage | list[AbstractMessage] | dict) -> int:
+        """Rough text-length proxy for a message's token contribution."""
         length_kw = ['content', 'text', 'reasoning', 'reasoning_content']
         total_length = 0
         if isinstance(message, list):
-            return sum(cls._estimate_message_length(item) for item in message if isinstance(item, dict))
-        for k in message:
-            if isinstance(message[k], str) and k in length_kw:
-                total_length += len(message[k])
-            elif isinstance(message[k], dict):
-                total_length += cls._estimate_message_length(message[k])
-            elif isinstance(message[k], list):
-                total_length += sum(cls._estimate_message_length(item) for item in message[k] if isinstance(item, dict))
-            else:
-                pass
+            return sum(cls._estimate_message_length(item) for item in message if isinstance(item, (AbstractMessage, dict)))
+        msg = message.completion_param() if isinstance(message, AbstractMessage) else message
+        for k in msg:
+            if isinstance(msg[k], str) and k in length_kw:
+                total_length += len(msg[k])
+            elif isinstance(msg[k], dict):
+                total_length += cls._estimate_message_length(msg[k])
+            elif isinstance(msg[k], list):
+                total_length += sum(cls._estimate_message_length(item) for item in msg[k] if isinstance(item, (AbstractMessage, dict)))
         return total_length
     
     def estimated_message_length(self) -> int:
-        return self._estimate_message_length(self.messages) # type: ignore
+        return self._estimate_message_length(self.messages)
     
     def compact_toolcall(self, keep_max: int = 12) -> ToolCallCompactResult:
-        """
-        Condense the tool call history by marking older tool calls as compacted, keeping only the most recent `keep_max` tool calls.
-        Returns the number of tool call results newly compacted and the fraction of
-        estimated (text-only) message length that was reclaimed.
-        """
+        """Replace all but the most recent `keep_max` tool results with placeholders,
+        keeping the originals retrievable by tool call id."""
         self.compaction_counter.tool_rounds += 1
         n_compacted = 0
         message_length_before: int = self.estimated_message_length()
         for i in range(len(self.messages) - 1, -1, -1):
-            if self.messages[i].get("role") == "tool":
-                keep_max -= 1
-                msg: chat.chat_completion_tool_message_param.ChatCompletionToolMessageParam = self.messages[i] # type: ignore
-                assert 'tool_call_id' in msg
-                assert 'content' in msg
-                if keep_max < 0:
-                    toolcall_id = msg["tool_call_id"]
-                    old_content = msg["content"]
-                    new_content = f"[Compacted, ID: {toolcall_id}. If this content is still needed, call extract_compacted_tool_result with this ID or re-run the tool.]"
-                    assert isinstance(old_content, str)
-                    if len(old_content) > len(new_content):
-                        self.messages[i]['content'] = new_content
-                        self._compacted_toolcalls[toolcall_id] = old_content
-                        n_compacted += 1
+            message = self.messages[i]
+            if not isinstance(message, RawOpenAIMessage) or message.raw.get("role") != "tool":
+                continue
+            keep_max -= 1
+            msg = cast(chat.chat_completion_tool_message_param.ChatCompletionToolMessageParam, message.raw)
+            assert 'tool_call_id' in msg
+            assert 'content' in msg
+            if keep_max < 0:
+                toolcall_id = msg["tool_call_id"]
+                old_content = msg["content"]
+                new_content = f"[Compacted, ID: {toolcall_id}. If this content is still needed, call extract_compacted_tool_result with this ID or re-run the tool.]"
+                assert isinstance(old_content, str)
+                if len(old_content) > len(new_content):
+                    msg['content'] = new_content
+                    self._compacted_toolcalls[toolcall_id] = old_content
+                    n_compacted += 1
         message_length_after: int = self.estimated_message_length()
         return ToolCallCompactResult(
             reclaimed_count=n_compacted,
@@ -242,25 +196,19 @@ class Conversation:
         )
     
     def compacted_toolcall_result(self, toolcall_id: str) -> str | None:
-        """
-        Retrieve the original content of a compacted tool call by its ID.
-        Returns None if the tool call is not compacted or does not exist.
-        """
+        """Original content of a compacted tool call, None if it was never compacted."""
         return self._compacted_toolcalls.get(toolcall_id)
 
-    def compact(self, summarize: Callable[[list[Any]], str | None], keep_recent: int):
-        """
-        Replace older messages with a system-message summary from `summarize(messages)`
-        (None to abort), keeping a bounded recent tail.
+    def compact(self, summarize: Callable[[list[AbstractMessage]], str | None], keep_recent: int):
+        """Replace older messages with a `summarize(messages)` summary in the system message
+        (None to abort), keeping a tail of at most `keep_recent` messages.
 
-        Cut at the last user message when its tail fits in `keep_recent`, else keep only
-        the most recent `keep_recent` messages, advancing off `tool` messages so the tail
-        never starts with orphaned tool results. When that cut skips past the last user
-        message, the user request is re-kept at the head of the tail: some providers
-        reject request bodies without any user message, and it preserves the task verbatim.
+        The cut lands on the last user message when its tail is short enough, otherwise on
+        `len - keep_recent` advanced past `tool` messages so the tail never opens with an
+        orphaned result. A user message skipped by that cut is re-kept at the head of the
+        tail: providers reject bodies without a user message, and it preserves the task verbatim.
 
-        Returns a `SummaryCompactResult` whose `status` distinguishes the three outcomes;
-        history is left untouched unless the status is `SummaryCompactResult.Status.COMPACTED`.
+        History is untouched unless the returned status is COMPACTED.
         """
         len_before = self.estimated_message_length()
         msgs = self.messages
@@ -268,14 +216,14 @@ class Conversation:
         cut: int | None = None
         last_user_idx: int | None = None
         for i in range(len(msgs) - 1, -1, -1):
-            if msgs[i].get("role") == "user":
+            if isinstance(msgs[i], UserMessage):
                 last_user_idx = i
                 if len(msgs) - i <= keep_recent:
                     cut = i
                 break
         if cut is None:
             cut = max(len(msgs) - keep_recent, 0)
-            while cut < len(msgs) and msgs[cut].get("role") == "tool":
+            while cut < len(msgs) and msgs[cut].role == "tool":
                 cut += 1
 
         condense_messages = msgs[:cut]
@@ -284,7 +232,7 @@ class Conversation:
             keep_messages = [msgs[last_user_idx]] + keep_messages
 
         Status = SummaryCompactResult.Status
-        if not any(m.get("role") != "system" for m in condense_messages):
+        if not any(m.role != "system" for m in condense_messages):
             return SummaryCompactResult(
                 Status.NOTHING_TO_CONDENSE, 
                 "Nothing to condense in conversation history."
@@ -297,9 +245,9 @@ class Conversation:
                 "Conversation compaction did not produce a summary."
                 )
 
-        self.set_system_message_content(COMPACTED_SYSTEM_PROMPT.format(summary=summary))  # in-place on the leading system message, or inserted at index 0
+        self.set_system_message_content(summary, is_compressed=True)
         self.messages = self.messages[:1] + keep_messages
-        # the count refers to the pre-compaction history and would re-trigger auto-compaction
+        # the stale count refers to pre-compaction history and would re-trigger auto-compaction
         self.total_tokens = None
         self.compaction_counter = CompactionCounter(summary_rounds=self.compaction_counter.summary_rounds + 1)
         return SummaryCompactResult(
@@ -311,10 +259,9 @@ class Conversation:
     def to_history(self, truncate = False) -> list[MessageRecord]:
         res = []
         for msg in self.messages:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
+            param = msg.completion_param()
             res.append(self.MessageRecord(
-                role=role,
-                content=self.content_to_text(content, truncate=truncate),
+                role=msg.role,
+                content=self.content_to_text(param.get("content", ""), truncate=truncate),
             ))
         return res

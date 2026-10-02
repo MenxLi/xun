@@ -158,7 +158,7 @@ class HistoryCommandTest(unittest.TestCase):
             agent.conversation.clear()
             commands.get("load").invoke(agent, ["latest"])  # type: ignore[arg-type]
 
-        self.assertEqual(agent.conversation.messages[-1]["content"], "saved message")
+        self.assertEqual(agent.conversation.messages[-1].completion_param()["content"], "saved message")
 
 
 if __name__ == "__main__":

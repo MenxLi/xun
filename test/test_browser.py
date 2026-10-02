@@ -72,7 +72,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         self.assertEqual(conversation.messages, [])
         conversation.add_tool_result("call-1", Result.Ok(result))
         agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
-        self.assertEqual([message["role"] for message in conversation.messages], ["tool", "user"])
+        self.assertEqual([message.role for message in conversation.messages], ["tool", "user"])
 
     def test_screenshot_modes_are_mutually_exclusive(self) -> None:
         runtime = BrowserRuntime()

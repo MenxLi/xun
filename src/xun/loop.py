@@ -22,20 +22,14 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     agent.hooks.before_execution.invoke(params)
 
     if params.takeover_result is not None:
-        # skip the loop entirely, before the schema fallback message is added to the conversation
+        # skip the loop entirely, before the response schema is attached to the conversation
         result = params.takeover_result
     else:
         result = ""
         finished = False
         if params.schema is not None:
-            # keep the in-prompt schema as a fallback: some backends/models have
-            # poor support for response_format (structured outputs)
-            agent.conversation.append_user_message(
-                "\n---\n"
-                "Please respond in JSON format without any additional text. "
-                "The JSON should conform to the following schema:\n"
-                f"{params.schema.model_json_schema()}\n"
-            )
+            # in-prompt fallback: some backends/models have poor response_format support
+            agent.conversation.set_response_schema(params.schema)
         for iteration in range(params.max_iterations):
             agent.check_cancel()
             agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
@@ -75,7 +69,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             config = agent.config
             model_params = {
                 "model": config.model.name,
-                "messages": agent.conversation.messages,
+                "messages": agent.conversation.completion_params(),
             }
             if (tools_json := agent.toolbox.list_tools_json(config.model.capabilities)) and len(tools_json) > 0:
                 model_params["tools"] = tools_json
