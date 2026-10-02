@@ -230,6 +230,7 @@ The config supports `${XUN_...}` placeholders which are substituted from environ
 | `auto_confirm` | `${XUN_AUTO_CONFIRM}` | Automatically confirm actions without prompting. |
 | `enable_extensions` | — | Load extensions from `$XUN_HOME/extensions/`. Internal helper agents set this to `false` automatically. |
 | `load_project_instructions` | — | Automatically load `AGENTS.md` from the working directory into the system prompt. |
+| `extension_settings` | — | Per-extension settings, keyed by extension name; each extension reads its own through `ctx.settings` (see Extensions). |
 
 More configuration options are available; see the source code of `AgentConfig` at [src/xun/config.py](src/xun/config.py).
 

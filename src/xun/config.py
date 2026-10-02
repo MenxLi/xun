@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from typing import Self, Literal
 from string import Template
 
-from .types import ModelCapabilityType
+from .types import ModelCapabilityType, JsonType
 
 
 BRAND = "XUN"
@@ -96,6 +96,9 @@ class AgentConfig(ConfigModel):
     enable_extensions: bool
     load_project_instructions: bool
     """Whether to automatically load AGENTS.md"""
+
+    extension_settings: dict[str, dict[str, JsonType]] = {}
+    """Per-extension settings, keyed by extension name. Read via `ctx.settings`."""
 
     @classmethod
     def from_template(

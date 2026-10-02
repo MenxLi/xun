@@ -34,6 +34,15 @@ def setup_extension(ctx: ExtensionContext) -> None:
 - **Hooks**: `ctx.agent.hooks.before_tool_call.add(...)` (see `src/xun/hooks.py`)
 - **Tools**: define functions and register them on `ctx.agent.toolbox`, e.g. via `@tool_attr(name="web_search", override=True)` to replace a built-in tool
 - **Config**: mutate `ctx.agent.config` (setup runs before model auto-detect, so overrides take effect)
+- **Settings**: read user-provided config through `ctx.settings`
+
+Extension settings live under `extension_settings` in config.json, keyed by extension name:
+
+```json
+{ "extension_settings": { "my_ext": { "base_url": "https://..." } } }
+```
+
+Inside `extensions/my_ext.py`, `ctx.settings` resolves to the bag above (an empty dict when unset); tools reach the same bag through `ctx.agent.config.extension_settings`.
 
 The first line of the module docstring becomes the extension's description, shown by the `/extensions` command.
 

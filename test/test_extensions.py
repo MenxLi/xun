@@ -169,6 +169,15 @@ def setup_extension(ctx: ExtensionContext) -> None:
         agent.initialize()
         self.assertNotIn("ran", agent.state)
 
+    def test_extension_settings_namespaced(self) -> None:
+        self._write_ext("cfg", "def setup_extension(ctx): ctx.agent.state['cfg'] = ctx.settings\n")
+        self._write_ext("bare", "def setup_extension(ctx): ctx.agent.state['bare'] = ctx.settings\n")
+        agent = self._new_agent()
+        agent.config.extension_settings = {"cfg": {"base_url": "https://x"}}
+        agent.initialize()
+        self.assertEqual(agent.state["cfg"], {"base_url": "https://x"})
+        self.assertEqual(agent.state["bare"], {})
+
     def test_subagent_replays_hooks_but_survives_tool_conflict(self) -> None:
         self._write_ext("both", """
 from xun import tool_attr

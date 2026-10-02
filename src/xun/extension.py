@@ -19,7 +19,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Callable, cast
 import rich
 from .config import get_home_dir, xun_version
-from .types import CancelledError, Result
+from .types import CancelledError, JsonType, Result
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -127,6 +127,11 @@ class ExtensionContext:
     @property
     def name(self) -> str:
         return self._ext.name
+
+    @property
+    def settings(self) -> dict[str, JsonType]:
+        """`config.extension_settings[name]`, empty when unset."""
+        return self.agent.config.extension_settings.get(self.name, {})
 
 type ScanItem = Result[Extension, ExtensionIssue]
 
