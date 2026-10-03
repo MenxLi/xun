@@ -53,16 +53,16 @@ def agent_risk_access(
         "Otherwise, it should be confirmed with the user before execution. \n\n"
 
         "You have tools to read files (only within the allowed paths), "
-        "you should avoid using them unless they are absolutely necessary to determine the risk of the command, "
-        "use it with minimum necessary scope. \n\n"
+        "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
         "If you determine that the command is safe, you can output a reason as null, otherwise, you should provide a concise (less than 20 words) reason for your decision. \n"
+        "If using tools, restrict to at most 3 tool calls, otherwise return unsure with your current assessment."
     ).instruct(
         f"Given the command: `{cmd}`\n"
         f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
         f"Extra allowed paths: `{extra_allowed_paths}`\n"
         f"Please determine the risk access policy for this command. "
     ).initialize()
-    res = agent.execute(schema=RiskAccessResult)
+    res = agent.execute(schema=RiskAccessResult, max_iterations=8)
     if res.is_err():
         return RiskAccessResult(policy='unsure', reason=f"Failed to assess command risk: {res.unwrap_err()}")
     return res.unwrap()
