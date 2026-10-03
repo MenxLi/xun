@@ -138,11 +138,13 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[StateT]):
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
         default: bool = True,
+        _skip_auto_confirm: bool = False,
         ) -> ChoiceOutcome[bool]:
         outcome = self.get_choice(
             prompt=prompt,
             choices=["Yes", "No"],
             message=message, title=title, subtitle=subtitle,
             default="Yes" if default else "No",
+            _skip_auto_confirm=_skip_auto_confirm,
         )
         return ChoiceOutcome(choice=outcome.choice == "Yes", source=outcome.source)

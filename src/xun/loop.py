@@ -15,6 +15,10 @@ from .hooks import HookArgs
 # rename for semantics
 ExecutionLoopParams = HookArgs.BeforeExecutionArgs
 
+COMPLETION_RETRY_BACKOFF = 0.5
+COMPLETION_MAX_RETRIES = 3
+USER_RETRY_GRANT = 3
+
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     # cancellation is the caller's contract: Agent.execute wraps this loop in cancellable_execution
     agent = params.agent
@@ -60,8 +64,8 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
 
     agent = params.agent
 
-    completion_retry_backoff = 0.5
-    n_completion_max_retries = 3
+    completion_retry_backoff = COMPLETION_RETRY_BACKOFF
+    n_completion_max_retries = COMPLETION_MAX_RETRIES
 
     while True:
         agent.check_cancel()
@@ -180,9 +184,15 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 continue
             else:
                 agent.error(message=f"Error during chat completion: {e}.")
-                if agent.get_confirm("Retry?").choice:
-                    continue
-                raise e
+                try:
+                    approved = agent.get_confirm("Retry?", _skip_auto_confirm=True).choice
+                except NotImplementedError:
+                    approved = False    # headless display has no human to ask
+                if not approved:
+                    raise e
+                n_completion_max_retries = USER_RETRY_GRANT
+                completion_retry_backoff = COMPLETION_RETRY_BACKOFF
+                continue
 
     if usage:
         agent.conversation.total_tokens = usage.total_tokens

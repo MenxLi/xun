@@ -277,9 +277,8 @@ class SummarizerConfigTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def test_headless_summarizer_forces_auto_confirm(self) -> None:
-        # NullDisplay (share_display=False) cannot prompt; without auto_confirm the
-        # completion retry in _execute_step would raise NotImplementedError from
-        # NullDisplay.get_choice and mask the real API error
+        # NullDisplay (share_display=False) cannot prompt; auto_confirm keeps any
+        # prompt from raising NotImplementedError out of NullDisplay.get_choice
         parent = Agent(
             display=NullDisplay(),
             workspace=Workspace(workdir=Path(self._tmp.name)),
