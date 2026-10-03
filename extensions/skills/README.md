@@ -37,13 +37,14 @@ current session.
 `setup_extension.py` is intentionally small: it always registers the `/skills`
 command, while the model-facing tools follow the catalog through `sync_tools` and
 only appear once at least one skill has been discovered. A bundle is usually created
-after the agent has started, so `/skills reload` re-runs `sync_tools` and the new
-bundle gains its tools without a restart. Missing PyYAML makes this extension fail
+after the agent has started, so `ensure_fresh` resyncs the tools and the prompt
+catalog automatically before every execution and command, keyed on a
+name/description fingerprint. Missing PyYAML makes this extension fail
 to import, while the core agent continues to start normally.
 
 `/skills` lists discovered skills, printing the roots it searched whenever the
 catalog is empty. Use `/skills info <name>` to inspect metadata without changing the
-session, `/skills activate <name>` to load instructions, `/skills reload` to rescan.
+session and `/skills activate <name>` to load instructions.
 
 ## Test
 

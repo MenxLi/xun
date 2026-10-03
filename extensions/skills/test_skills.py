@@ -12,6 +12,7 @@ from xun import Agent, Command, NullDisplay, ToolBox
 from xun.conversation_message import SystemPrompt
 from xun.display_abstract import ShowExtensionsEvent
 from xun.display_event import InfoEvent
+from xun.hooks import HookArgs
 from xun.toolcall import ToolCallContext
 from xun.workspace import Workspace
 
@@ -119,7 +120,7 @@ class SkillsExtensionTest(SkillsTestBase):
 
 
 class LateDiscoveryTest(SkillsTestBase):
-    """The catalog is empty at startup, which is when `/skills` matters most."""
+    """The catalog is empty at startup, which is when auto resync matters most."""
 
     def test_command_and_hint_exist_with_an_empty_catalog(self) -> None:
         command = self.skill_command()
@@ -128,25 +129,29 @@ class LateDiscoveryTest(SkillsTestBase):
         self.assertIn("No skills discovered", self.infos()[-1])
         self.assertNotIn("Skills", self.panels())
 
-    def test_reload_gives_a_late_bundle_its_tools(self) -> None:
-        command = self.skill_command()
+    def test_command_picks_up_a_late_bundle_without_reload(self) -> None:
         self.add_bundle("late")
-        command.invoke(self.agent, ["reload"])
+        self.skill_command().invoke(self.agent)
         self.assertTrue(self.REQUIRED_TOOLS <= self.tool_names())
         self.assertIn('"name":"late"', self.catalog())
-        self.assertIn("1 available", self.infos()[-1])
+        self.assertEqual(self.panels()[-1], "Skills")
 
-    def test_reload_without_any_bundle_keeps_the_toolbox_untouched(self) -> None:
+    def test_execution_hook_resyncs_without_any_command(self) -> None:
+        self.add_bundle("late")
+        self.agent.hooks.before_execution.invoke(
+            HookArgs.BeforeExecutionArgs(agent=self.agent, schema=None, max_iterations=1))
+        self.assertTrue(self.REQUIRED_TOOLS <= self.tool_names())
+        self.assertIn('"name":"late"', self.catalog())
+
+    def test_empty_catalog_keeps_the_toolbox_untouched(self) -> None:
         command = self.skill_command()
-        command.invoke(self.agent, ["reload"])
-        command.invoke(self.agent, ["reload"])
+        command.invoke(self.agent)
+        command.invoke(self.agent)
         self.assertFalse(self.tool_names() & self.REQUIRED_TOOLS)
-        self.assertIn("0 available", self.infos()[-1])
 
     def test_setup_replay_on_a_subagent_does_not_collide(self) -> None:
-        command = self.skill_command()
         self.add_bundle("late")
-        command.invoke(self.agent, ["reload"])
+        self.skill_command().invoke(self.agent)
         child = Agent.inherit(self.agent).initialize()  # toolbox is a clone of the parent's
         setup_extension(SimpleNamespace(agent=child))  # type: ignore[arg-type]
         self.assertTrue(self.REQUIRED_TOOLS <= {tool.name for tool in child.toolbox.list_tools()})

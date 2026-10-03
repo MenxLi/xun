@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+from xun.toolcall import ToolAttr
 
 try:
     import yaml
@@ -42,6 +44,8 @@ class Skill:
 class Session:
     active: set[str] = field(default_factory=set)
     granted_scripts: set[str] = field(default_factory=set)
+    fingerprint: tuple[tuple[str, str], ...] | None = None
+    """The (name, description) pairs last synced into the prompt and toolbox."""
 
 
 def session(agent: Any) -> Session:
@@ -119,3 +123,42 @@ def refresh(agent: Any) -> None:
     if active:
         content.append(f"Active skills: {', '.join(active)}. Call activate_skill again to reread its instructions.")
     agent.conversation.set_persistent_section(SECTION_NAME, "\n".join(content))
+
+
+def _tool_name(func: Callable) -> str:
+    """The name `func` registers under: its `tool_attr` override, else its `__name__`."""
+    attr = ToolAttr.extract_from(func)
+    return (attr.name if attr and attr.name else None) or func.__name__
+
+
+def sync_tools(agent: Any, available: list[Skill]) -> None:
+    """Register the skill tools while the catalog is non-empty.
+
+    Additive and idempotent: present names are left alone, so a tool the user
+    disabled stays disabled. Runs on every resync and on a sub-agent's setup replay.
+    """
+    if not available:
+        return
+    from .tools import activate_skill, list_skills, read_skill_file, run_skill_script
+
+    funcs = [list_skills, activate_skill, read_skill_file]
+    if os.name != "nt":
+        funcs.append(run_skill_script)  # POSIX only
+    present = {tool.name for tool in agent.toolbox.list_tools(include_disabled=True)}
+    agent.toolbox.register(*[f for f in funcs if _tool_name(f) not in present])
+
+
+def ensure_fresh(agent: Any) -> tuple[list[Skill], list[tuple[str, str]]]:
+    """Resync tools and the prompt catalog when the bundles changed on disk.
+
+    Only the name/description fingerprint is compared, so a body edit (read
+    live at activation) triggers no resync.
+    """
+    discovered, issues = skills(agent)
+    current = session(agent)
+    fingerprint = tuple(sorted((s.name, s.description) for s in discovered))
+    if fingerprint != current.fingerprint:
+        sync_tools(agent, discovered)
+        refresh(agent)
+        current.fingerprint = fingerprint
+    return discovered, issues
