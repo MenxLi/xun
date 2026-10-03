@@ -250,16 +250,22 @@ def setup_extension(ctx: ExtensionContext) -> None:
 
 See [extensions/README.md](extensions/README.md) for the full mechanics.
 
-## Skills
+## Skills and MCP
 
-The optional `extensions/skills/` extension discovers standard [Agent Skills](https://agentskills.io) `SKILL.md` folders from `$XUN_HOME/skills/`, `<workdir>/.agents/skills/`, and `~/.agents/skills/`. 
+Two ready-made extensions live under `extensions/`, each opt-in by copying it into `$XUN_HOME/extensions/`:
 
-Install it under `$XUN_HOME/extensions/skills/` and install its dependency with `pip install pyyaml`. 
-It progressively discloses instructions through `activate_skill`, exposes bundled files and scripts only after activation, and adds `/skill` for listing and activation.
+**Skills** discovers standard [Agent Skills](https://agentskills.io) `SKILL.md` folders from `$XUN_HOME/skills/`, `<workdir>/.agents/skills/`, and `~/.agents/skills/`. Install its dependency with `pip install pyyaml`. 
+It progressively discloses instructions through `activate_skill`, exposes bundled files and scripts only after activation, and adds `/skills` for listing and activation.
 
-## MCP
-
-The optional `extensions/mcp/` extension allows xun to communicate with [Model Context Protocol](https://modelcontextprotocol.io) servers. 
-
-Install it under `$XUN_HOME/extensions/mcp/` and configure servers in `config.json` under `extension_settings.mcp`. 
+**MCP** lets xun communicate with [Model Context Protocol](https://modelcontextprotocol.io) servers and expose their tools as xun tools. 
+It needs no extra dependencies; configure servers in `config.json` under `extension_settings.mcp`. 
 See [extensions/mcp/README.md](extensions/mcp/README.md) for full details.
+
+<details>
+<summary>Why are these extensions rather than core?</summary>
+
+- **They fit the mechanism.** Both only consume core primitives — tools, commands, prompt sections, settings — and neither is wanted by every user.
+- **They track fast-moving standards.** Agent Skills and MCP are de facto standards still in flux; as extensions, a spec change is a drop-in file swap, not a core release.
+- **Core stays compact.** The two double as proof that the extension system suffices for real features.
+
+</details>
