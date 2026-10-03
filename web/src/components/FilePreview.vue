@@ -27,7 +27,7 @@ const highlighted = computed(() => highlightFile(props.entry.path, text.value))
 
 watch(() => props.entry.path, () => {
   error.value = ''
-  rendered.value = false
+  rendered.value = render.value !== null
   if (kind.value !== 'text') return
   loading.value = true
   text.value = ''
@@ -45,11 +45,11 @@ watch(() => props.entry.path, () => {
       <span>{{ entry.path }}</span>
       <div class="preview-actions">
         <div v-if="render" class="render-toggle" role="group" :aria-label="t('preview.render')">
-          <button :class="{ active: !rendered }" :title="t('preview.showSource')" :aria-pressed="!rendered" @click="rendered = false">
-            <CodeXml :size="13" />
-          </button>
           <button :class="{ active: rendered }" :title="t('preview.render')" :aria-pressed="rendered" @click="rendered = true">
             <BookOpenText :size="13" />
+          </button>
+          <button :class="{ active: !rendered }" :title="t('preview.showSource')" :aria-pressed="!rendered" @click="rendered = false">
+            <CodeXml :size="13" />
           </button>
         </div>
         <button class="icon-button" :title="fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
