@@ -1,10 +1,10 @@
 """Agent Skills support: hand the model task-specific instruction bundles.
 
 `SKILL.md` bundles (https://agentskills.io) are discovered under `$XUN_HOME/skills`,
-`<workdir>/.agents/skills` and `~/.agents/skills`, and exposed as the `/skill`
+`<workdir>/.agents/skills` and `~/.agents/skills`, and exposed as the `/skills`
 command plus the `list_skills` / `activate_skill` / `read_skill_file` /
-`run_skill_script` tools. Only `/skill` is registered against an empty catalog, so
-that `/skill reload` can pick up a bundle created after this agent started.
+`run_skill_script` tools. Only `/skills` is registered against an empty catalog, so
+that `/skills reload` can pick up a bundle created after this agent started.
 """
 import os
 from typing import Any, Callable
@@ -30,7 +30,7 @@ def sync_tools(agent: Any, available: list[Skill]) -> None:
 
     Additive and idempotent - present names are left alone, so nothing collides and
     a tool the user disabled with `/tool` stays disabled - because it runs again on
-    every `/skill reload` and on the setup replay of a sub-agent, whose toolbox is
+    every `/skills reload` and on the setup replay of a sub-agent, whose toolbox is
     the parent's clone. An empty catalog registers nothing.
     """
     if not available:
@@ -46,10 +46,10 @@ def _tool_name(func: Callable) -> str:
 
 
 def _discovery_hint(agent: Any) -> str:
-    """Where to drop a bundle so that `/skill reload` finds it."""
+    """Where to drop a bundle so that `/skills reload` finds it."""
     roots_hint = "\n".join(f"  {root}  ({source})" for root, source in roots(agent))
     return ("No skills discovered. Add a directory holding a `SKILL.md` whose frontmatter "
-            f"sets `name` and `description` under one of:\n{roots_hint}\nThen run `/skill reload`.")
+            f"sets `name` and `description` under one of:\n{roots_hint}\nThen run `/skills reload`.")
 
 
 def setup_extension(ctx: ExtensionContext) -> None:
@@ -68,10 +68,10 @@ def setup_extension(ctx: ExtensionContext) -> None:
         started gains its tools.
 
         Usage:
-            /skill                  # list discovered skills
-            /skill info <name>      # inspect <name> without activating it
-            /skill activate <name>  # activate <name> and show its instructions
-            /skill reload           # rescan skill directories
+            /skills                  # list discovered skills
+            /skills info <name>      # inspect <name> without activating it
+            /skills activate <name>  # activate <name> and show its instructions
+            /skills reload           # rescan skill directories
         """
         if not args:
             available, issues = skills(agent)
@@ -92,7 +92,7 @@ def setup_extension(ctx: ExtensionContext) -> None:
             agent.info(summary + ".")
             return
         if len(args) != 2 or args[0] not in {"activate", "info"}:
-            raise ValueError("Usage: skill [info <name> | activate <name> | reload]")
+            raise ValueError("Usage: skills [info <name> | activate <name> | reload]")
         if args[0] == "activate":
             agent.info(activate_skill(ToolCallContext(agent, "activate_skill", None), args[1]))
             return
@@ -104,4 +104,4 @@ def setup_extension(ctx: ExtensionContext) -> None:
             f"Bundled files:\n{files}"
         )
 
-    agent.command.register(Command("skill", command, "List, inspect, activate, or reload skills."))
+    agent.command.register(Command("skills", command, "List, inspect, activate, or reload skills."))

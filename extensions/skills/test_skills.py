@@ -60,7 +60,7 @@ class SkillsTestBase(unittest.TestCase):
         return {tool.name for tool in self.agent.toolbox.list_tools()}
 
     def skill_command(self) -> Command:
-        command = self.agent.command.get("skill")
+        command = self.agent.command.get("skills")
         assert command is not None
         return command
 
@@ -119,7 +119,7 @@ class SkillsExtensionTest(SkillsTestBase):
 
 
 class LateDiscoveryTest(SkillsTestBase):
-    """The catalog is empty at startup, which is when `/skill` matters most."""
+    """The catalog is empty at startup, which is when `/skills` matters most."""
 
     def test_command_and_hint_exist_with_an_empty_catalog(self) -> None:
         command = self.skill_command()
