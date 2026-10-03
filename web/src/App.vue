@@ -19,6 +19,7 @@ const settings = useSettingsStore()
 const inputHistory = useInputHistoryStore()
 const sessionBuffers = useSessionBuffersStore()
 const { t } = useI18n()
+const version = __XUN_VERSION__
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -586,6 +587,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <label class="setting-toggle"><span>{{ t('app.renderMarkdown') }}</span><input v-model="settings.markdown" type="checkbox"></label>
+              <div class="settings-version">v{{ version }}</div>
             </div>
           </div>
           <button class="icon-button" :title="showFiles ? t('app.hideWorkspace') : t('app.showWorkspace')" @click="toggleFiles">

@@ -70,6 +70,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .theme-options .theme-check { grid-column: 3; color: var(--accent); }
 .setting-toggle { height: 38px; margin-top: 7px; padding: 0 5px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); color: var(--ink); font-size: 11px; cursor: pointer; }
 .setting-toggle input { accent-color: var(--accent); }
+.settings-version { padding: 6px 5px 1px; text-align: right; color: var(--muted); font: 400 9px/1 'Fira Code', monospace; opacity: .7; user-select: text; }
 .icon-button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 5px; display: inline-grid; place-items: center; color: var(--muted); background: transparent; cursor: pointer; text-decoration: none; }
 .icon-button:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
 .icon-button:disabled { opacity: .3; cursor: default; }
