@@ -156,7 +156,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         self.assertEqual(
             evaluate.call_args_list,
             [
-                call("agent-1", "() => 1", None, None, None, 15000),
+                call("agent-1", "() => 1", None, None, None, 30000),
                 call("agent-1", "() => 1", None, None, None, 999),
             ],
         )

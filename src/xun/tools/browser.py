@@ -774,7 +774,7 @@ def expose_browser_tools() -> list[Callable]:
         argument: JsonType = None,
         selector: str | None = None,
         page_id: str | None = None,
-        timeout_ms: int = 15000,
+        timeout_ms: int = 30000,
     ) -> JsonType:
         """
         Evaluate JavaScript in the active or selected page and return JSON-compatible data.
