@@ -1,4 +1,4 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, SavedFile, ServeServer, SessionInfo, SessionList, WebConfig } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, PathInfo, PendingPrompt, SavedFile, ServeServer, SessionInfo, SessionList, WebConfig } from './types'
 import i18n from './i18n'
 
 const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
@@ -34,7 +34,6 @@ export function errorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error ? reason.message : fallback
 }
 
-// the server refused the write on its mtime pre-check; only the caller can tell if bytes differ
 export function writeConflict(reason: unknown): 'stale' | 'exists' | null {
   const failure = reason as ApiFailure
   if (!(failure instanceof Error) || failure.status !== 409) return null
@@ -112,7 +111,7 @@ export const api = {
   files: (agentId: string, path = '') =>
     request<FileListing>(appUrl(`/api/files/${encodeURIComponent(agentId)}?${query({ path })}`)),
   fileInfo: (agentId: string, path: string) =>
-    request<FileInfo>(appUrl(`/api/files/${encodeURIComponent(agentId)}/info?${query({ path })}`)),
+    request<PathInfo>(appUrl(`/api/files/${encodeURIComponent(agentId)}/info?${query({ path })}`)),
   contentUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/content/${path.split('/').map(encodeURIComponent).join('/')}`),
   textContent: (agentId: string, path: string) =>

@@ -96,10 +96,18 @@ export interface FileEntry {
   kind: 'file' | 'directory'
 }
 
-export interface FileInfo extends FileEntry {
+export interface PathInfo extends FileEntry {
   size: number | null
   media_type: string | null
+  is_text: boolean
   modified_at: number
+}
+
+// PathInfo narrowed to files
+export interface FileInfo extends PathInfo {
+  kind: 'file'
+  size: number
+  media_type: string
 }
 
 export interface FileListing {

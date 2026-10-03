@@ -127,6 +127,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(info["size"], 6)
         self.assertEqual(info["media_type"], "text/markdown")
         self.assertEqual(info["kind"], "file")
+        self.assertTrue(info["is_text"])
+        folder_info = self.client.get("api/files/agent-1/info", params={"path": "folder"}).json()
+        self.assertFalse(folder_info["is_text"])
 
     def test_file_routes_are_opt_in(self) -> None:
         display = WebDisplay()

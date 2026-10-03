@@ -268,12 +268,14 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         except OSError as exc:
             raise HTTPException(404, "Path not found") from exc
         is_directory = stat.S_ISDIR(file_stat.st_mode)
+        media_type = None if is_directory else _media_type(target, file_stat)
         return {
             "name": target.name,
             "path": path,
             "kind": "directory" if is_directory else "file",
             "size": None if is_directory else file_stat.st_size,
-            "media_type": None if is_directory else _media_type(target, file_stat),
+            "media_type": media_type,
+            "is_text": media_type is not None and _is_text_media(media_type),
             "modified_at": file_stat.st_mtime,
         }
 

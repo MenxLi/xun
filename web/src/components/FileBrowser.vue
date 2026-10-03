@@ -10,7 +10,8 @@ import UploadNotice from './UploadNotice.vue'
 import { api, errorMessage } from '../api'
 import { copyText } from '../clipboard'
 import { useFileUpload } from '../upload'
-import type { AgentInfo, FileEntry, FileInfo, SavedFile, ServeServer } from '../types'
+import { asFileInfo } from '../preview'
+import type { AgentInfo, FileEntry, FileInfo, PathInfo, SavedFile, ServeServer } from '../types'
 import { useSettingsStore } from '../stores/settings'
 import type { BrowserState } from '../stores/sessionBuffers'
 
@@ -27,15 +28,13 @@ const path = computed({
 })
 const entries = ref<FileEntry[]>([])
 const previewEntry = ref<FileInfo | null>(null)
-const previewNonce = ref(0)
 const openInEdit = ref(false)
-const infoEntry = ref<FileInfo | null>(null)
+const infoEntry = ref<PathInfo | null>(null)
 const dialog = ref<'delete' | null>(null)
 const dialogEntry = ref<FileEntry | null>(null)
 const dialogError = ref('')
 const dialogBusy = ref(false)
 const previewDirty = ref(false)
-// the held switch doubles as the unsaved-changes prompt: holding it means asking
 const pendingPreviewDrop = ref<(() => void) | null>(null)
 const inlineAction = ref<'create' | 'createFile' | 'move' | null>(null)
 const inlineEntry = ref<FileEntry | null>(null)
@@ -141,17 +140,13 @@ function resizePreview(delta: number) {
 
 function setPreview(entry: FileInfo | null, asNewFile = false) {
   const current = previewEntry.value
-  // re-selecting the same disk copy is a no-op, not a reload
   if (entry && !asNewFile && current?.path === entry.path && current.modified_at === entry.modified_at) return
   const apply = () => {
-    // the same path on new bytes needs a remount to refetch
-    if (entry && previewEntry.value?.path === entry.path) previewNonce.value += 1
     previewEntry.value = entry
     openInEdit.value = entry !== null && asNewFile
     previewDirty.value = false
     state.value.previewPath = entry?.path ?? null
   }
-  // never drop an editor with unsaved bytes without asking first
   if (current && previewDirty.value) {
     pendingPreviewDrop.value = apply
     return
@@ -166,7 +161,6 @@ function resolveUnsaved() {
 }
 
 function onPreviewDirty(value: boolean) {
-  // only the mounted editor can clear its own dirty flag
   if (previewEntry.value) previewDirty.value = value
 }
 
@@ -186,8 +180,8 @@ async function restoreBrowserState() {
   if (!previewPath || !props.available || !agentId || sessionKey !== props.sessionKey || agentId !== props.agentId) return
   const request = ++metadataRequest
   try {
-    const info = await api.fileInfo(agentId, previewPath)
-    if (request === metadataRequest && sessionKey === props.sessionKey && agentId === props.agentId) setPreview(info)
+    const file = asFileInfo(await api.fileInfo(agentId, previewPath))
+    if (request === metadataRequest && sessionKey === props.sessionKey && agentId === props.agentId && file) setPreview(file)
   } catch {
     // The preview may have been removed while this session was inactive.
   }
@@ -232,8 +226,8 @@ async function open(entry: FileEntry) {
   } else {
     const request = ++metadataRequest
     try {
-      const info = await api.fileInfo(props.agentId, entry.path)
-      if (request === metadataRequest) setPreview(info)
+      const file = asFileInfo(await api.fileInfo(props.agentId, entry.path))
+      if (request === metadataRequest) setPreview(file)
     } catch (reason) {
       if (request === metadataRequest) error.value = errorMessage(reason, t('files.inspectFileError'))
     }
@@ -302,6 +296,7 @@ async function submitDelete() {
 
 function onPreviewChanged(saved: SavedFile) {
   if (previewEntry.value?.path === saved.path) {
+    // once on disk, the staged new file is an ordinary file
     openInEdit.value = false
     previewEntry.value = { ...previewEntry.value, size: saved.size, modified_at: saved.modified_at }
   }
@@ -365,10 +360,10 @@ async function submitInlineEdit() {
   try {
     if (action === 'create') await api.createDirectory(props.agentId, target)
     if (action === 'createFile') {
-      // a new file only reaches disk when the editor saves it; mtime 0 is that promise
+      // staged in the editor; mtime 0 marks create-only
       setPreview({
         name: target.split('/').pop() ?? target, path: target, kind: 'file',
-        size: 0, media_type: 'text/plain', modified_at: 0,
+        size: 0, media_type: 'text/plain', is_text: true, modified_at: 0,
       }, true)
     }
     if (action === 'move' && entry) {
@@ -569,7 +564,7 @@ function serveRemaining(server: ServeServer): string {
 
     <FilePreview
       v-if="previewEntry"
-      :key="previewEntry.path + ':' + previewNonce"
+      :key="previewEntry.path"
       :agent-id="agentId"
       :entry="previewEntry"
       :open-in-edit="openInEdit"

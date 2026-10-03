@@ -20,7 +20,7 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
-const kind = computed(() => previewKind(props.entry.media_type))
+const kind = computed(() => previewKind(props.entry))
 const render = computed(() => renderKind(props.entry.media_type, props.entry.path))
 const contentUrl = computed(() => api.contentUrl(props.agentId, props.entry.path))
 const dirUrl = computed(() => new URL('./', new URL(contentUrl.value, location.origin)).href)
@@ -38,22 +38,21 @@ const conflict = ref<'stale' | 'exists' | null>(null)
 const editor = ref<HTMLTextAreaElement>()
 
 const dirty = computed(() => buffer.value !== text.value)
-// editing is a fullscreen activity: the pane is too narrow to type into otherwise
 const canEdit = computed(() => kind.value === 'text' && !error.value && !loading.value && fullscreen.value)
 const highlighted = computed(() => highlightFile(props.entry.path, buffer.value))
-// the served copy is cached by URL, so a newer save needs a different query
 const documentUrl = computed(() => `${contentUrl.value}${contentUrl.value.includes('?') ? '&' : '?'}v=${savedAt.value}`)
 const saveTitle = computed(() => saving.value ? t('preview.saving') : t('preview.save'))
-// an inline document gets neither the server headers nor its folder as base URL, so both travel with it
 const DRAFT_GUARD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'none'">`
 const liveDraft = computed(() => `${DRAFT_GUARD}<base href="${dirUrl.value}">${buffer.value}`)
 
-watch(() => props.entry.path, () => {
+// except the modified_at our own save echoes back through the parent
+watch([() => props.entry.path, () => props.entry.modified_at], ([path, modifiedAt], previous) => {
+  if (previous && previous[0] === path && modifiedAt === savedAt.value) return
   error.value = ''
   saveError.value = ''
   conflict.value = null
   saving.value = false
-  savedAt.value = props.entry.modified_at
+  savedAt.value = modifiedAt
   text.value = ''
   buffer.value = ''
   view.value = kind.value === 'text' ? (props.openInEdit ? 'edit' : render.value ? 'render' : 'source') : 'render'
@@ -61,25 +60,22 @@ watch(() => props.entry.path, () => {
   if (props.openInEdit) return  // a staged new file has nothing on disk to read yet
   if (kind.value !== 'text') return
   loading.value = true
-  api.textContent(props.agentId, props.entry.path)
+  api.textContent(props.agentId, path)
     .then(value => { text.value = value; buffer.value = value })
     .catch(reason => { error.value = errorMessage(reason, t('preview.textError')) })
     .finally(() => { loading.value = false })
 }, { immediate: true })
 
-// leaving fullscreen puts the text back in the narrow pane as source
 watch(fullscreen, active => {
   if (!active && view.value === 'edit') view.value = 'source'
 })
 
-// immediate covers the mount straight into edit, e.g. a staged new file
 watch(view, mode => {
   if (mode === 'edit') void nextTick(() => editor.value?.focus())
 }, { immediate: true })
 
 watch(dirty, value => emit('dirtyChange', value))
 
-// typing happens fullscreen, so a double-click on the document jumps straight there
 function enterEdit() {
   if (kind.value !== 'text' || error.value || loading.value) return
   fullscreen.value = true
@@ -87,50 +83,46 @@ function enterEdit() {
 }
 
 function onContentDblClick(event: MouseEvent) {
-  const target = event.target as Element | null
-  // double-clicking a link or button in a previewed document stays theirs
-  if (target?.closest?.('a, button')) return
+  if ((event.target as Element | null)?.closest?.('a, button')) return
   enterEdit()
 }
 
-// previewed documents render same-origin, so their double-clicks can reach the editor
 function onDocumentLoad(event: Event) {
   const frame = event.target as HTMLIFrameElement
   try {
     frame.contentDocument?.addEventListener('dblclick', onContentDblClick)
   } catch {
-    // a cross-origin document stays out of reach
+    // cross-origin
   }
 }
 
-async function write(force: boolean): Promise<boolean> {
+async function write(force: boolean): Promise<'saved' | 'conflict' | 'error'> {
   try {
     const saved = await api.writeText(props.agentId, props.entry.path, buffer.value, force ? null : savedAt.value)
     text.value = buffer.value
     savedAt.value = saved.modified_at
     conflict.value = null
     emit('changed', saved)
-    return true
+    return 'saved'
   } catch (reason) {
     const refusal = writeConflict(reason)
     if (refusal) conflict.value = refusal
     else saveError.value = errorMessage(reason, t('preview.saveFailed'))
-    return false
+    return refusal ? 'conflict' : 'error'
   }
 }
 
-// a refused write is only worth flagging when the disk holds different bytes
 async function matchesDisk(): Promise<boolean> {
   return await api.textContent(props.agentId, props.entry.path).catch(() => null) === buffer.value
 }
 
+// a conflict over unchanged bytes is not worth flagging: force it silently
 async function save(force = false) {
   if (saving.value || !dirty.value) return
   saving.value = true
   saveError.value = ''
   try {
-    if (await write(force)) return
-    if (!force && conflict.value !== null && await matchesDisk()) await write(true)
+    if (await write(force) === 'conflict' && !force && await matchesDisk()) await write(true)
   } finally {
     saving.value = false
   }
