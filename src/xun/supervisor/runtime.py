@@ -159,6 +159,8 @@ class DockerManager:
         port = self._allocate_port()
         name = self.container_name(user)
         container: DockerContainer | None = None
+        container_env = resolve_environment(self.env_patterns, self.env_set, exclude={"XUN_HOME", "_XUN_USERNAME"})
+        container_env["_XUN_USERNAME"] = user.name
         try:
             container = self.client.containers.create(
                 image=self.image,
@@ -169,7 +171,7 @@ class DockerManager:
                 name=name,
                 auto_remove=True,
                 ports={f"{port}/tcp": ("127.0.0.1", port)},
-                environment=resolve_environment(self.env_patterns, self.env_set, exclude={"XUN_HOME"}),
+                environment=container_env,
                 labels={
                     "xunx.managed": "true",
                     "xunx.instance": self.instance,
