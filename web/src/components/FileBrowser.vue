@@ -2,15 +2,15 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Check, Clock, Copy, Download, File, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Check, Clock, Copy, Download, File, FilePlus, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import UploadNotice from './UploadNotice.vue'
-import { api } from '../api'
+import { api, errorMessage } from '../api'
 import { copyText } from '../clipboard'
 import { useFileUpload } from '../upload'
-import type { AgentInfo, FileEntry, FileInfo, ServeServer } from '../types'
+import type { AgentInfo, FileEntry, FileInfo, SavedFile, ServeServer } from '../types'
 import { useSettingsStore } from '../stores/settings'
 import type { BrowserState } from '../stores/sessionBuffers'
 
@@ -27,12 +27,17 @@ const path = computed({
 })
 const entries = ref<FileEntry[]>([])
 const previewEntry = ref<FileInfo | null>(null)
+const previewNonce = ref(0)
+const openInEdit = ref(false)
 const infoEntry = ref<FileInfo | null>(null)
 const dialog = ref<'delete' | null>(null)
 const dialogEntry = ref<FileEntry | null>(null)
 const dialogError = ref('')
 const dialogBusy = ref(false)
-const inlineAction = ref<'create' | 'move' | null>(null)
+const previewDirty = ref(false)
+// the held switch doubles as the unsaved-changes prompt: holding it means asking
+const pendingPreviewDrop = ref<(() => void) | null>(null)
+const inlineAction = ref<'create' | 'createFile' | 'move' | null>(null)
 const inlineEntry = ref<FileEntry | null>(null)
 const inlineValue = ref('')
 const inlineBusy = ref(false)
@@ -134,9 +139,35 @@ function resizePreview(delta: number) {
   settings.previewHeight = clamp(settings.previewHeight - delta, 120, window.innerHeight - 220)
 }
 
-function setPreview(entry: FileInfo | null) {
-  previewEntry.value = entry
-  state.value.previewPath = entry?.path ?? null
+function setPreview(entry: FileInfo | null, asNewFile = false) {
+  const current = previewEntry.value
+  // re-selecting the same disk copy is a no-op, not a reload
+  if (entry && !asNewFile && current?.path === entry.path && current.modified_at === entry.modified_at) return
+  const apply = () => {
+    // the same path on new bytes needs a remount to refetch
+    if (entry && previewEntry.value?.path === entry.path) previewNonce.value += 1
+    previewEntry.value = entry
+    openInEdit.value = entry !== null && asNewFile
+    previewDirty.value = false
+    state.value.previewPath = entry?.path ?? null
+  }
+  // never drop an editor with unsaved bytes without asking first
+  if (current && previewDirty.value) {
+    pendingPreviewDrop.value = apply
+    return
+  }
+  apply()
+}
+
+function resolveUnsaved() {
+  const pending = pendingPreviewDrop.value
+  pendingPreviewDrop.value = null
+  pending?.()
+}
+
+function onPreviewDirty(value: boolean) {
+  // only the mounted editor can clear its own dirty flag
+  if (previewEntry.value) previewDirty.value = value
 }
 
 async function restoreBrowserState() {
@@ -147,6 +178,8 @@ async function restoreBrowserState() {
   closeMenu()
   cancelInlineEdit(true)
   previewEntry.value = null
+  previewDirty.value = false
+  pendingPreviewDrop.value = null
   infoEntry.value = null
   void loadServers()
   await refresh()
@@ -184,7 +217,7 @@ async function refresh() {
     const listing = await api.files(props.agentId, path.value)
     if (request === listingRequest) entries.value = listing.entries
   } catch (reason) {
-    if (request === listingRequest) error.value = reason instanceof Error ? reason.message : t('files.loadError')
+    if (request === listingRequest) error.value = errorMessage(reason, t('files.loadError'))
   } finally {
     if (request === listingRequest) loading.value = false
   }
@@ -202,7 +235,7 @@ async function open(entry: FileEntry) {
       const info = await api.fileInfo(props.agentId, entry.path)
       if (request === metadataRequest) setPreview(info)
     } catch (reason) {
-      if (request === metadataRequest) error.value = reason instanceof Error ? reason.message : t('files.inspectFileError')
+      if (request === metadataRequest) error.value = errorMessage(reason, t('files.inspectFileError'))
     }
   }
 }
@@ -215,7 +248,7 @@ async function showInfo(entry: FileEntry) {
     const info = await api.fileInfo(props.agentId, entry.path)
     if (request === metadataRequest) infoEntry.value = info
   } catch (reason) {
-    if (request === metadataRequest) error.value = reason instanceof Error ? reason.message : t('files.inspectPathError')
+    if (request === metadataRequest) error.value = errorMessage(reason, t('files.inspectPathError'))
   }
 }
 
@@ -261,10 +294,18 @@ async function submitDelete() {
     closeDialog()
     await refresh()
   } catch (reason) {
-    dialogError.value = reason instanceof Error ? reason.message : t('files.deleteFailed')
+    dialogError.value = errorMessage(reason, t('files.deleteFailed'))
   } finally {
     dialogBusy.value = false
   }
+}
+
+function onPreviewChanged(saved: SavedFile) {
+  if (previewEntry.value?.path === saved.path) {
+    openInEdit.value = false
+    previewEntry.value = { ...previewEntry.value, size: saved.size, modified_at: saved.modified_at }
+  }
+  void refresh()
 }
 
 function cancelInlineEdit(force = false) {
@@ -279,11 +320,12 @@ function setInlineInput(element: Element | ComponentPublicInstance | null) {
   inlineInput.value = element instanceof HTMLInputElement ? element : undefined
 }
 
-function startInlineEdit(action: 'create' | 'move', entry: FileEntry | null = null) {
+function startInlineEdit(action: 'create' | 'createFile' | 'move', entry: FileEntry | null = null) {
   closeMenu()
   inlineAction.value = action
   inlineEntry.value = entry
-  inlineValue.value = action === 'create' ? t('files.newFolder') : entry?.name ?? ''
+  inlineValue.value = action === 'create' ? t('files.newFolder')
+    : action === 'createFile' ? t('files.newFileName') : entry?.name ?? ''
   inlineError.value = ''
   error.value = ''
   void nextTick(() => {
@@ -322,6 +364,13 @@ async function submitInlineEdit() {
   error.value = ''
   try {
     if (action === 'create') await api.createDirectory(props.agentId, target)
+    if (action === 'createFile') {
+      // a new file only reaches disk when the editor saves it; mtime 0 is that promise
+      setPreview({
+        name: target.split('/').pop() ?? target, path: target, kind: 'file',
+        size: 0, media_type: 'text/plain', modified_at: 0,
+      }, true)
+    }
     if (action === 'move' && entry) {
       await api.move(props.agentId, entry.path, target)
       if (previewEntry.value?.path === entry.path) setPreview(null)
@@ -334,7 +383,7 @@ async function submitInlineEdit() {
     await refresh()
   } catch (reason) {
     const fallback = action === 'create' ? t('files.createFolderFailed') : t('files.moveFailed')
-    inlineError.value = reason instanceof Error ? reason.message : fallback
+    inlineError.value = errorMessage(reason, fallback)
     error.value = inlineError.value
     void nextTick(() => inlineInput.value?.focus())
   } finally {
@@ -379,7 +428,7 @@ async function servePath(target: string) {
     freshKey.value = server.key
     window.setTimeout(() => { if (freshKey.value === server.key) freshKey.value = '' }, 4000)
   } catch (reason) {
-    if (props.agentId === agentId) error.value = reason instanceof Error ? reason.message : t('files.serveFailed')
+    if (props.agentId === agentId) error.value = errorMessage(reason, t('files.serveFailed'))
   } finally {
     serveBusy.value = false
   }
@@ -391,7 +440,7 @@ async function stopServing(server: ServeServer) {
     await api.stopServe(agentId, server.key)
     if (props.agentId === agentId) servers.value = servers.value.filter(item => item.key !== server.key)
   } catch (reason) {
-    if (props.agentId === agentId) error.value = reason instanceof Error ? reason.message : t('files.serveStopFailed')
+    if (props.agentId === agentId) error.value = errorMessage(reason, t('files.serveStopFailed'))
   }
 }
 
@@ -447,10 +496,11 @@ function serveRemaining(server: ServeServer): string {
     </div>
     <div class="file-list" :aria-busy="loading || uploading" @scroll="closeMenu">
       <div v-if="available === false" class="file-empty">{{ t('files.accessDisabled') }}</div>
-      <div v-else-if="available && agentId && !loading && !entries.length && inlineAction !== 'create'" class="file-empty">{{ t('files.emptyFolder') }}</div>
-      <div v-if="inlineAction === 'create'" class="file-row editing">
+      <div v-else-if="available && agentId && !loading && !entries.length && inlineAction === null" class="file-empty">{{ t('files.emptyFolder') }}</div>
+      <div v-if="inlineAction === 'create' || inlineAction === 'createFile'" class="file-row editing">
         <div class="file-name inline-name">
-          <Folder :size="16" />
+          <Folder v-if="inlineAction === 'create'" :size="16" />
+          <File v-else :size="16" />
           <input :ref="setInlineInput" v-model="inlineValue" :disabled="inlineBusy" :aria-invalid="!!inlineError" :title="inlineError || t('files.pathHint')" @input="inlineError = ''; error = ''" @keydown.enter.prevent="submitInlineEdit" @keydown.esc.prevent.stop="cancelInlineEdit()" @blur="submitInlineEdit">
         </div>
       </div>
@@ -476,6 +526,7 @@ function serveRemaining(server: ServeServer): string {
       <div v-if="activeMenu" class="action-menu" :style="menuPosition" @click.stop>
         <template v-if="activeMenu === 'toolbar'">
           <button @click="startInlineEdit('create')"><FolderPlus :size="14" /><span>{{ t('files.newFolder') }}</span></button>
+          <button @click="startInlineEdit('createFile')"><FilePlus :size="14" /><span>{{ t('files.newFile') }}</span></button>
           <button :disabled="uploading" @click="browse(false); closeMenu()"><Upload :size="14" /><span>{{ t('files.uploadFiles') }}</span></button>
           <button :disabled="uploading" @click="browse(true); closeMenu()"><FolderUp :size="14" /><span>{{ t('files.uploadFolder') }}</span></button>
           <a :href="api.archiveUrl(agentId, path)" :download="archiveName(path)" @click="closeMenu"><FolderArchive :size="14" /><span>{{ t('files.downloadFolder') }}</span></a>
@@ -512,7 +563,22 @@ function serveRemaining(server: ServeServer): string {
 
     <UploadNotice v-if="uploadNotice" v-bind="uploadNotice" @dismiss="uploadNotice = null" />
 
-    <FilePreview v-if="previewEntry" :agent-id="agentId" :entry="previewEntry" :style="{ height: `${settings.previewHeight}px` }" @resize="resizePreview" @close="setPreview(null)" />
+    <AppDialog :open="pendingPreviewDrop !== null" :title="t('preview.unsavedTitle')" :confirm-label="t('preview.discard')" danger @close="pendingPreviewDrop = null" @confirm="resolveUnsaved">
+      <p>{{ t('preview.unsavedBody', { name: previewEntry?.name ?? '' }) }}</p>
+    </AppDialog>
+
+    <FilePreview
+      v-if="previewEntry"
+      :key="previewEntry.path + ':' + previewNonce"
+      :agent-id="agentId"
+      :entry="previewEntry"
+      :open-in-edit="openInEdit"
+      :style="{ height: `${settings.previewHeight}px` }"
+      @resize="resizePreview"
+      @close="setPreview(null)"
+      @changed="onPreviewChanged"
+      @dirty-change="onPreviewDirty"
+    />
 
     <div v-if="dragActive" class="file-drop-target">
       <Upload :size="28" />

@@ -84,6 +84,12 @@ export interface PendingPrompt {
   allow_extra?: boolean
 }
 
+export interface SavedFile {
+  path: string
+  size: number
+  modified_at: number
+}
+
 export interface FileEntry {
   name: string
   path: string

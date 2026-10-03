@@ -298,6 +298,97 @@ class WebDisplayTest(unittest.TestCase):
             self.assertEqual(secret.read_text(encoding="utf-8"), "keep")
             self.assertNotIn("escape", [entry["name"] for entry in listing["entries"]])
 
+    def test_write_text_saves_with_matching_base_and_keeps_mode(self) -> None:
+        note = self.root / "note.txt"
+        note.write_text("old", encoding="utf-8")
+        note.chmod(0o640)
+
+        saved = self.client.post(
+            "api/files/agent-1/write",
+            json={"path": "note.txt", "content": "新内容\n", "base_modified_at": note.stat().st_mtime},
+        )
+
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["path"], "note.txt")
+        self.assertEqual(saved.json()["size"], note.stat().st_size)
+        self.assertEqual(note.read_text(encoding="utf-8"), "新内容\n")
+        self.assertEqual(note.stat().st_mode & 0o777, 0o640)
+        self.assertEqual([entry.name for entry in self.root.iterdir()], ["note.txt"])
+
+    def test_write_text_rejects_stale_base_and_writes_on_force(self) -> None:
+        note = self.root / "note.txt"
+        note.write_text("disk", encoding="utf-8")
+
+        loaded = note.stat().st_mtime
+        stale = self.client.post(
+            "api/files/agent-1/write",
+            json={"path": "note.txt", "content": "mine", "base_modified_at": loaded - 5},
+        )
+
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(stale.json()["detail"]["code"], "stale")
+        self.assertEqual(stale.json()["detail"]["modified_at"], loaded)
+        self.assertEqual(note.read_text(encoding="utf-8"), "disk")
+
+        forced = self.client.post("api/files/agent-1/write", json={"path": "note.txt", "content": "mine"})
+
+        self.assertEqual(forced.status_code, 200)
+        self.assertEqual(note.read_text(encoding="utf-8"), "mine")
+
+    def test_write_text_creates_absent_paths_and_respects_guards(self) -> None:
+        (self.root / "docs").mkdir()
+        (self.root / "taken.md").write_text("# taken", encoding="utf-8")
+        (self.root / "pic.png").write_bytes(bytes.fromhex("89504e470d0a1a0a"))
+
+        created = self.client.post(
+            "api/files/agent-1/write",
+            json={"path": "docs/new.md", "content": "# new\n", "base_modified_at": 0},
+        )
+        collision = self.client.post(
+            "api/files/agent-1/write",
+            json={"path": "taken.md", "content": "# mine", "base_modified_at": 0},
+        )
+        binary = self.client.post(
+            "api/files/agent-1/write", json={"path": "pic.png", "content": "x", "base_modified_at": 0}
+        )
+        folder = self.client.post("api/files/agent-1/write", json={"path": "docs", "content": "x"})
+        missing_parent = self.client.post(
+            "api/files/agent-1/write", json={"path": "nowhere/file.txt", "content": "x", "base_modified_at": 0}
+        )
+        oversized = self.client.post(
+            "api/files/agent-1/write",
+            json={"path": "big.txt", "content": "x" * 1_000_001, "base_modified_at": 0},
+        )
+
+        self.assertEqual(created.status_code, 200)
+        self.assertEqual((self.root / "docs/new.md").read_text(encoding="utf-8"), "# new\n")
+        self.assertEqual((self.root / "docs/new.md").stat().st_mode & 0o777, 0o644)
+        self.assertEqual(collision.status_code, 409)
+        self.assertEqual(collision.json()["detail"]["code"], "exists")
+        self.assertEqual((self.root / "taken.md").read_text(encoding="utf-8"), "# taken")
+        self.assertEqual(binary.status_code, 415)
+        self.assertEqual(folder.status_code, 400)
+        self.assertEqual(missing_parent.status_code, 404)
+        self.assertEqual(oversized.status_code, 413)
+        self.assertFalse((self.root / "big.txt").exists())
+
+    def test_write_text_does_not_follow_symlinks_out_of_the_workdir(self) -> None:
+        with TemporaryDirectory() as outside_dir:
+            secret = Path(outside_dir) / "secret.txt"
+            secret.write_text("keep", encoding="utf-8")
+            link = self.root / "link.txt"
+            link.symlink_to(secret)
+
+            saved = self.client.post(
+                "api/files/agent-1/write", json={"path": "link.txt", "content": "mine", "base_modified_at": None}
+            )
+
+            self.assertEqual(saved.status_code, 200)
+            self.assertEqual(secret.read_text(encoding="utf-8"), "keep")
+            self.assertTrue(link.is_file())
+            self.assertFalse(link.is_symlink())
+            self.assertEqual(link.read_text(encoding="utf-8"), "mine")
+
     def test_content_preview_dispatches_on_media_type(self) -> None:
         png = bytes.fromhex("89504e470d0a1a0a")  # minimal bytes; content is streamed, not parsed
         pdf = b"%PDF-1.4\n%%EOF\n"

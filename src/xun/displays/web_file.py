@@ -1,4 +1,4 @@
-"""File browsing and transfer API for the web display.
+"""File browsing, transfer, and text editing API for the web display.
 
 All routes are scoped under ``/api/files/{agent_id}`` and serve files from the
 agent's workdir only. Symlinks and path components are resolved and re-checked
@@ -43,6 +43,12 @@ class CreateDirectory(BaseModel):
 class MovePath(BaseModel):
     path: str
     destination: str
+
+class WriteText(BaseModel):
+    path: str
+    content: str
+    # the modified_at the client loaded, 0 when it saw no file yet, None to force the write
+    base_modified_at: float | None = None
 
 class DeletePath(BaseModel):
     path: str
@@ -154,6 +160,25 @@ def _media_type(path: Path, file_stat: os.stat_result | None = None) -> str:
         print(f"Warning: could not stat {path}: {exc}. Falling back to application/octet-stream.")
         return "application/octet-stream"
     return _sniff_mime(str(path), file_stat.st_mtime_ns, file_stat.st_size)
+
+
+def _is_text_media(media_type: str) -> bool:
+    """Shared gate for inline preview and text saving."""
+    return media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES
+
+
+def _atomic_write_text(target: Path, payload: bytes, mode: int) -> None:
+    """Replace through a sibling temp file so readers never see a partial file."""
+    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".xun-tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _slugify(path: str) -> str:
@@ -271,7 +296,7 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
             if target.stat().st_size > MAX_PREVIEW_DOCUMENT_SIZE:
                 raise HTTPException(413, "Document is too large to preview")
             return FileResponse(target, media_type=media_type, headers=HTML_SECURITY_HEADERS)
-        if media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES:
+        if _is_text_media(media_type):
             if target.stat().st_size > MAX_PREVIEW_TEXT_SIZE:
                 raise HTTPException(413, "File is too large to preview")
             try:
@@ -374,5 +399,34 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         else:
             raise HTTPException(404, "Path not found")
         return {"deleted": True}
+
+    @router.post("/api/files/{agent_id}/write")
+    async def write_text(agent_id: str, request: WriteText) -> dict:
+        """Save editor content; 409 when the file changed after the client loaded it."""
+        _agent, target, root = entry(agent_id, request.path)
+        if target == root or target.is_dir() or target.exists() and not target.is_file():
+            raise HTTPException(400, "Cannot write this path")
+        if not target.parent.is_dir():
+            raise HTTPException(404, "Parent directory not found")
+        if not _is_text_media(_media_type(target)):
+            raise HTTPException(415, "Only text files can be saved")
+        exists = target.is_file()
+        if exists and request.base_modified_at is not None:
+            current = target.stat().st_mtime
+            if current != request.base_modified_at:
+                raise HTTPException(409, {
+                    "code": "exists" if request.base_modified_at == 0 else "stale",
+                    "modified_at": current,
+                })
+        payload = request.content.encode("utf-8")
+        if len(payload) > MAX_PREVIEW_TEXT_SIZE:  # the same cap the preview serves
+            raise HTTPException(413, "Text is too large to save")
+        mode = stat.S_IMODE(target.stat().st_mode) if exists else 0o644
+        try:
+            await run_in_threadpool(_atomic_write_text, target, payload, mode)
+        except OSError as exc:
+            raise HTTPException(400, "Could not write file") from exc
+        saved = target.stat()
+        return {"path": target.relative_to(root).as_posix(), "size": saved.st_size, "modified_at": saved.st_mtime}
 
     return router

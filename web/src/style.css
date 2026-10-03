@@ -338,7 +338,7 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .serve-row .icon-button { width: 22px; height: 22px; }
 .serve-row .icon-button.danger:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 @keyframes serve-row-in { from { background: color-mix(in srgb, var(--accent) 28%, transparent); } }
-.app-dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; overflow: auto; background: rgba(25, 33, 29, .38); z-index: 90; animation: dialog-backdrop-in .14s ease-out; }
+.app-dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; overflow: auto; background: rgba(25, 33, 29, .38); z-index: 120; animation: dialog-backdrop-in .14s ease-out; }
 .app-dialog { width: min(420px, 100%); max-height: calc(100dvh - 36px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper); box-shadow: 0 18px 50px rgba(25, 33, 29, .2); animation: dialog-in .14s ease-out; }
 .app-dialog > header { height: 44px; padding: 0 8px 0 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .app-dialog > header strong { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -373,6 +373,15 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .file-preview img { min-height: 0; flex: 1; width: 100%; object-fit: contain; padding: 11px; background: var(--panel); }
 .preview-document { min-height: 0; width: 100%; flex: 1; border: 0; background: var(--panel); }
 .preview-rendered { min-height: 0; flex: 1; padding: 11px 14px; overflow: auto; }
+.preview-editor { min-height: 0; flex: 1; width: 100%; margin: 0; padding: 11px; border: 0; outline: 0; resize: none; overflow: auto; color: #eaf0ec; background: var(--code); font: 10px/1.55 'Fira Code', monospace; white-space: pre; tab-size: 2; }
+.preview-editor:focus-visible { outline: none; }
+.preview-banner { flex: none; display: flex; align-items: center; gap: 8px; padding: 5px 10px; color: var(--ink); background: var(--hover); font-size: 10px; }
+.preview-banner.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.preview-banner span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.banner-button { flex: none; padding: 2px 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: var(--paper); font-size: 10px; cursor: pointer; }
+.banner-button:hover { border-color: var(--accent); }
+.banner-button.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.dirty-mark { display: inline-block; width: 5px; height: 5px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .preview-error { min-height: 0; flex: 1; padding: 11px; overflow: auto; color: var(--danger); font-size: 11px; }
 .preview-unsupported { min-height: 0; flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); font-size: 11px; text-align: center; }
 .file-drop-target { position: absolute; inset: 8px; display: grid; place-content: center; justify-items: center; gap: 8px; border: 2px dashed var(--accent); border-radius: 6px; color: var(--accent-dark); background: rgba(220, 235, 229, .96); z-index: 4; pointer-events: none; }

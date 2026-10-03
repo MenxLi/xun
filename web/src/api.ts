@@ -1,4 +1,4 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, ServeServer, SessionInfo, SessionList, WebConfig } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileInfo, FileListing, ModelCapabilities, PendingPrompt, SavedFile, ServeServer, SessionInfo, SessionList, WebConfig } from './types'
 import i18n from './i18n'
 
 const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
@@ -25,13 +25,32 @@ export function chatUrl(sessionPath: string): string {
   return `${url.pathname}${url.search}`
 }
 
+interface ApiFailure extends Error {
+  status?: number
+  detail?: { code?: string; modified_at?: number }
+}
+
+export function errorMessage(reason: unknown, fallback: string): string {
+  return reason instanceof Error ? reason.message : fallback
+}
+
+// the server refused the write on its mtime pre-check; only the caller can tell if bytes differ
+export function writeConflict(reason: unknown): 'stale' | 'exists' | null {
+  const failure = reason as ApiFailure
+  if (!(failure instanceof Error) || failure.status !== 409) return null
+  const code = failure.detail?.code
+  return code === 'stale' || code === 'exists' ? code : null
+}
+
 async function fetchOk(url: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(url, options)
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { detail?: string } | null
-    const error = new Error(body?.detail || i18n.global.t('errors.requestFailed', { status: response.status })) as Error & { status?: number }
-    error.status = response.status
-    throw error
+    const body = await response.json().catch(() => null) as { detail?: string | { code?: string } } | null
+    const detail = body?.detail
+    const failure = new Error(typeof detail === 'string' ? detail : i18n.global.t('errors.requestFailed', { status: response.status })) as ApiFailure
+    failure.status = response.status
+    failure.detail = typeof detail === 'object' && detail !== null ? detail : undefined
+    throw failure
   }
   return response
 }
@@ -128,6 +147,13 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path }),
+    }),
+  // baseModifiedAt is the mtime the editor loaded; 0 creates only a new file, null forces the write
+  writeText: (agentId: string, path: string, content: string, baseModifiedAt: number | null) =>
+    request<SavedFile>(appUrl(`/api/files/${encodeURIComponent(agentId)}/write`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content, base_modified_at: baseModifiedAt }),
     }),
   serveServers: (agentId: string) =>
     request<{ servers: ServeServer[] }>(appUrl(`/api/serve/${encodeURIComponent(agentId)}`)),
