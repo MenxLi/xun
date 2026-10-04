@@ -77,16 +77,15 @@ class Conversation:
         with open(file_path, "r") as f:
             self.loads(f.read())
     
-    def set_system_message_content(self, content: str, is_compressed: bool = False):
-        persist_sections = (
-            self.messages[0].persist_sections
-            if self.messages and isinstance(self.messages[0], SystemPrompt) else {}
-        )
-        prompt = SystemPrompt(content=content, is_compressed=is_compressed, persist_sections=persist_sections)
+    def set_system_message_content(self, content: str, is_compressed: bool | None = None):
         if self.messages and isinstance(self.messages[0], SystemPrompt):
-            self.messages[0] = prompt
+            prompt = self.messages[0]
         else:
+            prompt = SystemPrompt(content="")
             self.messages.insert(0, prompt)
+        prompt.content = content
+        if is_compressed is not None:
+            prompt.is_compressed = is_compressed
 
     def set_persistent_section(self, name: str, content: str) -> None:
         if self.messages and isinstance(self.messages[0], SystemPrompt):
