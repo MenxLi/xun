@@ -185,7 +185,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             else:
                 agent.error(message=f"Error during chat completion: {e}.")
                 try:
-                    approved = agent.get_confirm("Retry?", _skip_auto_confirm=True).choice
+                    approved = agent.get_confirm("Retry?", skip_auto_confirm=True).choice
                 except NotImplementedError:
                     approved = False    # headless display has no human to ask
                 if not approved:

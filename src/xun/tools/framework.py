@@ -28,7 +28,7 @@ def framework_ask_user_preference(
         subtitle="Agent Preference Query",
         default=default_choice,
         allow_extra=allow_extra, 
-        _skip_auto_confirm=True,
+        skip_auto_confirm=True,
     ).choice
     return {
         "Q": question,

@@ -109,11 +109,11 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[StateT]):
         subtitle: Optional[str] = None,
         default: Optional[str] = None,
         allow_extra: bool = False,
-        _skip_auto_confirm: bool = False,
+        skip_auto_confirm: bool = False,
         ) -> ChoiceOutcome[str]:
         """Ask the user to choose, honoring auto-confirm: return the default
         choice without prompting."""
-        if self.config.auto_confirm and not _skip_auto_confirm:
+        if self.config.auto_confirm and not skip_auto_confirm:
             if default in choices:
                 choice = default
             elif choices:
@@ -138,13 +138,13 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[StateT]):
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
         default: bool = True,
-        _skip_auto_confirm: bool = False,
+        skip_auto_confirm: bool = False,
         ) -> ChoiceOutcome[bool]:
         outcome = self.get_choice(
             prompt=prompt,
             choices=["Yes", "No"],
             message=message, title=title, subtitle=subtitle,
             default="Yes" if default else "No",
-            _skip_auto_confirm=_skip_auto_confirm,
+            skip_auto_confirm=skip_auto_confirm,
         )
         return ChoiceOutcome(choice=outcome.choice == "Yes", source=outcome.source)

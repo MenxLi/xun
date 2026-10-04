@@ -185,7 +185,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
 
     def sync_project_instructions(self) -> None:
         if not self.config.load_project_instructions:
-            self.conversation.set_persistent_section(AGENTS_SECTION, "")
+            self.conversation.set_system_persistent_section(AGENTS_SECTION, "")
             return
 
         name_varients = ["AGENTS.md", "Agents.md", "agents.md"]
@@ -198,7 +198,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
             content = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             content = ""
-        self.conversation.set_persistent_section(
+        self.conversation.set_system_persistent_section(
             AGENTS_SECTION, f"## Project instructions ({path.name})\n\n{content}" if content.strip() else ""
         )
     

@@ -109,6 +109,7 @@ def require(agent: Any, name: str) -> Skill:
 
 
 def refresh(agent: Any) -> None:
+    # TODO: change to use set_system_persistent_section after v1.4
     discovered, _ = skills(agent)
     if not discovered:
         agent.conversation.set_persistent_section(SECTION_NAME, "")
