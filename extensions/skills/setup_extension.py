@@ -8,7 +8,7 @@ automatically on the next message.
 """
 from typing import Any
 
-from xun import Command, ExtensionContext, ToolCallContext
+from xun import Command, ExtensionContext, ToolCallContext, extension_attr
 from xun.display_abstract import ShowExtensionsEvent
 
 from .catalog import ensure_fresh, require, roots, session
@@ -22,6 +22,7 @@ def _discovery_hint(agent: Any) -> str:
             f"sets `name` and `description` under one of:\n{roots_hint}\nThey are picked up automatically on the next message.")
 
 
+@extension_attr(api_min_version="1.3.0")
 def setup_extension(ctx: ExtensionContext) -> None:
     agent = ctx.agent
     ensure_fresh(agent)

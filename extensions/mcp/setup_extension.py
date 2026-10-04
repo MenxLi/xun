@@ -17,7 +17,7 @@ from typing import Any
 
 import rich
 
-from xun import Command, ExtensionContext, Result, ToolBox, ToolCallContext, tool_attr
+from xun import Command, ExtensionContext, Result, ToolBox, ToolCallContext, tool_attr, extension_attr
 from xun.error_catch import except_safe
 from xun.toolcall import Function
 from xun.tools.cmd import truncate_output
@@ -193,6 +193,7 @@ def mcp_refresh(ctx: ToolCallContext, server: str) -> Any:
     return {"server": server, "added": added, "replaced": replaced, "removed": removed}
 
 
+@extension_attr(api_min_version="1.3.0")
 def setup_extension(ctx: ExtensionContext) -> None:
     box = ctx.agent.toolbox
     missing = [m for m in _REQUIRED_API if not hasattr(box, m)]
