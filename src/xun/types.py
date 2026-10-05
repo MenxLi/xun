@@ -79,8 +79,6 @@ class Result[T, E]:
         ok_factory: Callable[[JsonType], OkT] = lambda x: x,
         err_factory: Callable[[JsonType], ErrT] = lambda x: x,
     ) -> Result[OkT, ErrT]:
-        """`ok_factory`/`err_factory` rebuild structured payloads from the decoded
-        JSON value on their side; the identity default keeps a plain-JSON side typed `JsonType`."""
         data = json.loads(s)
         value = data["value"]
         factory = ok_factory if data["is_ok"] else err_factory

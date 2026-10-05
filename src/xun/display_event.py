@@ -17,7 +17,6 @@ from .conversation import Conversation
 from .types import TypeVar
 if TYPE_CHECKING:
     from .toolcall import Function
-    from .extension import ExtensionInfo
 
 
 class ModelWorkingEvent(BaseModel):
