@@ -8,10 +8,10 @@ import uuid, json, time
 from PIL.Image import Image
 from .compact import CompactionCounter, SummaryCompactResult, ToolCallCompactResult
 from .conversation_message import (
-    AbstractMessage, RawOpenAIMessage, SystemPrompt, UserMessage,
+    AbstractMessage, RawOpenAIMessage, SystemPrompt, UserMessage, ToolResultMessage,
     message_from_json, remove_empty_tool_calls,
 )
-from .toolbox import ToolResultType
+from .types import Result, ToolResultType
 from .util import image_to_url
 from .openai_helper import ChatCompletionMessageWithReasoning
 
@@ -87,7 +87,7 @@ class Conversation:
         if is_compressed is not None:
             prompt.is_compressed = is_compressed
     
-    # backward compat. (skill extension use it): will remove in v1.4
+    # backward compat. (skill extension use it). TODO: remove in v1.4
     def set_persistent_section(self, name: str, content: str) -> None:
         return self.set_system_persistent_section(name, content)
 
@@ -138,19 +138,7 @@ class Conversation:
     
     def add_tool_result(self, tool_call_id: str, content: ToolResultType):
         """The tool call itself is recorded by the preceding assistant message."""
-        try:
-            content_str = content.value_str()
-        except Exception as e:
-            content_str = f"[Error] Failed to serialize tool result: {str(e)}"
-        self.messages.append(
-            RawOpenAIMessage(
-                raw={
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": content_str
-                }
-            )
-        )
+        self.messages.append(ToolResultMessage(tool_call_id=tool_call_id, content=content))
 
     def pop_last_message_if_user(self) -> UserMessage | None:
         if not self.messages or not isinstance(self.messages[-1], UserMessage):
@@ -195,20 +183,15 @@ class Conversation:
         message_length_before: int = self.estimated_message_length()
         for i in range(len(self.messages) - 1, -1, -1):
             message = self.messages[i]
-            if not isinstance(message, RawOpenAIMessage) or message.raw.get("role") != "tool":
+            if not isinstance(message, ToolResultMessage):
                 continue
             keep_max -= 1
-            msg = cast(chat.chat_completion_tool_message_param.ChatCompletionToolMessageParam, message.raw)
-            assert 'tool_call_id' in msg
-            assert 'content' in msg
             if keep_max < 0:
-                toolcall_id = msg["tool_call_id"]
-                old_content = msg["content"]
-                new_content = f"[Compacted, ID: {toolcall_id}. If this content is still needed, call extract_compacted_tool_result with this ID or re-run the tool.]"
-                assert isinstance(old_content, str)
+                old_content = message.content_str
+                new_content = f"[Compacted, ID: {message.tool_call_id}. If this content is still needed, call extract_compacted_tool_result with this ID or re-run the tool.]"
                 if len(old_content) > len(new_content):
-                    msg['content'] = new_content
-                    self._compacted_toolcalls[toolcall_id] = old_content
+                    message.content = Result.Ok(new_content)
+                    self._compacted_toolcalls[message.tool_call_id] = old_content
                     n_compacted += 1
         message_length_after: int = self.estimated_message_length()
         return ToolCallCompactResult(

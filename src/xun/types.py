@@ -19,7 +19,7 @@ else:
     )
 
 import json
-from typing import Literal, Union, cast
+from typing import Callable, Literal, Union, cast
 from dataclasses import dataclass
 
 class Result[T, E]:
@@ -66,6 +66,26 @@ class Result[T, E]:
             return self._value
         return json.dumps(self.value_json(), ensure_ascii=False)
     
+    def dump(self) -> str:
+        return json.dumps({
+            "value": self.value_json(),
+            "is_ok": self._is_ok,
+        }, ensure_ascii=False)
+    
+    @classmethod
+    def loads[OkT, ErrT](
+        cls,
+        s: str,
+        ok_factory: Callable[[JsonType], OkT] = lambda x: x,
+        err_factory: Callable[[JsonType], ErrT] = lambda x: x,
+    ) -> Result[OkT, ErrT]:
+        """`ok_factory`/`err_factory` rebuild structured payloads from the decoded
+        JSON value on their side; the identity default keeps a plain-JSON side typed `JsonType`."""
+        data = json.loads(s)
+        value = data["value"]
+        factory = ok_factory if data["is_ok"] else err_factory
+        return Result[OkT, ErrT](factory(value), data["is_ok"])
+    
     def __str__(self) -> str:
         return f"Result({self.value_str()}, is_ok={self._is_ok})"
     
@@ -82,6 +102,13 @@ class ErrorInfo:
             "error": self.error,
             "details": self.details,
         }
+
+    @classmethod
+    def from_json(cls, data: JsonType) -> "ErrorInfo":
+        if not isinstance(data, dict):
+            raise TypeError(f"ErrorInfo payload must be a JSON object, got {type(data).__name__}")
+        obj = cast(dict[str, str], data)
+        return cls(error=obj["error"], details=obj["details"])
 
 class CancelledError(Exception):
     """Raised when an operation is cancelled."""

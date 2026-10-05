@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from xun import Agent, NullDisplay
 from xun.conversation import Conversation
 from xun.conversation_message import RawOpenAIMessage, SystemPrompt
+from xun.types import Result
 from xun.compact import AutoCompactor, CompactionCounter, CompactorAbstract, SummaryCompactResult, compact_conversation
 from xun.hooks import HookArgs, Hooks
 from xun.workspace import Workspace
@@ -25,7 +26,7 @@ def _conversation_with_tool_chain(tool_rounds: int, tool_size: int = 500) -> Con
             "content": "",
             "tool_calls": [{"id": f"call_{i}", "type": "function", "function": {"name": "x", "arguments": "{}"}}],
         }))
-        conversation.messages.append(RawOpenAIMessage(raw={"role": "tool", "tool_call_id": f"call_{i}", "content": "x" * tool_size}))
+        conversation.add_tool_result(f"call_{i}", Result.Ok("x" * tool_size))
     return conversation
 
 

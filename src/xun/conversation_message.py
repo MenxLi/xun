@@ -1,14 +1,14 @@
 """
 Message types for `Conversation`: each class owns its OpenAI param materialization
 (`completion_param`) and persistence format (`to_json`), `message_from_json` is the
-factory. Must not import other xun modules: those import this one.
+factory. May only import `types` (a leaf): other xun modules import this one.
 """
 from __future__ import annotations
 from openai.types import chat
 from typing import Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-
+from .types import ToolResultType, Result, ErrorInfo
 
 def remove_empty_tool_calls(message: Any) -> Any:
     # some provider does not allow empty list for tool_calls
@@ -40,7 +40,7 @@ class AbstractMessage(ABC):
 
 @dataclass
 class RawOpenAIMessage(AbstractMessage):
-    """Assistant and tool messages, kept as raw OpenAI message params."""
+    """Assistant messages, kept as raw OpenAI message params."""
     raw: chat.chat_completion_message_param.ChatCompletionMessageParam
 
     @property
@@ -133,6 +133,28 @@ class UserMessage(AbstractMessage):
     def to_json(self) -> dict:
         return {"kind": "user", "text": self.text, "images": self.images, "response_schema": self.response_schema}
 
+@dataclass
+class ToolResultMessage(AbstractMessage):
+    tool_call_id: str
+    content: ToolResultType
+
+    @property
+    def role(self) -> str:
+        return "tool"
+
+    @property
+    def content_str(self) -> str:
+        try:
+            return self.content.value_str()
+        except Exception as e:
+            return f"[Error] Failed to serialize tool result: {str(e)}"
+
+    def completion_param(self) -> chat.chat_completion_tool_message_param.ChatCompletionToolMessageParam:
+        return {"role": "tool", "tool_call_id": self.tool_call_id, "content": self.content_str}
+
+    def to_json(self) -> dict:
+        return {"kind": "tool", "tool_call_id": self.tool_call_id, "content": self.content.dump()}
+
 
 def message_from_json(data: dict) -> AbstractMessage:
     kind = data.get("kind", "raw")
@@ -147,5 +169,10 @@ def message_from_json(data: dict) -> AbstractMessage:
             text=data.get("text", ""),
             images=list(data.get("images", [])),
             response_schema=data.get("response_schema"),
+        )
+    if kind == "tool":
+        return ToolResultMessage(
+            tool_call_id=data["tool_call_id"],
+            content=Result.loads(data["content"], err_factory=ErrorInfo.from_json),
         )
     return RawOpenAIMessage(raw=data["raw"])
