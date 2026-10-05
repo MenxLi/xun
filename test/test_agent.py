@@ -183,8 +183,8 @@ class AgentLifecycleTest(unittest.TestCase):
         display = _RecordingDisplay()
         agent = Agent(display=display, workspace=Workspace(workdir=self.workdir)).initialize()
 
-        with agent.cancellable_execution():
-            with agent.cancellable_execution():
+        with agent.run_scope():
+            with agent.run_scope():
                 self.assertTrue(agent.is_running)
 
         running_events = [
@@ -198,7 +198,7 @@ class AgentLifecycleTest(unittest.TestCase):
         self.assertFalse(agent.is_running)
 
         with self.assertRaisesRegex(RuntimeError, "failed"):
-            with agent.cancellable_execution():
+            with agent.run_scope():
                 raise RuntimeError("failed")
 
         self.assertIsInstance(display.events[-1].payload, AgentRunningEndEvent)

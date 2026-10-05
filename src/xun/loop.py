@@ -20,7 +20,7 @@ COMPLETION_MAX_RETRIES = 3
 USER_RETRY_GRANT = 3
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
-    # cancellation is the caller's contract: Agent.execute wraps this loop in cancellable_execution
+    # cancellation is the caller's contract: Agent.execute wraps this loop in run_scope
     agent = params.agent
 
     agent.hooks.before_execution.invoke(params)

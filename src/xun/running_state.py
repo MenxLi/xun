@@ -62,7 +62,7 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         self.cancel_event.event.clear()
 
     @contextmanager
-    def cancellable_execution(self):
+    def run_scope(self):
         """Wrap a unit of running work: track _running (nested-safe), refuse to
         start or finish while cancelled, turn SIGINT into a cancel for worker
         threads, and clear the event on exit.

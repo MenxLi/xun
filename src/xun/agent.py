@@ -227,7 +227,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
 
         self.sync_project_instructions()
         try:
-            with self.cancellable_execution():
+            with self.run_scope():
                 return execution_loop(ExecutionLoopParams(
                     agent=self, schema=schema, max_iterations=max_iterations, context_value=context
                 ))
@@ -264,7 +264,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
             arguments=shlex.split(arguments or "")
         )
         self.hooks.before_command.invoke(hook_args)
-        with self.cancellable_execution():
+        with self.run_scope():
             command.invoke(self, hook_args.arguments)
         self.hooks.after_command.invoke(hook_args)
 

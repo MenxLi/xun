@@ -257,7 +257,7 @@ class WebDisplay(DisplayAbstract):
         # retry/instruct gaps between entry-point CMs), so cancel() is effective
         # whenever the UI shows running; lifecycle events update the frontend.
         try:
-            with agent.cancellable_execution():
+            with agent.run_scope():
                 run()
         except CancelledError:
             pass
