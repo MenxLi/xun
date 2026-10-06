@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from xun import Agent, NullDisplay, ToolBox, CommandRegistry
+from xun import Agent, JsonEntry, NullDisplay, ToolBox, CommandRegistry
 from xun.display_abstract import ShowExtensionsEvent
 from xun.extension import default_loader, ExtensionInfo, ExtensionStatus
 from xun.workspace import Workspace
@@ -14,6 +14,12 @@ import xun.extension as ext_mod
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+
+
+def _json_value(agent: Agent, key: str):
+    entry = agent.state[key]
+    assert isinstance(entry, JsonEntry)
+    return entry.value
 
 
 class _ExtensionsTestBase(unittest.TestCase):
@@ -63,13 +69,13 @@ class DiscoveryTest(_ExtensionsTestBase):
         self.assertEqual(default_loader.imported(), [])
 
     def test_name_collision_package_wins(self) -> None:
-        self._write_ext("dup", "def setup_extension(ctx): ctx.agent.state['dup']='flat'\n")
-        self._write_ext("dup", "def setup_extension(ctx): ctx.agent.state['dup']='pkg'\n", package=True)
+        self._write_ext("dup", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['dup']=JsonEntry('flat')\n")
+        self._write_ext("dup", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['dup']=JsonEntry('pkg')\n", package=True)
         imported = default_loader.imported()
         self.assertEqual(len(imported), 1)
         self.assertTrue(str(imported[0].path).endswith("setup_extension.py"))
         agent = self._new_agent().initialize()
-        self.assertEqual(agent.state["dup"], "pkg")
+        self.assertEqual(_json_value(agent, "dup"), "pkg")
 
     def test_directory_without_entry_ignored(self) -> None:
         _write(self.ext_root / "notanext" / "other.py", "x = 1\n")
@@ -80,27 +86,27 @@ class ImportModelTest(_ExtensionsTestBase):
     def test_relative_import_in_package_form(self) -> None:
         _write(self.ext_root / "pkg" / "helper.py", "VALUE = 42\n")
         _write(self.ext_root / "pkg" / "setup_extension.py",
-               "from .helper import VALUE\ndef setup_extension(ctx): ctx.agent.state['v'] = VALUE\n")
+               "from xun import JsonEntry\nfrom .helper import VALUE\ndef setup_extension(ctx): ctx.agent.state['v'] = JsonEntry(VALUE)\n")
         agent = self._new_agent().initialize()
-        self.assertEqual(agent.state["v"], 42)
+        self.assertEqual(_json_value(agent, "v"), 42)
 
     def test_sibling_name_clash_isolated(self) -> None:
         for name in ("one", "two"):
             _write(self.ext_root / name / "utils.py", f"OWNER = '{name}'\n")
             _write(self.ext_root / name / "setup_extension.py",
-                   "from .utils import OWNER\ndef setup_extension(ctx): ctx.agent.state[ctx.name] = OWNER\n")
+                   "from xun import JsonEntry\nfrom .utils import OWNER\ndef setup_extension(ctx): ctx.agent.state[ctx.name] = JsonEntry(OWNER)\n")
         agent = self._new_agent().initialize()
-        self.assertEqual(agent.state["one"], "one")
-        self.assertEqual(agent.state["two"], "two")
+        self.assertEqual(_json_value(agent, "one"), "one")
+        self.assertEqual(_json_value(agent, "two"), "two")
         self.assertNotIn("utils", sys_modules_names())
 
     def test_import_error_isolated(self) -> None:
         self._write_ext("boom", "raise RuntimeError('kaboom')\ndef setup_extension(ctx): pass\n")
-        self._write_ext("fine", "def setup_extension(ctx): ctx.agent.state['fine'] = True\n")
+        self._write_ext("fine", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['fine'] = JsonEntry(True)\n")
         imported = default_loader.imported()
         self.assertEqual([e.name for e in imported], ["fine"])
         agent = self._new_agent().initialize()
-        self.assertTrue(agent.state["fine"])
+        self.assertTrue(_json_value(agent, "fine"))
         # half-dead module must not linger in sys.modules
         self.assertNotIn("xun_ext_boom", __import__("sys").modules)
 
@@ -149,38 +155,38 @@ class ExtensionStatusTest(_ExtensionsTestBase):
 class ApplyTest(_ExtensionsTestBase):
     def test_setup_runs_on_initialize(self) -> None:
         self._write_ext("hookit", """
-from xun import ExtensionContext
+from xun import ExtensionContext, JsonEntry
 def setup_extension(ctx: ExtensionContext) -> None:
-    ctx.agent.state.setdefault('seen', []).append(ctx.name)
+    ctx.agent.get_state_entry('seen', lambda: JsonEntry([])).value.append(ctx.name)
 """)
         agent = self._new_agent().initialize()
-        self.assertEqual(agent.state["seen"], ["hookit"])
+        self.assertEqual(_json_value(agent, "seen"), ["hookit"])
 
     def test_setup_error_does_not_block(self) -> None:
         self._write_ext("a_bad", "def setup_extension(ctx): raise RuntimeError('x')\n")
-        self._write_ext("b_good", "def setup_extension(ctx): ctx.agent.state['ok'] = 1\n")
+        self._write_ext("b_good", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['ok'] = JsonEntry(1)\n")
         agent = self._new_agent().initialize()
-        self.assertEqual(agent.state["ok"], 1)
+        self.assertEqual(_json_value(agent, "ok"), 1)
 
     def test_config_opt_out(self) -> None:
-        self._write_ext("gate", "def setup_extension(ctx): ctx.agent.state['ran'] = True\n")
+        self._write_ext("gate", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['ran'] = JsonEntry(True)\n")
         agent = self._new_agent()
         agent.config.enable_extensions = False
         agent.initialize()
         self.assertNotIn("ran", agent.state)
 
     def test_extension_settings_namespaced(self) -> None:
-        self._write_ext("cfg", "def setup_extension(ctx): ctx.agent.state['cfg'] = ctx.settings\n")
-        self._write_ext("bare", "def setup_extension(ctx): ctx.agent.state['bare'] = ctx.settings\n")
+        self._write_ext("cfg", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['cfg'] = JsonEntry(ctx.settings)\n")
+        self._write_ext("bare", "from xun import JsonEntry\ndef setup_extension(ctx): ctx.agent.state['bare'] = JsonEntry(ctx.settings)\n")
         agent = self._new_agent()
         agent.config.extension_settings = {"cfg": {"base_url": "https://x"}}
         agent.initialize()
-        self.assertEqual(agent.state["cfg"], {"base_url": "https://x"})
-        self.assertEqual(agent.state["bare"], {})
+        self.assertEqual(_json_value(agent, "cfg"), {"base_url": "https://x"})
+        self.assertEqual(_json_value(agent, "bare"), {})
 
     def test_subagent_replays_hooks_but_survives_tool_conflict(self) -> None:
         self._write_ext("both", """
-from xun import tool_attr
+from xun import tool_attr, JsonEntry
 @tool_attr()
 def ext_tool() -> str:
     '''ext tool'''
@@ -188,7 +194,7 @@ def ext_tool() -> str:
 def setup_extension(ctx):
     # hooks first: on sub-agent replay the tool re-registration conflicts,
     # which aborts the rest of this function via apply_extensions' error isolation
-    ctx.agent.hooks.before_tool_call.add(lambda a: ctx.agent.state.setdefault('hits', []).append(1))
+    ctx.agent.hooks.before_tool_call.add(lambda a: ctx.agent.get_state_entry('hits', lambda: JsonEntry([])).value.append(1))
     ctx.agent.toolbox.register(ext_tool)
 """)
         parent = self._new_agent().initialize()
@@ -199,7 +205,7 @@ def setup_extension(ctx):
         # ...while hooks (not inherited) arrive only via replay
         from xun.hooks import HookArgs
         child.hooks.before_tool_call.invoke(HookArgs.BeforeToolCallArgs(agent=child, tool_calls=[]))
-        self.assertEqual(child.state.get("hits"), [1])
+        self.assertEqual(_json_value(child, "hits"), [1])
 
     def test_cache_survives_across_initializes(self) -> None:
         self._write_ext("once", """
@@ -208,12 +214,12 @@ print('side effect')
 n = [0]
 def setup_extension(ctx):
     n[0] += 1
-    ctx.agent.state['n'] = n[0]
+    ctx.agent.state['n'] = xun.JsonEntry(n[0])
 """)
         first = self._new_agent().initialize()
         second = self._new_agent().initialize()
-        self.assertEqual(first.state["n"], 1)
-        self.assertEqual(second.state["n"], 2)  # module-level state persists, setup replays
+        self.assertEqual(_json_value(first, "n"), 1)
+        self.assertEqual(_json_value(second, "n"), 2)  # module-level state persists, setup replays
 
 
 class ExtensionsCommandTest(_ExtensionsTestBase):
@@ -252,9 +258,9 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
 
 
 GATED = """
-from xun import extension_attr
+from xun import extension_attr, JsonEntry
 @extension_attr(api_min_version='{lo}', api_max_version='{hi}')
-def setup_extension(ctx): ctx.agent.state['gated'] = True
+def setup_extension(ctx): ctx.agent.state['gated'] = JsonEntry(True)
 """
 
 class VersionGateTest(_ExtensionsTestBase):
@@ -271,7 +277,7 @@ class VersionGateTest(_ExtensionsTestBase):
         self._write_gated()
         with patch.object(ext_mod, "xun_version", return_value="2.5"):
             agent = self._new_agent().initialize()
-        self.assertTrue(agent.state["gated"])
+        self.assertTrue(_json_value(agent, "gated"))
         self.assertEqual(self._info("gated").status, ExtensionStatus.LOADED)
 
     def test_out_of_range_skips_without_failing(self) -> None:
@@ -287,7 +293,7 @@ class VersionGateTest(_ExtensionsTestBase):
         self._write_gated()
         with patch.object(ext_mod, "xun_version", return_value=None):
             agent = self._new_agent().initialize()
-        self.assertTrue(agent.state["gated"])
+        self.assertTrue(_json_value(agent, "gated"))
 
     def test_version_conflict_matrix(self) -> None:
         ext = lambda lo, hi: ext_mod.Extension(name="e", description="", setup=lambda ctx: None,

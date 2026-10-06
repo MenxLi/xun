@@ -2,11 +2,12 @@ from __future__ import annotations
 import fnmatch
 import subprocess
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Optional, Sequence, TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import Sequence, TYPE_CHECKING
 from PIL.Image import Image
 
 from ..hooks import HookArgs
+from ..state_entry import StateEntry
 from ..toolcall import ToolCallContext as Context
 from ..util import image_to_url
 from ..workspace import ResolvedPath
@@ -184,22 +185,19 @@ class CommandExecutionAllowList:
         return command in self._allowlist
 
 @dataclass
-class Policy:
-    write_allowlist: WriteAllowList
-    command_allowlist: CommandExecutionAllowList
+class Policy(StateEntry):
+    """Confirmed write/command grants. Runtime-only (default lifetime): restarting
+    the agent starts from a clean allowlist rather than reviving old approvals."""
+
+    write_allowlist: WriteAllowList = field(default_factory=WriteAllowList)
+    command_allowlist: CommandExecutionAllowList = field(default_factory=CommandExecutionAllowList)
 
 def get_policy(ctx: Context) -> Policy:
     return get_policy_from_agent(ctx.agent)
 
 def get_policy_from_agent(agent: Agent[Agent.T.Init]) -> Policy:
     """Get or create a Policy stored in the agent's state."""
-    POLICY_TAG = "__builtin_tool_policy"
-    if POLICY_TAG not in agent.state:
-        agent.state[POLICY_TAG] = Policy(
-            write_allowlist=WriteAllowList(), 
-            command_allowlist=CommandExecutionAllowList()
-            )
-    return agent.state[POLICY_TAG]
+    return agent.get_state_entry("__builtin_tool_policy", Policy)
 
 def default_tool_commands() -> list[Command]:
     from ..command import Command, CommandRegistry

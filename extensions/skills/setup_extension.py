@@ -6,16 +6,14 @@ command plus the `list_skills` / `activate_skill` / `read_skill_file` /
 `run_skill_script` tools. A bundle dropped in after startup is picked up
 automatically on the next message.
 """
-from typing import Any
-
-from xun import Command, ExtensionContext, ToolCallContext, extension_attr
+from xun import Agent, Command, ExtensionContext, ToolCallContext, extension_attr
 from xun.display_abstract import ShowExtensionsEvent
 
 from .catalog import ensure_fresh, require, roots, session
 from .tools import activate_skill
 
 
-def _discovery_hint(agent: Any) -> str:
+def _discovery_hint(agent: Agent[Agent.T.Init]) -> str:
     """Where to drop a bundle so the auto resync finds it."""
     roots_hint = "\n".join(f"  {root}  ({source})" for root, source in roots(agent))
     return ("No skills discovered. Add a directory holding a `SKILL.md` whose frontmatter "
@@ -28,7 +26,7 @@ def setup_extension(ctx: ExtensionContext) -> None:
     ensure_fresh(agent)
     agent.hooks.before_execution.add(lambda args: ensure_fresh(args.agent))
 
-    def command(agent: Any, args: list[str]) -> None:
+    def command(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         """List, inspect, or activate discovered skills.
 
         With no arguments, list each discovered skill with its source and current

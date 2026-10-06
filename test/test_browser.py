@@ -9,9 +9,14 @@ from PIL import Image
 
 from xun.conversation import Conversation
 from xun.hooks import HookArgs, Hooks
+from xun.state_entry import AgentStateMixin
 from xun.toolcall import ToolCallContext
 from xun.tools.browser import BrowserPage, BrowserRuntime, ScreenshotCapture, expose_browser_tools
 from xun.types import Result
+
+
+class _StateAgent(SimpleNamespace, AgentStateMixin):
+    """Namespace fake agent carrying the state-entry helpers."""
 
 
 class BrowserRuntimeTest(unittest.TestCase):
@@ -34,7 +39,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         playwright_factory.assert_not_called()
 
     def test_agent_registers_one_session_cleanup_hook(self) -> None:
-        agent = SimpleNamespace(identifier="agent-1", state={}, hooks=Hooks())
+        agent = _StateAgent(identifier="agent-1", state={}, hooks=Hooks())
         context = ToolCallContext(agent, "browser_page", None)
         browser_page = expose_browser_tools()[0]
 
@@ -52,7 +57,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         output = BytesIO()
         Image.new("RGB", (20, 10), "blue").save(output, format="PNG")
         conversation = Conversation()
-        agent = SimpleNamespace(
+        agent = _StateAgent(
             identifier="agent-1",
             state={},
             hooks=Hooks(),
@@ -91,7 +96,7 @@ class BrowserRuntimeTest(unittest.TestCase):
             runtime.shutdown()
 
     def test_resize_has_dedicated_tool(self) -> None:
-        agent = SimpleNamespace(identifier="agent-1", state={}, hooks=Hooks())
+        agent = _StateAgent(identifier="agent-1", state={}, hooks=Hooks())
         context = ToolCallContext(agent, "browser_resize", None)
         browser_resize = expose_browser_tools()[1]
 
@@ -135,7 +140,7 @@ class BrowserRuntimeTest(unittest.TestCase):
             runtime.shutdown()
 
     def test_page_reload_targets_active_page(self) -> None:
-        agent = SimpleNamespace(identifier="agent-1", state={}, hooks=Hooks())
+        agent = _StateAgent(identifier="agent-1", state={}, hooks=Hooks())
         context = ToolCallContext(agent, "browser_page", None)
         browser_page = expose_browser_tools()[0]
 
@@ -145,7 +150,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         reload.assert_called_once_with("agent-1", None, "load", 5000)
 
     def test_evaluate_tool_defaults_and_passes_timeout(self) -> None:
-        agent = SimpleNamespace(identifier="agent-1", state={}, hooks=Hooks())
+        agent = _StateAgent(identifier="agent-1", state={}, hooks=Hooks())
         context = ToolCallContext(agent, "browser_evaluate", None)
         browser_evaluate = expose_browser_tools()[4]
 

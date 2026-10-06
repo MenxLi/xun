@@ -12,6 +12,7 @@ from threading import Semaphore
 
 from .types import CancelledError
 from .agent_state import T, StateT, _Uninit, _Init, _Final, _ST
+from .state_entry import StateEntry, AgentStateMixin
 from .display_abstract import *
 from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
@@ -47,7 +48,7 @@ def _warn_auto_confirm_once(agent: "Agent") -> None:
         )
 
 @dataclass
-class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
+class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, AgentStateMixin, Generic[StateT]):
 
     # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
     # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`
@@ -70,7 +71,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, Generic[StateT]):
     """Shared by reference, all agents replay the same scanned modules."""
 
     # below does not inherit
-    state: dict[str, Any] = field(default_factory=dict)
+    state: dict[str, StateEntry] = field(default_factory=dict)
     hooks: Hooks = field(default_factory=Hooks)
     compactor: CompactorAbstract = field(default_factory=AutoCompactor)
 

@@ -30,6 +30,7 @@ from playwright.sync_api import (
 )
 
 from ..hooks import HookArgs
+from ..state_entry import RuntimeEntry
 from ..toolcall import ToolCallContext as Context, tool_attr
 from ..types import JsonType
 from .common import defer_tool_image, resolve_path
@@ -655,14 +656,14 @@ def expose_browser_tools() -> list[Callable]:
 
     def prepare(ctx: Context) -> str:
         agent_id = ctx.agent.identifier
-        registered = ctx.agent.state.setdefault(_RUNTIME_HOOKS_STATE_KEY, set())
+        runtime_ids: set[int] = ctx.agent.get_state_entry(_RUNTIME_HOOKS_STATE_KEY, lambda: RuntimeEntry(set())).value
         runtime_id = id(runtime)
-        if runtime_id not in registered:
+        if runtime_id not in runtime_ids:
             def cleanup(args: HookArgs.BeforeFinalizeArgs) -> None:
                 runtime.close_session(args.agent.identifier)
 
             ctx.agent.hooks.before_finalize.add(cleanup)
-            registered.add(runtime_id)
+            runtime_ids.add(runtime_id)
         return agent_id
 
     def browser_page(

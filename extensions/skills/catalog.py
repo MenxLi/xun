@@ -4,9 +4,11 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
+from xun.agent import Agent
 from xun.toolcall import ToolAttr
+from xun.state_entry import StateEntry
 
 try:
     import yaml
@@ -41,18 +43,18 @@ class Skill:
 
 
 @dataclass
-class Session:
+class Session(StateEntry):
     active: set[str] = field(default_factory=set)
     granted_scripts: set[str] = field(default_factory=set)
     fingerprint: tuple[tuple[str, str], ...] | None = None
     """The (name, description) pairs last synced into the prompt and toolbox."""
 
 
-def session(agent: Any) -> Session:
-    return agent.state.setdefault("skills-extension", Session())
+def session(agent: Agent[Agent.T.Alive]) -> Session:
+    return agent.get_state_entry("skills-extension", Session)
 
 
-def roots(agent: Any) -> list[tuple[Path, str]]:
+def roots(agent: Agent[Agent.T.Alive]) -> list[tuple[Path, str]]:
     """Where `skills` looks for bundles, highest precedence first."""
     return [
         (Path(os.environ.get("XUN_HOME", Path.cwd() / ".xun")) / "skills", "user"),
@@ -76,7 +78,7 @@ def _parse(path: Path, source: str) -> Skill:
     return Skill(name, description, body.strip(), path.parent.resolve(), source)
 
 
-def skills(agent: Any) -> tuple[list[Skill], list[tuple[str, str]]]:
+def skills(agent: Agent[Agent.T.Alive]) -> tuple[list[Skill], list[tuple[str, str]]]:
     discovered: list[Skill] = []
     issues: list[tuple[str, str]] = []
     names: set[str] = set()
@@ -99,7 +101,7 @@ def skills(agent: Any) -> tuple[list[Skill], list[tuple[str, str]]]:
     return discovered, issues
 
 
-def require(agent: Any, name: str) -> Skill:
+def require(agent: Agent[Agent.T.Alive], name: str) -> Skill:
     discovered, _ = skills(agent)
     for skill in discovered:
         if skill.name == name:
@@ -108,7 +110,7 @@ def require(agent: Any, name: str) -> Skill:
     raise ValueError(f"Unknown skill '{name}'. Available: {available}")
 
 
-def refresh(agent: Any) -> None:
+def refresh(agent: Agent[Agent.T.Alive]) -> None:
     # TODO: change to use set_system_persistent_section after v1.4
     discovered, _ = skills(agent)
     if not discovered:
@@ -132,7 +134,7 @@ def _tool_name(func: Callable) -> str:
     return (attr.name if attr and attr.name else None) or func.__name__
 
 
-def sync_tools(agent: Any, available: list[Skill]) -> None:
+def sync_tools(agent: Agent[Agent.T.Alive], available: list[Skill]) -> None:
     """Register the skill tools while the catalog is non-empty.
 
     Additive and idempotent: present names are left alone, so a tool the user
@@ -149,7 +151,7 @@ def sync_tools(agent: Any, available: list[Skill]) -> None:
     agent.toolbox.register(*[f for f in funcs if _tool_name(f) not in present])
 
 
-def ensure_fresh(agent: Any) -> tuple[list[Skill], list[tuple[str, str]]]:
+def ensure_fresh(agent: Agent[Agent.T.Alive]) -> tuple[list[Skill], list[tuple[str, str]]]:
     """Resync tools and the prompt catalog when the bundles changed on disk.
 
     Only the name/description fingerprint is compared, so a body edit (read
