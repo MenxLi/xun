@@ -42,14 +42,18 @@ def get_internal_env_bool(key: str) -> bool | None:
     return v.lower() in ("1", "true", "yes")
 
 class ConfigModel(BaseModel):
+    """Satisfies `ToJson`/`FromJson` structurally (pydantic models cannot subclass a Protocol)."""
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    def to_json(self) -> str:
+    def to_json(self) -> dict[str, JsonType]:
+        return self.model_dump(mode="json")
+    
+    def to_json_str(self) -> str:
         return self.model_dump_json(indent=4)
     
     @classmethod
-    def from_json(cls, json_str: str) -> Self:
-        return cls.model_validate_json(json_str)
+    def from_json(cls, data: JsonType) -> Self:
+        return cls.model_validate(data)
     
     def clone(self) -> Self:
         return self.model_copy(deep=True)
@@ -170,7 +174,7 @@ def _load_config_file(config_path: Path) -> AgentConfig:
 
     The file may contain a full config or just the fields to override, e.g.
     `{"model": {"name": "my-model"}}`. Unknown top-level or nested keys are
-    rejected by the final `from_template`/`from_json` validation.
+    rejected by the final `from_template` validation.
     """
     with open(config_path, "r") as f:
         try:

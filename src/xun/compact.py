@@ -7,9 +7,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, fields, replace
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, Self, cast
 
-from .types import CancelledError
+from .types import CancelledError, FromJson, JsonType, ToJson
 from .conversation_message import AbstractMessage, SystemPrompt
 
 if TYPE_CHECKING:
@@ -43,18 +43,20 @@ ESCALATION_RATIO = 0.95
 """Token estimate must fall under this fraction of the threshold to count as progress."""
 
 @dataclass
-class CompactionCounter:
+class CompactionCounter(ToJson, FromJson):
     """Cadence counters for auto-compaction: escalate to a summary after enough
     cheap tool-call rounds; a summary resets the tool round count."""
     tool_rounds: int = 0
     summary_rounds: int = 0
 
-    def to_json(self) -> dict:
+    def to_json(self) -> dict[str, JsonType]:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, data: dict) -> "CompactionCounter":
-        return cls(**{f.name: data[f.name] for f in fields(cls) if f.name in data})
+    def from_json(cls, data: JsonType) -> Self:
+        assert isinstance(data, dict), f"CompactionCounter payload must be a JSON object, got {type(data).__name__}"
+        values = cast(dict[str, Any], {f.name: data[f.name] for f in fields(cls) if f.name in data})
+        return cls(**values)
 
 @dataclass(frozen=True)
 class SummaryCompactResult:

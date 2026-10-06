@@ -1,7 +1,7 @@
 from .entrypoint import setup_agent, interactive_session, web_session, main, main_serve, main_container
 from .display_abstract import DisplayAbstract
 from .displays import Display, NullDisplay, WebDisplay, WebDisplayService
-from .types import Result, ToolResultType, ErrorInfo, CancelledError
+from .types import Result, ToolResultType, ErrorInfo, CancelledError, ToJson, FromJson
 from .hooks import HookArgs, Hooks
 from .command import Command, CommandRegistry
 from .compact import CompactorAbstract, AutoCompactor
@@ -25,5 +25,5 @@ __all__ = [
     "CompactorAbstract", "AutoCompactor",
     "setup_agent", "interactive_session", "web_session",
     "main", "main_serve", "main_container",
-    "Result", "ToolResultType", "ErrorInfo", "CancelledError",
+    "Result", "ToolResultType", "ErrorInfo", "CancelledError", "ToJson", "FromJson",
 ]

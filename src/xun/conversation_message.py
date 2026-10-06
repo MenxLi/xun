@@ -8,7 +8,7 @@ from openai.types import chat
 from typing import Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-from .types import ToolResultType, Result, ErrorInfo
+from .types import ToolResultType, Result, ErrorInfo, ToJson
 
 def remove_empty_tool_calls(message: Any) -> Any:
     # some provider does not allow empty list for tool_calls
@@ -21,7 +21,7 @@ def remove_empty_tool_calls(message: Any) -> Any:
     return sanitized
 
 
-class AbstractMessage(ABC):
+class AbstractMessage(ToJson, ABC):
     @property
     @abstractmethod
     def role(self) -> str:
@@ -153,7 +153,7 @@ class ToolResultMessage(AbstractMessage):
         return {"role": "tool", "tool_call_id": self.tool_call_id, "content": self.content_str}
 
     def to_json(self) -> dict:
-        return {"kind": "tool", "tool_call_id": self.tool_call_id, "content": self.content.dump()}
+        return {"kind": "tool", "tool_call_id": self.tool_call_id, "content": self.content.to_json()}
 
 
 def message_from_json(data: dict) -> AbstractMessage:
@@ -173,6 +173,6 @@ def message_from_json(data: dict) -> AbstractMessage:
     if kind == "tool":
         return ToolResultMessage(
             tool_call_id=data["tool_call_id"],
-            content=Result.loads(data["content"], err_factory=ErrorInfo.from_json),
+            content=Result.from_payload(data["content"], err_factory=ErrorInfo.from_json),
         )
     return RawOpenAIMessage(raw=data["raw"])

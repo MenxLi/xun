@@ -210,7 +210,7 @@ def default_commands() -> list[Command]:
         To edit a configuration value, provide a single argument in the format 'key.sub=value'.
         """
         if not args:
-            agent.info(str(agent.config.to_json()))
+            agent.info(agent.config.to_json_str())
             return
         
         if args:

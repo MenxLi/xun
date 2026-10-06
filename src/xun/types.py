@@ -19,10 +19,18 @@ else:
     )
 
 import json
-from typing import Callable, Literal, Union, cast
+from typing import Callable, Literal, Protocol, Self, Union, cast
 from dataclasses import dataclass
 
-class Result[T, E]:
+# These are not an abstract that must obey a specific inheritance,
+# but a suggested contract for all classes implementing JSON ser/de.
+class ToJson(Protocol):
+    def to_json(self) -> JsonType: ...
+class FromJson(Protocol):
+    @classmethod
+    def from_json(cls, data: JsonType) -> Self: ...
+
+class Result[T, E](ToJson):
     def __init__(self, value: Union[T, E], is_ok: bool):
         self._value = value
         self._is_ok = is_ok
@@ -66,23 +74,27 @@ class Result[T, E]:
             return self._value
         return json.dumps(self.value_json(), ensure_ascii=False)
     
-    def dump(self) -> str:
-        return json.dumps({
+    def to_json(self) -> dict[str, JsonType]:
+        return {
             "value": self.value_json(),
             "is_ok": self._is_ok,
-        }, ensure_ascii=False)
+        }
     
     @classmethod
-    def loads[OkT, ErrT](
+    def from_payload[OkT, ErrT](
         cls,
-        s: str,
+        data: JsonType,
         ok_factory: Callable[[JsonType], OkT] = lambda x: x,
         err_factory: Callable[[JsonType], ErrT] = lambda x: x,
     ) -> Result[OkT, ErrT]:
-        data = json.loads(s)
+        if not isinstance(data, dict):
+            raise TypeError(f"Result payload must be a JSON object, got {type(data).__name__}")
         value = data["value"]
-        factory = ok_factory if data["is_ok"] else err_factory
-        return Result[OkT, ErrT](factory(value), data["is_ok"])
+        is_ok = data.get("is_ok")
+        if not isinstance(is_ok, bool):
+            raise TypeError(f"Result payload requires bool 'is_ok', got {type(is_ok).__name__}")
+        factory = ok_factory if is_ok else err_factory
+        return Result[OkT, ErrT](factory(value), is_ok)
     
     def __str__(self) -> str:
         return f"Result({self.value_str()}, is_ok={self._is_ok})"
@@ -91,11 +103,11 @@ class Result[T, E]:
         return self.__str__()
 
 @dataclass
-class ErrorInfo:
+class ErrorInfo(ToJson, FromJson):
     error: str
     details: str
 
-    def to_json(self) -> dict[str, str]:
+    def to_json(self) -> dict[str, JsonType]:
         return {
             "error": self.error,
             "details": self.details,
@@ -105,8 +117,10 @@ class ErrorInfo:
     def from_json(cls, data: JsonType) -> "ErrorInfo":
         if not isinstance(data, dict):
             raise TypeError(f"ErrorInfo payload must be a JSON object, got {type(data).__name__}")
-        obj = cast(dict[str, str], data)
-        return cls(error=obj["error"], details=obj["details"])
+        error, details = data.get("error"), data.get("details")
+        if not isinstance(error, str) or not isinstance(details, str):
+            raise TypeError("ErrorInfo payload requires string 'error' and 'details'")
+        return cls(error=error, details=details)
 
 class CancelledError(Exception):
     """Raised when an operation is cancelled."""
