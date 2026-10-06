@@ -8,7 +8,7 @@ from typing import Callable
 
 from xun.agent import Agent
 from xun.toolcall import ToolAttr
-from xun.agent_state import StateEntry
+from xun.agent_state import StateRuntimeEntry
 
 try:
     import yaml
@@ -43,7 +43,7 @@ class Skill:
 
 
 @dataclass
-class Session(StateEntry):
+class Session(StateRuntimeEntry):
     active: set[str] = field(default_factory=set)
     granted_scripts: set[str] = field(default_factory=set)
     fingerprint: tuple[tuple[str, str], ...] | None = None

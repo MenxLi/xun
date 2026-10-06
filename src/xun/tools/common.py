@@ -7,7 +7,7 @@ from typing import Sequence, TYPE_CHECKING
 from PIL.Image import Image
 
 from ..hooks import HookArgs
-from ..agent_state import StateEntry
+from ..agent_state import StateRuntimeEntry
 from ..toolcall import ToolCallContext as Context
 from ..util import image_to_url
 from ..workspace import ResolvedPath
@@ -185,9 +185,9 @@ class CommandExecutionAllowList:
         return command in self._allowlist
 
 @dataclass
-class Policy(StateEntry):
-    """Confirmed write/command grants. Runtime-only (default lifetime): restarting
-    the agent starts from a clean allowlist rather than reviving old approvals."""
+class Policy(StateRuntimeEntry):
+    """Confirmed write/command grants. Runtime-only: restarting the agent starts
+    from a clean allowlist rather than reviving old approvals."""
 
     write_allowlist: WriteAllowList = field(default_factory=WriteAllowList)
     command_allowlist: CommandExecutionAllowList = field(default_factory=CommandExecutionAllowList)
