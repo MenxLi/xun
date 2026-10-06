@@ -157,7 +157,7 @@ class ApplyTest(_ExtensionsTestBase):
         self._write_ext("hookit", """
 from xun import ExtensionContext, JsonEntry
 def setup_extension(ctx: ExtensionContext) -> None:
-    ctx.agent.get_state_entry('seen', lambda: JsonEntry([])).value.append(ctx.name)
+    ctx.agent.state.get_entry('seen', lambda: JsonEntry([])).value.append(ctx.name)
 """)
         agent = self._new_agent().initialize()
         self.assertEqual(_json_value(agent, "seen"), ["hookit"])
@@ -194,7 +194,7 @@ def ext_tool() -> str:
 def setup_extension(ctx):
     # hooks first: on sub-agent replay the tool re-registration conflicts,
     # which aborts the rest of this function via apply_extensions' error isolation
-    ctx.agent.hooks.before_tool_call.add(lambda a: ctx.agent.get_state_entry('hits', lambda: JsonEntry([])).value.append(1))
+    ctx.agent.hooks.before_tool_call.add(lambda a: ctx.agent.state.get_entry('hits', lambda: JsonEntry([])).value.append(1))
     ctx.agent.toolbox.register(ext_tool)
 """)
         parent = self._new_agent().initialize()

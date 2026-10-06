@@ -7,7 +7,7 @@ from typing import Sequence, TYPE_CHECKING
 from PIL.Image import Image
 
 from ..hooks import HookArgs
-from ..state_entry import StateEntry
+from ..agent_state import StateEntry
 from ..toolcall import ToolCallContext as Context
 from ..util import image_to_url
 from ..workspace import ResolvedPath
@@ -197,7 +197,7 @@ def get_policy(ctx: Context) -> Policy:
 
 def get_policy_from_agent(agent: Agent[Agent.T.Init]) -> Policy:
     """Get or create a Policy stored in the agent's state."""
-    return agent.get_state_entry("__builtin_tool_policy", Policy)
+    return agent.state.get_entry("__builtin_tool_policy", Policy)
 
 def default_tool_commands() -> list[Command]:
     from ..command import Command, CommandRegistry

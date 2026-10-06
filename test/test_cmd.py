@@ -2,17 +2,13 @@ import unittest
 from types import SimpleNamespace
 
 from xun.toolcall import ToolCallContext
-from xun.state_entry import AgentStateMixin
+from xun.agent_state import AgentState
 from xun.tools.cmd import _confirmation_policy, _parse_command_spec
-
-
-class _StateAgent(SimpleNamespace, AgentStateMixin):
-    """Namespace fake agent carrying the state-entry helpers."""
 
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
     def assertConfirmationRequired(self, command: str, expected: bool) -> None:
-        ctx = ToolCallContext(_StateAgent(state={}), "bash", None)
+        ctx = ToolCallContext(SimpleNamespace(state=AgentState()), "bash", None)
         policy = _confirmation_policy(ctx, _parse_command_spec(command))
         self.assertIs(policy.requires_confirmation, expected, command)
 

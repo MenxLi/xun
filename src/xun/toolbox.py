@@ -6,7 +6,7 @@ from typing import Callable
 import fnmatch
 from .tools import *
 from .prompt import get_subagent_prompt
-from .state_entry import RuntimeEntry
+from .agent_state import RuntimeEntry
 from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
 from .toolcall import Function, ToolCallContext
@@ -104,7 +104,8 @@ class ToolBox:
                 agent = Agent.inherit(ctx.agent).system(get_subagent_prompt())
                 if param.name:
                     agent.name = param.name
-                depth = ctx.agent.get_state_entry(self.SUBAGENT_DEPTH_FLAG, lambda: RuntimeEntry(0)).value + 1
+                parent_entry = ctx.agent.state.get_entry(self.SUBAGENT_DEPTH_FLAG)
+                depth = (parent_entry.value if isinstance(parent_entry, RuntimeEntry) else 0) + 1
                 agent.state[self.SUBAGENT_DEPTH_FLAG] = RuntimeEntry(depth)
                 if depth > self.SUBAGENT_MAX_DEPTH:
                     agent.toolbox.disable_subagent()

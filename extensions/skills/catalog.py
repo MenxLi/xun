@@ -8,7 +8,7 @@ from typing import Callable
 
 from xun.agent import Agent
 from xun.toolcall import ToolAttr
-from xun.state_entry import StateEntry
+from xun.agent_state import StateEntry
 
 try:
     import yaml
@@ -51,7 +51,7 @@ class Session(StateEntry):
 
 
 def session(agent: Agent[Agent.T.Alive]) -> Session:
-    return agent.get_state_entry("skills-extension", Session)
+    return agent.state.get_entry("skills-extension", Session)
 
 
 def roots(agent: Agent[Agent.T.Alive]) -> list[tuple[Path, str]]:

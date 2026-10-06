@@ -12,7 +12,7 @@ from threading import Semaphore
 
 from .types import CancelledError
 from .agent_lifecycle import T, LifecycleT, _Uninit, _Init, _Final, _LT
-from .state_entry import StateEntry, AgentStateMixin
+from .agent_state import AgentState
 from .display_abstract import *
 from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
@@ -52,7 +52,6 @@ class Agent(
     Generic[LifecycleT], 
     AgentDisplayMixin[LifecycleT], 
     AgentRunningStateMixin, 
-    AgentStateMixin, 
     ):
 
     T = T
@@ -74,7 +73,7 @@ class Agent(
     """Shared by reference, all agents replay the same scanned modules."""
 
     # below does not inherit
-    state: dict[str, StateEntry] = field(default_factory=dict)
+    state: AgentState = field(default_factory=AgentState)
     hooks: Hooks = field(default_factory=Hooks)
     compactor: CompactorAbstract = field(default_factory=AutoCompactor)
 
