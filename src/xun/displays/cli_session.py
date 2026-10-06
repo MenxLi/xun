@@ -21,7 +21,7 @@ from prompt_toolkit.shortcuts import choice as prompt_choice
 
 if TYPE_CHECKING:
     from ..agent import Agent
-    from ..agent_state import T
+    from ..agent_lifecycle import T
 
 
 CommandProvider = Callable[[], Iterable[tuple[str, str]]]

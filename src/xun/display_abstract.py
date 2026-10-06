@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from .workspace import Workspace
 from .hooks import HookArgs, Hooks
-from .agent_state import T, StateT
+from .agent_lifecycle import T, LifecycleT
 from .display_event import *  # re-export event payloads: ModelMessageEvent, ToolCallEvent, ...
 from .display_event import (  # names used directly in this module
     AgentInfo, ChoiceOutcome, ConfirmEvent, DisplayEvent, DisplayEventType,
@@ -69,7 +69,7 @@ class AgentDisplayProtocol(Protocol):
     hooks: Hooks
     config: AgentConfig
 
-class AgentDisplayMixin(AgentDisplayProtocol, Generic[StateT]):
+class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
     """Display-facing helpers for Agent: event emission, messages and prompts.
 
     Generic over the agent lifecycle state: the hook-firing helpers (info /

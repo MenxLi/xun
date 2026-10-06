@@ -14,7 +14,7 @@ from ..display_abstract import *
 from .cli_session import CliSession, CommandProvider
 if TYPE_CHECKING:
     from ..agent import Agent
-    from ..agent_state import T
+    from ..agent_lifecycle import T
 
 class Display(DisplayAbstract):
     def __init__(self, event_buffer_size: int = 1000):

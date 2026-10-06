@@ -11,7 +11,7 @@ from PIL.Image import Image
 from threading import Semaphore
 
 from .types import CancelledError
-from .agent_state import T, StateT, _Uninit, _Init, _Final, _ST
+from .agent_lifecycle import T, LifecycleT, _Uninit, _Init, _Final, _LT
 from .state_entry import StateEntry, AgentStateMixin
 from .display_abstract import *
 from .displays.null_display import NullDisplay
@@ -48,12 +48,15 @@ def _warn_auto_confirm_once(agent: "Agent") -> None:
         )
 
 @dataclass
-class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, AgentStateMixin, Generic[StateT]):
+class Agent(
+    Generic[LifecycleT], 
+    AgentDisplayMixin[LifecycleT], 
+    AgentRunningStateMixin, 
+    AgentStateMixin, 
+    ):
 
-    # class-level shorthand so callers can use `Agent[Agent.T.Init]`.
-    # Must be a plain class attribute (NOT a PEP 695 `type` alias): a `type T = T`
-    # turns Agent.T into a TypeAliasType whose attributes Pylance won't resolve.
     T = T
+    """class-level shorthand so callers can use `Agent[Agent.T.Init]`. """
 
     name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
     identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -76,7 +79,7 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, AgentStateMixin, 
     compactor: CompactorAbstract = field(default_factory=AutoCompactor)
 
     _openai_client: OpenAI = field(init=False, repr=False)
-    _lifecycle: StateT = field(init=False, repr=False, default_factory=lambda: cast(StateT, _Uninit()))
+    _lifecycle: LifecycleT = field(init=False, repr=False, default_factory=lambda: cast(LifecycleT, _Uninit()))
     _running: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self):
@@ -85,10 +88,10 @@ class Agent(AgentDisplayMixin[StateT], AgentRunningStateMixin, AgentStateMixin, 
         agent_ref = weakref.ref(self)
         weakref.finalize(self, Agent._finalize, agent_ref)
     
-    def _cast_self(self: Agent[T.Any], s: type[_ST]) -> Agent[_ST]:
+    def _cast_self(self: Agent[T.Any], s: type[_LT]) -> Agent[_LT]:
         """Cast self to a different lifecycle state. Use with care."""
         self._lifecycle = s()
-        return cast(Agent[_ST], self)
+        return cast(Agent[_LT], self)
     
     @property
     def openai_client(self) -> OpenAI:
