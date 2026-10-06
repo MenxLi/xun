@@ -12,7 +12,6 @@ from string import Template
 from .types import ModelCapabilityType, JsonType
 
 
-BRAND = "XUN"
 ASSET_DIR = Path(__file__).parent / "assets"
 
 def xun_version() -> str | None:
@@ -24,17 +23,17 @@ def xun_version() -> str | None:
         return None
 
 def get_home_dir() -> Path:
-    home_dir = os.environ.get(f"{BRAND}_HOME")
+    home_dir = os.environ.get(f"XUN_HOME")
     if home_dir:
         return Path(home_dir)
     else:
-        return Path.cwd() / f".{BRAND.lower()}"
+        return Path.cwd() / f".xun"
 
 HOME_COPY_INCLUDE = {"config.json", "extensions", "skills"}
 """What to copy from the host home dir into a container; skips x/ and conversation/."""
 
 def get_internal_env(key: str) -> str | None:
-    return os.environ.get(f"_{BRAND}_{key}")
+    return os.environ.get(f"_XUN_{key}")
 def get_internal_env_bool(key: str) -> bool | None:
     v = get_internal_env(key)
     if v is None:
@@ -91,7 +90,7 @@ class ModelConfig(ConfigModel):
                 raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model in the config.")
 
 # allow the model to stay unset, so it can be auto-detected from the provider
-FALLBACK_ENV = { f"{BRAND}_OPENAI_MODEL": "", f"{BRAND}_AUTO_CONFIRM": "false" }
+FALLBACK_ENV = { f"XUN_OPENAI_MODEL": "", f"XUN_AUTO_CONFIRM": "false" }
 class AgentConfig(ConfigModel):
     auto_confirm: bool
     auto_compact: AutoCompactionConfig
@@ -114,8 +113,8 @@ class AgentConfig(ConfigModel):
         placeholders = template.get_identifiers()   # > python3.11
         env_vars = {}
         for placeholder in placeholders:
-            if not placeholder.startswith(f"{BRAND}_"):
-                raise RuntimeError(f"Invalid placeholder '{placeholder}' in config template. All placeholders must start with '{BRAND}_'.")
+            if not placeholder.startswith(f"XUN_"):
+                raise RuntimeError(f"Invalid placeholder '{placeholder}' in config template. All placeholders must start with 'XUN_'.")
             env_var_value = os.environ.get(placeholder)
             if env_var_value is None and fallback_env is not None:
                 env_var_value = fallback_env.get(placeholder)
