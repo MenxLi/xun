@@ -1,10 +1,14 @@
 # Xun
 
-A mini LLM agent framework with function-based tools and sub-agent spawning.
+A mini LLM agent runtime, with ready-to-use components for building agent systems.
+Main features include:
+- Lightweight and compact core codebase (less than 5000 lines in `src/xun/*.py`, with comprehensive type hints). 
+- Ready-to-use components like predefined tools, commands, extensions, and CLI/web interfaces. 
+- Extensible architecture for customization. 
 
-The core codebase is compact: 
+<!-- The core codebase is compact: 
 less than 5000 lines in `src/xun/*.py` (direct descendant of `src/xun`), 
-mostly hand written, with comprehensive type hints.
+mostly hand written, with comprehensive type hints. -->
 
 <!-- 
 <details>
@@ -60,7 +64,9 @@ pip install .
 
 ## Documentation
 
-Current documentation can be accessed through the web interface provided by `xuns`.
+This README and `demo.ipynb` provide brief overviews of Xun and its features.
+
+If you want more detailed documentation, please visit the web interface provided by `xuns`.
 
 Opens the web application without LLM configured (If you don't want to set up LLM):
 ```sh
