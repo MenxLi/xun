@@ -57,10 +57,10 @@ class JsonEntry(StatePersistEntry):
 
 
 @dataclass
-class RuntimeEntry(StateRuntimeEntry):
+class RuntimeEntry[T](StateRuntimeEntry):
     """An arbitrary in-process object."""
 
-    value: Any
+    value: T
 
 
 @dataclass

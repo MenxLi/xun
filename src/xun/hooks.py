@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Callable, Any, TYPE_CHECKING, Optional
+from typing import Callable, Any, TYPE_CHECKING, Optional, Final
 from pydantic import BaseModel
 from .error_catch import except_safe
 if TYPE_CHECKING:
@@ -97,6 +97,13 @@ class HookArgs:
         content: str
     
     @dataclass
+    class TokenMetrics:
+        model_call_id: Final[str]
+        completion_tokens: Final[int]
+        prompt_tokens: Final[int]
+        total_tokens: Final[int]
+    
+    @dataclass
     class AgentMessageArgs:
         agent: "Agent[Agent.T.Init]"
         message: str
@@ -137,6 +144,9 @@ class Hooks:
 
     model_reasoning_delta: HookRegistry[HookArgs.TextDelta] = field(default_factory=HookRegistry)
     """Called before the model reasoning delta is applied, allowing modification of the content. """
+
+    completion_token_update: HookRegistry[HookArgs.TokenMetrics] = field(default_factory=HookRegistry)
+    """Called when the completion token usage is updated, mostly for statistics purposes."""
 
     before_display_info: HookRegistry[HookArgs.AgentInfoArgs] = field(default_factory=HookRegistry)
     before_display_warning: HookRegistry[HookArgs.AgentWarningArgs] = field(default_factory=HookRegistry)
