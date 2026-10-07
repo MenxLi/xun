@@ -151,10 +151,10 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
     while True:
         try:
             _execute_instruction(inst, agent)
-        except (KeyboardInterrupt, CancelledError):
+        except (KeyboardInterrupt, CancelledError) as e:
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
-            agent.error("Execution interrupted by user.")
+            agent.error(e.reason if isinstance(e, CancelledError) else "Execution interrupted by user.")
         inst = get_instruction(agent.display, agent=agent)
 
 

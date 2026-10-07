@@ -123,8 +123,9 @@ class ErrorInfo(ToJson, FromJson):
         return cls(error=error, details=details)
 
 class CancelledError(Exception):
-    """Raised when an operation is cancelled."""
-    pass
+    def __init__(self, reason: str = "Operation was cancelled.") -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 type ModelCapabilityType = Literal['vision']
 ModelCapabilityOptions = set(['vision'])

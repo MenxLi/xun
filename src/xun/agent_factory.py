@@ -38,13 +38,13 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
             # do not emit events to avoid cluttering the display
             try:
                 return agent.instruct(task, _emit_event = False).execute(context = ctx.value)
-            except CancelledError:
+            except CancelledError as e:
                 if ctx.agent.cancel_event.is_set():
                     raise
                 else:
                     return Result.Err(ErrorInfo(
-                        error="Execution cancelled by user.", 
-                        details="Execution was cancelled by the user."
+                        error=e.reason,
+                        details=e.reason
                         ))
     return agent_run
 

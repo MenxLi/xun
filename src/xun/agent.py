@@ -234,8 +234,8 @@ class Agent(
                 return execution_loop(ExecutionLoopParams(
                     agent=self, schema=schema, max_iterations=max_iterations, context_value=context
                 ))
-        except CancelledError:
-            self.error("Execution cancelled by user.")
+        except CancelledError as e:
+            self.error(e.reason)
             raise
         finally:
             self.sync_project_instructions()
