@@ -111,6 +111,28 @@ class ImportModelTest(_ExtensionsTestBase):
         self.assertNotIn("xun_ext_boom", __import__("sys").modules)
 
 
+class DataDirTest(_ExtensionsTestBase):
+    def test_data_dir_created_and_namespaced(self) -> None:
+        self._write_ext("created", """
+from xun import ExtensionContext, JsonEntry
+def setup_extension(ctx: ExtensionContext) -> None:
+    ctx.agent.state[ctx.name] = JsonEntry(str(ctx.data_dir()))
+""")
+        self._write_ext("dry", """
+from xun import ExtensionContext, JsonEntry
+def setup_extension(ctx: ExtensionContext) -> None:
+    ctx.agent.state[ctx.name] = JsonEntry(str(ctx.data_dir(_create=False)))
+""")
+        agent = self._new_agent().initialize()
+        created = _json_value(agent, "created")
+        dry = _json_value(agent, "dry")
+        self.assertEqual(created, str(self.home / "extension_data" / "created"))
+        self.assertEqual(dry, str(self.home / "extension_data" / "dry"))
+        self.assertTrue(Path(created).is_dir())
+        # _create=False resolves the path without touching disk
+        self.assertFalse(Path(dry).exists())
+
+
 def sys_modules_names() -> list[str]:
     import sys
     return list(sys.modules)

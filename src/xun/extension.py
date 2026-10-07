@@ -132,6 +132,13 @@ class ExtensionContext:
     def settings(self) -> dict[str, JsonType]:
         """`config.extension_settings[name]`, empty when unset."""
         return self.agent.config.extension_settings.get(self.name, {})
+    
+    def data_dir(self, _create: bool = True) -> Path:
+        """this extension's private file dir. `_create=False` (for tests) resolves without touching disk."""
+        d = get_home_dir() / "extension_data" / self.name
+        if _create:
+            d.mkdir(parents=True, exist_ok=True)
+        return d
 
 type ScanItem = Result[Extension, ExtensionIssue]
 

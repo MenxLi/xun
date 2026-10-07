@@ -35,6 +35,15 @@ def setup_extension(ctx: ExtensionContext) -> None:
 - **Tools**: define functions and register them on `ctx.agent.toolbox`, e.g. via `@tool_attr(name="web_search", override=True)` to replace a built-in tool
 - **Config**: mutate `ctx.agent.config` (setup runs before model auto-detect, so overrides take effect)
 - **Settings**: read user-provided config through `ctx.settings`
+- **Files**: `ctx.data_dir()` returns the extension's private dir `$XUN_HOME/extension_data/{name}/`, created on demand; keeps extension data out of the home root and separate from the read-only source tree
+
+```python
+"""Cache results between runs."""
+from xun import ExtensionContext
+
+def setup_extension(ctx: ExtensionContext) -> None:
+    cache = ctx.data_dir() / "cache.json"   # .../extension_data/{name}/cache.json
+```
 
 Extension settings live under `extension_settings` in config.json, keyed by extension name:
 

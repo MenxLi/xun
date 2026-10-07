@@ -6,12 +6,12 @@ from xun.config import get_home_dir, get_internal_env
 import contextlib
 import time
 import sqlite3
+from pathlib import Path
 
-def maybe_init_db():
-    home_dir = get_home_dir()
-    if not home_dir.exists():
-        raise RuntimeError(f"Home directory {home_dir} does not exist, cannot initialize stat database")
-    db_path = home_dir / "stat.db"
+def default_db_path() -> Path:
+    return get_home_dir() / "extension_data" / "stat" / "stat.db"
+
+def maybe_init_db(db_path: Path):
     with contextlib.closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("""
         CREATE TABLE IF NOT EXISTS toolcall (
@@ -49,7 +49,7 @@ def open_db(db_path):
         yield conn
 
 def setup_extension(ctx: ExtensionContext):
-    db_path = maybe_init_db()
+    db_path = maybe_init_db(ctx.data_dir() / "stat.db")
 
     def log_tool_call(args: HookArgs.BeforeToolCallArgs):
         user = get_username()
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     console = Console()
-    db_path = Path(args.db) if args.db else get_home_dir() / "stat.db"
+    db_path = Path(args.db) if args.db else default_db_path()
     if not db_path.exists():
         console.print(f"[red]stat.db not found:[/red] {db_path}")
         raise SystemExit(1)
