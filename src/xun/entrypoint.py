@@ -110,7 +110,7 @@ def setup_agent(
     if default_system_prompt:
         agent.system(get_system_prompt())
     if default_commands:
-        agent.command.with_defaults()
+        agent.command.with_defaults().with_fs_extra_defaults()
         if default_tools:
             agent.command.register(*default_tool_commands())
     # initialize last: after_initialize hooks observe the fully configured agent
@@ -175,7 +175,6 @@ def _web_display_session(
             display=display,
             workdir=session_workdir,
         )
-        agent.command.with_fs_extra_defaults()
         try:
             yield mount_path, display
         finally:
@@ -271,7 +270,6 @@ def main():
         default_commands=True, 
         )
 
-    agent.command.with_fs_extra_defaults()
     agent.command.register(*cli_commands())
     is_tty = sys.stdin.isatty() and sys.stdout.isatty()
     try:
