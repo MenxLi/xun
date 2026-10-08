@@ -2,9 +2,10 @@ import tarfile
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from xun.supervisor.runtime import copy_directory, start_attached
+from xun.supervisor import runtime
+from xun.supervisor.runtime import copy_directory, container_name, start_attached, start_shell
 
 
 class ContainerRuntimeTest(unittest.TestCase):
@@ -34,6 +35,37 @@ class ContainerRuntimeTest(unittest.TestCase):
             copy_directory(directory, container, "/workspace")
 
         self.assertEqual(archived_names, ["hello.txt"])
+
+
+class StartShellTest(unittest.TestCase):
+    def _shell(self, status: str = "running", home: str = "/.xun", probe_error: str | None = None):
+        def docker(*args: str) -> str:
+            if args[0] == "inspect":
+                return status
+            if probe_error:
+                raise RuntimeError(probe_error)
+            return home
+        with patch.object(runtime, "_docker", side_effect=docker), \
+                patch.object(runtime.subprocess, "call", return_value=0) as call:
+            code = start_shell("instance", "alice")
+        return code, call
+
+    def test_shell_runs_bash_in_resolved_home(self) -> None:
+        code, call = self._shell()
+        self.assertEqual(code, 0)
+        argv = call.call_args.args[0]
+        self.assertEqual(argv[:4], ["docker", "exec", "-it", "--workdir"])
+        self.assertEqual(argv[4], "/.xun")
+        self.assertEqual(argv[5], container_name("instance", "alice"))
+        self.assertEqual(argv[6], "bash")
+
+    def test_paused_container_is_refused(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "paused"):
+            self._shell(status="paused")
+
+    def test_missing_probe_output_is_reported(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "no python"):
+            self._shell(probe_error="no python")
 
 
 if __name__ == "__main__":

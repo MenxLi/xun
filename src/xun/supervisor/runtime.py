@@ -4,6 +4,7 @@ import hashlib
 import os
 import secrets
 import socket
+import subprocess
 import sys
 import tarfile
 import threading
@@ -91,6 +92,10 @@ class ContainerManager(Protocol):
     def close(self) -> None: ...
 
 
+def container_name(instance: str, username: str) -> str:
+    return f"xunx-{instance[:8]}-{username}"
+
+
 class DockerManager:
     def __init__(
         self,
@@ -118,7 +123,7 @@ class DockerManager:
         return f"xunx.instance={self.instance}"
 
     def container_name(self, user: User) -> str:
-        return f"xunx-{self.instance[:8]}-{user.name}"
+        return container_name(self.instance, user.name)
 
     def _port_available(self, port: int) -> bool:
         if port in self.used_ports:
@@ -276,3 +281,30 @@ def _published_port(attrs: dict) -> int | None:
 
 def instance_id(path: Path) -> str:
     return hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
+
+
+def _docker(*args: str) -> str:
+    """Run the docker CLI; stdout trimmed, stderr raises."""
+    try:
+        result = subprocess.run(["docker", *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        raise RuntimeError("docker CLI not found on PATH") from None
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout).strip() or "docker failed")
+    return result.stdout.strip()
+
+
+def start_shell(instance: str, username: str) -> int:
+    """Interactive bash in the container's XUN_HOME; returns its exit code."""
+    name = container_name(instance, username)
+    try:
+        status = _docker("inspect", "-f", "{{.State.Status}}", name)
+    except RuntimeError as error:
+        raise RuntimeError(f"no container {name}; is `xunx serve` running?") from error
+    if status != "running":
+        # a paused container would hang `exec`, so it must be refused explicitly
+        hint = "; run `xunx resume` first" if status == "paused" else ""
+        raise RuntimeError(f"{name} is {status}{hint}")
+    home = _docker("exec", name, "python3", "-c",
+                   "import xun.config; print(xun.config.get_home_dir())")
+    return subprocess.call(["docker", "exec", "-it", "--workdir", home, name, "bash"])

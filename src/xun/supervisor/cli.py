@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from aiohttp import web
 from rich.console import Console
 from rich.table import Table
 
-from .runtime import DockerManager, instance_id
+from .runtime import DockerManager, instance_id, start_shell
 from .service import Multiplexer, Supervisor
 from .users import UserStore
 from ..config import get_home_dir
@@ -59,6 +60,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     upgrade.add_argument("username", nargs="*")
     upgrade.add_argument("--all", action="store_true")
+
+    shell = commands.add_parser("shell", help="Open a bash shell in a user's container XUN_HOME.")
+    shell.add_argument("username")
 
     serve = commands.add_parser("serve", help="Run the multiplexing server.")
     serve.add_argument("--host", default="0.0.0.0")
@@ -127,5 +131,13 @@ def main() -> None:
                 "[dim]Containers are recreated on the next serve reconciliation, "
                 "discarding in-container data (workspace, saved conversations).[/dim]"
             )
+        elif args.command == "shell":
+            if store.get(args.username) is None:
+                parser.error(f"user does not exist: {args.username}")
+            try:
+                code = start_shell(instance_id(store.path), args.username)
+            except RuntimeError as error:
+                parser.error(str(error))
+            sys.exit(code)
     except ValueError as error:
         parser.error(str(error))
