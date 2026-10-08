@@ -102,6 +102,7 @@ class HookArgs:
         completion_tokens: Final[int]
         prompt_tokens: Final[int]
         total_tokens: Final[int]
+        prompt_tokens_cached: Final[int | None]
     
     @dataclass
     class AgentMessageArgs:

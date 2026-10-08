@@ -159,7 +159,11 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                                 model_call_id=call_id,
                                 completion_tokens=usage.completion_tokens,
                                 prompt_tokens=usage.prompt_tokens,
-                                total_tokens=usage.total_tokens
+                                total_tokens=usage.total_tokens, 
+                                prompt_tokens_cached=usage.prompt_tokens_details.cached_tokens 
+                                    if usage.prompt_tokens_details and 
+                                    usage.prompt_tokens_details.cached_tokens is not None 
+                                    else None,
                             ),
                         )
 
