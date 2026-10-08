@@ -82,7 +82,7 @@ def get_instruction(
     agent: "Agent[Agent.T.Init] | None" = None,
 ) -> Instruction:
     while True:
-        raw_input = (display.input(">>> ", agent=agent) if isinstance(display, Display) else input(">>> ")).strip()
+        raw_input = (display.input(agent=agent) if isinstance(display, Display) else input(">>> ")).strip()
         if raw_input:
             return input_to_instruction(raw_input)
 
@@ -142,7 +142,7 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
                 + tuple((command.name, command.description) for command in agent.command.commands.values())
             )
         )
-        agent.display.console.print("[dim]Type a message, / for commands, or @ for files. Use Up to search history.[/dim]")
+        agent.display.console.print("[dim]Type a message  / commands  @ files  Up history[/dim]")
     if task:
         inst = input_to_instruction(task)
     else:
