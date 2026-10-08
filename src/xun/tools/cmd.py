@@ -1,3 +1,7 @@
+"""
+The bash command execution is highly un-controlled and nearly impossible to control safely without external sandboxing.
+The code in this module are best-effort assessments of command risk and should not be relied upon for complete safety.
+"""
 from dataclasses import dataclass
 import os
 import shlex
