@@ -48,4 +48,7 @@ test:
 	uv run python -m unittest discover -s test -t . -v
 
 test-ext:
-	uv run python -m unittest test.test_extensions extensions.mcp.test_mcp_extension extensions.skills.test_skills -v
+	uv run python -m unittest test.test_extensions \
+		extensions.mcp.test_mcp_extension \
+		extensions.skills.test_skills \
+		extensions.stat.test_stat -v
