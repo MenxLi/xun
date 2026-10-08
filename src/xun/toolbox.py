@@ -10,7 +10,7 @@ from .agent_state import RuntimeEntry
 from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
 from .toolcall import Function, ToolCallContext
-from .agent_factory import AgentGetterProtocol, AgentGetterParam, agent_run_factory, agent_run_parallel_factory
+from .agent_factory import AgentGetterProtocol, AgentGetterParam, agent_run_factory
 from .config import get_internal_env_bool
 import rich
 
@@ -29,6 +29,7 @@ class ToolBox:
     }
     SUBAGENT_DEPTH_FLAG = "__subagent_depth"
     SUBAGENT_MAX_DEPTH = 3
+    SUBAGENT_TOOLS = ("agent_run", "agent_run_background", "agent_wait", "agent_list")
 
     def __init__(self):
         self._tools: dict[str, Function] = {}
@@ -111,18 +112,17 @@ class ToolBox:
                     agent.toolbox.disable_subagent()
                 return agent
             agent_getter = _agent_getter
-        self.register(agent_run_factory(agent_getter))
-        self.register(agent_run_parallel_factory(agent_getter))
+        self.register(*agent_run_factory(agent_getter))
         return self
 
     def disable_subagent(self):
         """ Useful tool for quickly disabling the sub-agent spawning capabilities of the agent.  """
-        self.disable("agent_run", "agent_run_parallel")
+        self.disable(*self.SUBAGENT_TOOLS)
         return self
 
     def enable_subagent(self):
         """ Useful tool for quickly enabling the sub-agent spawning capabilities of the agent.  """
-        self.enable("agent_run", "agent_run_parallel")
+        self.enable(*self.SUBAGENT_TOOLS)
         return self
 
     def _resolve_tool_names(self, *patterns: str) -> set[str]:
