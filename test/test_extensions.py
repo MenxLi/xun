@@ -132,6 +132,27 @@ def setup_extension(ctx: ExtensionContext) -> None:
         # _create=False resolves the path without touching disk
         self.assertFalse(Path(dry).exists())
 
+    def test_declared_data_version_selects_a_subdir(self) -> None:
+        self._write_ext("versioned", """
+from xun import JsonEntry, extension_attr
+@extension_attr(data_version='2')
+def setup_extension(ctx): ctx.agent.state[ctx.name] = JsonEntry(str(ctx.data_dir(_create=False)))
+""")
+        agent = self._new_agent().initialize()
+        self.assertEqual(_json_value(agent, "versioned"),
+                         str(self.home / "extension_data" / "versioned" / "data_v_2"))
+
+    def test_malformed_data_version_fails_the_extension(self) -> None:
+        self._write_ext("bad_ver", """
+from xun import extension_attr
+@extension_attr(data_version='../escape')
+def setup_extension(ctx): pass
+""")
+        self.assertEqual(default_loader.imported(), [])
+        info = {i.name: i for i in default_loader.infos()}["bad_ver"]
+        self.assertEqual(info.status, ExtensionStatus.FAILED)
+        self.assertIn("data_version", info.reason)
+
 
 def sys_modules_names() -> list[str]:
     import sys

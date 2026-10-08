@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 ENTRY_MODULE = "setup_extension"
 ENTRY_FILE = f"{ENTRY_MODULE}.py"
 
+_DATA_VERSION_DIR_PREFIX = "data_v_"
+_DATA_VERSION = re.compile(r"\w[\w.+-]*")
+"""A data_version must be one safe path segment (no leading dot, no traversal)."""
+
 class ExtensionStatus(str, Enum):
     """str-Enum so pydantic/JSON treat it as a string."""
     UNINITIALIZED = 'uninitialized'
@@ -73,9 +77,15 @@ def _compare_versions(a: str, b: str) -> int:
 
 @dataclass(frozen=True)
 class ExtensionAttr:
-    """A xun API version range declared by an extension, both bounds inclusive."""
+    """What an extension declares on its `setup_extension`: the xun API version range
+    it supports (both bounds inclusive) and the version of its own data layout."""
     api_min_version: str | None
     api_max_version: str | None
+    data_version: str | None
+
+    def __post_init__(self) -> None:
+        if self.data_version is not None and not _DATA_VERSION.fullmatch(self.data_version):
+            raise ValueError(f"data_version {self.data_version!r} is not a safe single path segment")
 
     def attach_to[F: Callable](self, fn: F) -> F:
         """Attach this ExtensionAttr to a function."""
@@ -87,11 +97,14 @@ class ExtensionAttr:
         """Extract an ExtensionAttr from a function, if it exists."""
         return getattr(fn, "__xun_extension_attr", None)
 
-def extension_attr(api_min_version: str | None = None, api_max_version: str | None = None):
-    """Declare which xun API versions an extension supports, on its `setup_extension`.
-    Outside the range the extension is SKIPPED, not FAILED."""
+def extension_attr(api_min_version: str | None = None, api_max_version: str | None = None,
+                   data_version: str | None = None):
+    """Declare on `setup_extension` which xun API versions are supported — outside the
+    range the extension is SKIPPED, not FAILED — and its data layout version, which
+    selects the `data_v_<version>` subdir of its data dir."""
     def _wrapper[F: Callable](fn: F) -> F:
-        return ExtensionAttr(api_min_version=api_min_version, api_max_version=api_max_version).attach_to(fn)
+        return ExtensionAttr(api_min_version=api_min_version, api_max_version=api_max_version,
+                             data_version=data_version).attach_to(fn)
     return _wrapper
 
 @dataclass(frozen=True)
@@ -102,6 +115,7 @@ class Extension:
     path: Path
     api_min_version: str | None = None
     api_max_version: str | None = None
+    data_version: str | None = None
 
     def version_conflict(self) -> str | None:
         """Why the running xun is outside the declared range, or None when it fits.
@@ -134,10 +148,19 @@ class ExtensionContext:
         return self.agent.config.extension_settings.get(self.name, {})
     
     def data_dir(self, _create: bool = True) -> Path:
-        """this extension's private file dir. `_create=False` (for tests) resolves without touching disk."""
-        d = get_home_dir() / "extension_data" / self.name
+        """this extension's private file dir, nested under `data_v_<version>` when one is
+        declared (bump it to start fresh; old dirs are left untouched).
+        `_create=False` (for tests) resolves without touching disk."""
+        d = self._data_dir_v(version=self._ext.data_version)
         if _create:
             d.mkdir(parents=True, exist_ok=True)
+        return d
+    
+    def _data_dir_v(self, version: str | None) -> Path:
+        """For migrations: get the data dir for a specific version without creating it."""
+        d = get_home_dir() / "extension_data" / self.name
+        if version:
+            d = d / f"{_DATA_VERSION_DIR_PREFIX}{version}"
         return d
 
 type ScanItem = Result[Extension, ExtensionIssue]
@@ -194,6 +217,7 @@ def _distill(name: str, location: Path) -> ScanItem:
             path = path,
             api_min_version = attr.api_min_version if attr else None,
             api_max_version = attr.api_max_version if attr else None,
+            data_version = attr.data_version if attr else None,
         )
         conflict = ext.version_conflict()
         if conflict:

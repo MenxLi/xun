@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 
-from xun import Agent, Command, ExtensionContext, HookArgs
+from xun import Agent, Command, ExtensionContext, HookArgs, extension_attr
 from xun.display_event import HTMLInfoEvent
 
 from . import budget
@@ -17,7 +17,7 @@ from .report import stats_html
 
 USAGE = "Usage: /stat [days=N] [until=YYYYMMDD] [user=NAME] [top=N]"
 
-
+@extension_attr(data_version='1')
 def setup_extension(ctx: ExtensionContext) -> None:
     db_path = init_db(ctx.data_dir() / "stat.db")
 
