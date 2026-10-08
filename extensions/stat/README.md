@@ -17,7 +17,7 @@ Records what the agent spends — tool calls, token usage — into SQLite, repor
 | `cli.py` | argparse subcommands |
 | `test_stat.py` | `python -m unittest extensions.stat.test_stat -v` (from the repo root) |
 
-Data lives in `$XUN_HOME/extension_data/stat/stat.db` (WAL, opened read-only for reports).
+Data lives in `$XUN_HOME/extension_data/stat/data_v_<DATA_VERSION>/stat.db` (WAL, opened read-only for reports); `db.DATA_VERSION` is the single source of the layout version.
 
 ## Schema
 

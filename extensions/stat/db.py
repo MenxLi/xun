@@ -14,7 +14,8 @@ from urllib.request import pathname2url
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from xun.config import get_home_dir, get_internal_env
+from xun.config import get_internal_env
+from xun.extension import extension_data_dir
 
 
 class Row(BaseModel):
@@ -149,9 +150,11 @@ TOKEN_BUDGET = Table(
 
 TABLES = (TOOLCALL, TOKEN, TOKEN_BUDGET)
 
+DATA_VERSION = "1"
+
 
 def default_db_path() -> Path:
-    return get_home_dir() / "extension_data" / "stat" / "stat.db"
+    return extension_data_dir("stat", DATA_VERSION) / "stat.db"
 
 
 def current_username() -> str:

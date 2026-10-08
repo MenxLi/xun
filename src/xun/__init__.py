@@ -10,14 +10,14 @@ from .toolbox import ToolBox, ToolCallContext
 from .agent_factory import AgentGetterProtocol, AgentGetterParam
 from .toolcall import tool_attr
 from .config import AgentConfig, xun_version
-from .extension import ExtensionContext, extension_attr
+from .extension import ExtensionContext, extension_attr, extension_data_dir
 from .workspace import Workspace
 from .agent import Agent
 
 __all__ = [
     "Agent", "AgentConfig",
     "Workspace", 
-    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr",
+    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr", "extension_data_dir",
     "xun_version",
     "AgentGetterProtocol", "AgentGetterParam", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",

@@ -1,11 +1,11 @@
 """CLI entry: `show` the statistics, or read/set `budget`s per user.
 
-Run it from the repository root, e.g.
-
     python -m extensions.stat.cli show --days 7
     python -m extensions.stat.cli budget set --user alice --day 50K --month 1M
     python -m extensions.stat.cli budget show
 
+The db is `default_db_path()` — the same `$XUN_HOME` (else `cwd/.xun`) the agent
+resolves, so run this from where the agent runs, or pass `--db`.
 Budget numbers are `token_cost` units (see pricing.py); 'none' clears a ceiling.
 """
 from __future__ import annotations
@@ -81,21 +81,24 @@ def _budget_set(args: argparse.Namespace) -> int:
     db_path = init_db(_db_path(args))
     row = budget.set_limits(db_path, args.user or current_username(), limits)
     Console().print(f"[green]budget set for {row.username or '-'}[/green] · "
-                    + budget_line(budget.usage(db_path, row.username)))
+                    + budget_line(budget.usage(db_path, row.username)) + f" [dim]{db_path}[/dim]")
     return 0
 
 
 def _budget_clear(args: argparse.Namespace) -> int:
     username = args.user if args.user is not None else current_username()
-    removed = budget.clear(_db_path(args), username)
-    Console().print(f"[green]budget cleared for[/green] {username or '-'}" if removed
-                    else f"[yellow]no budget row for[/yellow] {username or '-'}")
+    db_path = _db_path(args)
+    removed = budget.clear(db_path, username)
+    Console().print((f"[green]budget cleared for[/green] {username or '-'}" if removed
+                     else f"[yellow]no budget row for[/yellow] {username or '-'}")
+                    + f" [dim]{db_path}[/dim]")
     return 0 if removed else 1
 
 
 def _db_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--db", metavar="PATH",
-                        help="stat.db path (default: <xun home>/extension_data/stat/stat.db)")
+                        help="stat.db path (default: <xun home>/extension_data/stat/, "
+                             "where <xun home> is $XUN_HOME else cwd/.xun)")
 
 
 def _parser() -> argparse.ArgumentParser:

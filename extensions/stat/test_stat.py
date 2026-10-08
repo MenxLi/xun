@@ -23,7 +23,8 @@ from xun.hooks import HookArgs
 from xun.workspace import Workspace
 
 from . import budget, cli
-from .db import TOKEN, TOOLCALL, BudgetRow, ToolCallRow, TokenRow, init_db, writer
+from .db import (DATA_VERSION, TOKEN, TOOLCALL, BudgetRow, ToolCallRow, TokenRow, default_db_path,
+                 init_db, writer)
 from .pricing import PRICING, format_count, parse_count
 from .query import Filters, query_stats
 from .setup_extension import setup_extension
@@ -206,10 +207,11 @@ class _AgentTestBase(_DbTestBase):
                       workspace=Workspace(workdir=self.root))
         agent.config.model.name = "test-model"
         self.agent = agent.initialize()
-        ext = Extension(name="stat", description="", setup=setup_extension, path=Path("extensions/stat"))
+        ext = Extension(name="stat", description="", setup=setup_extension, path=Path("extensions/stat"),
+                        data_version=DATA_VERSION)
         # the context is typed against an agent still initializing
         setup_extension(ExtensionContext(_ext=ext, agent=self.agent))  # type: ignore[arg-type]
-        self.db_path = self.root / "home" / "extension_data" / "stat" / "stat.db"
+        self.db_path = default_db_path()
 
     def record_model_call(self, *, prompt: int, cached: int, completion: int) -> None:
         self.agent.hooks.completion_token_update.invoke(HookArgs.TokenMetrics(
@@ -239,25 +241,21 @@ class _AgentTestBase(_DbTestBase):
 
 
 class ExtensionTest(_AgentTestBase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.agent_path = self.root / "home" / "extension_data" / "stat" / "stat.db"
-
     def test_data_lands_in_the_extension_data_dir(self) -> None:
-        self.assertTrue(self.agent_path.exists())
+        self.assertTrue(self.db_path.exists())
 
     def test_tool_calls_are_logged_with_their_result(self) -> None:
         self.record_tool_call("bash")
-        stats = query_stats(self.agent_path, Filters())
+        stats = query_stats(self.db_path, Filters())
         self.assertEqual((stats.tools.calls, stats.tools.ok), (1, 1))
 
     def test_unregistered_tools_are_ignored(self) -> None:
         self.record_tool_call("not_a_tool")
-        self.assertEqual(query_stats(self.agent_path, Filters()).tools.calls, 0)
+        self.assertEqual(query_stats(self.db_path, Filters()).tools.calls, 0)
 
     def test_cached_tokens_are_recorded(self) -> None:
         self.record_model_call(prompt=1000, cached=400, completion=100)
-        tokens = query_stats(self.agent_path, Filters()).tokens
+        tokens = query_stats(self.db_path, Filters()).tokens
         self.assertEqual((tokens.cached_tokens, tokens.prompt_tokens), (400, 1000))
         self.assertEqual(tokens.cost, PRICING.cost(prompt_tokens=1000, cached_prompt_tokens=400,
                                                    completion_tokens=100))
@@ -277,14 +275,14 @@ class ExtensionTest(_AgentTestBase):
 
     def test_execution_is_refused_once_the_budget_is_spent(self) -> None:
         self.record_model_call(prompt=1000, cached=400, completion=100)
-        budget.set_limits(self.agent_path, "alice", {"day": 10})
+        budget.set_limits(self.db_path, "alice", {"day": 10})
         with self.assertRaises(CancelledError) as caught:
             self.execute_now()
         self.assertIn("Token budget exceeded for user 'alice'", str(caught.exception.reason))
 
     def test_execution_proceeds_under_the_budget(self) -> None:
         self.record_model_call(prompt=10, cached=0, completion=1)
-        budget.set_limits(self.agent_path, "alice", {"day": 1e6})
+        budget.set_limits(self.db_path, "alice", {"day": 1e6})
         self.execute_now()  # must not raise
 
 

@@ -151,17 +151,19 @@ class ExtensionContext:
         """this extension's private file dir, nested under `data_v_<version>` when one is
         declared (bump it to start fresh; old dirs are left untouched).
         `_create=False` (for tests) resolves without touching disk."""
-        d = self._data_dir_v(version=self._ext.data_version)
+        d = extension_data_dir(self.name, self._ext.data_version)
         if _create:
             d.mkdir(parents=True, exist_ok=True)
         return d
-    
-    def _data_dir_v(self, version: str | None) -> Path:
-        """For migrations: get the data dir for a specific version without creating it."""
-        d = get_home_dir() / "extension_data" / self.name
-        if version:
-            d = d / f"{_DATA_VERSION_DIR_PREFIX}{version}"
-        return d
+
+def extension_data_dir(name: str, data_version: str | None = None) -> Path:
+    """Where an extension's data lives, by name and layout version, without touching
+    disk — also outside a running extension, so tools (a CLI) locate an extension's
+    data by the same rules the extension itself sees."""
+    d = get_home_dir() / "extension_data" / name
+    if data_version:
+        d = d / f"{_DATA_VERSION_DIR_PREFIX}{data_version}"
+    return d
 
 type ScanItem = Result[Extension, ExtensionIssue]
 
