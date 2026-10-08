@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Info, Puzzle, Terminal, TriangleAlert, Wrench } from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Info, Link, Puzzle, Terminal, TriangleAlert, Unlink, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
@@ -158,11 +158,9 @@ function batchDetailCount(batch: BatchItem): number {
   return batch.agents.reduce((total, agent) => total + detailCount(agent), 0)
 }
 
-const latestBatchKey = computed(() => {
-  for (let index = items.value.length - 1; index >= 0; index--) {
-    if (items.value[index].kind === 'batch') return items.value[index].key
-  }
-  return null
+const previewBatchKey = computed(() => {
+  const last = items.value.at(-1)
+  return last?.kind === 'batch' ? last.key : null
 })
 
 // Render only a trailing window: mounting thousands of message components at
@@ -252,7 +250,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
       </button>
     </div>
     <template v-for="item in visibleItems" :key="item.key">
-      <details v-if="item.kind === 'batch'" class="activity-batch" :class="{ 'single-agent': item.agents.length === 1, 'has-preview': item.key === latestBatchKey && !!item.previews.length }">
+      <details v-if="item.kind === 'batch'" class="activity-batch" :class="{ 'single-agent': item.agents.length === 1, 'has-preview': item.key === previewBatchKey && !!item.previews.length }">
         <summary class="batch-header">
           <span class="batch-heading">
             <ChevronRight :size="12" class="chevron" />
@@ -267,7 +265,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
             <span v-if="item.agents.length === 1 && item.agents[0].tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.agents[0].tokens!) }} {{ t('app.tokens') }}</span>
             <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
           </span>
-          <ActivityPreview v-if="item.key === latestBatchKey && item.previews.length" :previews="item.previews" :single="item.agents.length === 1" />
+          <ActivityPreview v-if="item.key === previewBatchKey && item.previews.length" :previews="item.previews" :single="item.agents.length === 1" />
         </summary>
         <div class="batch-agents" :class="{ single: item.agents.length === 1 }">
           <component :is="item.agents.length > 1 ? 'details' : 'div'" v-for="agent in item.agents" :key="agent.key" class="turn">
@@ -296,6 +294,18 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 
       <template v-else>
         <ConfirmPill v-if="item.data.name === 'ConfirmEvent'" :event="item.data" />
+
+        <div
+          v-else-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'"
+          class="agent-lifecycle"
+          :class="{ bound: item.data.name === 'AgentBindEvent' }"
+          role="note"
+        >
+          <Link v-if="item.data.name === 'AgentBindEvent'" :size="12" />
+          <Unlink v-else :size="12" />
+          <span>{{ t(item.data.name === 'AgentBindEvent' ? 'stream.agentBound' : 'stream.agentUnbound', { agent: item.data.agent.name }) }}</span>
+          <time :title="fullEventTime(item.data)">{{ eventTime(item.data) }}</time>
+        </div>
 
         <section v-else-if="item.data.name === 'ShowHelpEvent'" class="command-result">
           <header><Terminal :size="15" /> {{ t('stream.availableCommands') }}</header>

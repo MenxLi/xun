@@ -102,6 +102,8 @@ const zh: typeof en = {
     output: '输出',
     completed: '已完成',
     agentActivity: '活动',
+    agentBound: '{agent} 加入',
+    agentUnbound: '{agent} 离开',
     agents: '{n} 个 agent',
     details: '{n} 项明细',
     toolCalls: '{n} 个工具调用',

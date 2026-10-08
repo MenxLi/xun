@@ -13,9 +13,11 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 import rich.console
 
 from xun.display_abstract import (
+    AgentBindEvent,
     AgentInfo,
     AgentRunningEndEvent,
     AgentRunningStartEvent,
+    AgentUnbindEvent,
     ConfirmEvent,
     DisplayAbstract,
     DisplayEvent,
@@ -356,6 +358,18 @@ class RenderHistoryAsHtmlTest(unittest.TestCase):
         self.assertIn("1 auto-confirmed", html)
         self.assertIn("1 details", html)
         self.assertIn("done", html)
+
+    def test_agent_lifecycle_events_render_as_pills(self) -> None:
+        events = [
+            _ev(AgentBindEvent()),
+            _ev(AgentUnbindEvent()),
+        ]
+
+        html = _render(events)
+
+        self.assertIn('class="agent-lifecycle bound"', html)
+        self.assertIn("Xun joined", html)
+        self.assertIn("Xun left", html)
 
     def test_render_uses_buffered_display_events(self) -> None:
         display = Display()

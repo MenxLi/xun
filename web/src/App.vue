@@ -92,9 +92,7 @@ const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.valu
   : pendingPrompts.value,
 )
 const streamEvents = computed(() => visibleEvents.value.filter(event =>
-  event.name !== 'AgentBindEvent'
-  && event.name !== 'AgentUnbindEvent'
-  && event.name !== 'AgentRunningStartEvent'
+  event.name !== 'AgentRunningStartEvent'
   && event.name !== 'AgentRunningEndEvent',
 ))
 const streamSize = computed(() => streamEvents.value.length + visiblePrompts.value.length)

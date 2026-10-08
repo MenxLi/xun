@@ -13,6 +13,8 @@ import markdown
 from markupsafe import Markup, escape
 from .config import ASSET_DIR
 from .display_event import (
+    AgentBindEvent,
+    AgentUnbindEvent,
     ConfirmEvent,
     DisplayEvent,
     ErrorEvent,
@@ -113,7 +115,7 @@ class TurnBlock:
 @dataclass(frozen=True)
 class Block:
     """One render block in the standalone HTML stream; `kind` selects the template branch."""
-    kind: Literal["user", "message", "command", "notice", "html_info", "help", "tools", "extensions", "history", "batch"]
+    kind: Literal["user", "message", "command", "notice", "lifecycle", "html_info", "help", "tools", "extensions", "history", "batch"]
     time: str
     content: Markup | None = None
     html: Any = None
@@ -218,6 +220,12 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
                     open_activity(event).tokens = p.total_tokens
             case ModelWorkingEvent():
                 open_activity(event)
+            case AgentBindEvent():
+                close_batch()
+                blocks.append(Block(kind="lifecycle", level="bound", name=event.agent.name, time=stamp))
+            case AgentUnbindEvent():
+                close_batch()
+                blocks.append(Block(kind="lifecycle", level="unbound", name=event.agent.name, time=stamp))
             case ConfirmEvent() as p:
                 activity = open_activity(event)
                 if p.source == "auto":
@@ -252,7 +260,7 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
                 close_batch()
                 blocks.append(Block(kind="history", history=tuple(dict(r) for r in p.history), time=stamp))
             case _:
-                pass  # bind / running lifecycle events are not rendered
+                pass  # running lifecycle events are not rendered
 
     close_batch()
     return blocks

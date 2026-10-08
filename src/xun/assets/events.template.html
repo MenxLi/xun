@@ -75,6 +75,13 @@
 		.plain-text { min-width: 0; color: var(--muted); font-family: "Fira Code", ui-monospace, monospace; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 		.stream-notice time { font: 8px/1 "Fira Code", ui-monospace, monospace; opacity: .45; }
 
+		.agent-lifecycle { margin: 0 0 16px; display: flex; align-items: center; gap: 6px; color: var(--muted); font: 10px/1.5 "Fira Code", ui-monospace, monospace; }
+		.agent-lifecycle + .agent-lifecycle { margin-top: -10px; }
+		.agent-lifecycle > svg { flex-shrink: 0; }
+		.agent-lifecycle.bound > svg { color: var(--accent); }
+		.agent-lifecycle > span { min-width: 0; overflow-wrap: anywhere; }
+		.agent-lifecycle time { margin-left: auto; flex-shrink: 0; font-size: 8px; opacity: .45; }
+
 		.command-invocation { margin: -4px 0 16px; display: flex; align-items: center; gap: 5px; color: var(--muted); font: 11px/1.5 "Fira Code", ui-monospace, monospace; overflow-wrap: anywhere; }
 
 		.activity-batch { margin: 0 0 20px; color: var(--muted); }
@@ -271,6 +278,14 @@
 
 		{% elif block.kind == "command" %}
 		<div class="command-invocation"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>/{{ block.name }}{% if block.arguments %} {{ block.arguments }}{% endif %}</span></div>
+
+		{% elif block.kind == "lifecycle" %}
+		<div class="agent-lifecycle{% if block.level == "bound" %} bound{% endif %}" role="note">
+			{% if block.level == "bound" %}<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+			{% else %}<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>{% endif %}
+			<span>{{ block.name }} {{ "joined" if block.level == "bound" else "left" }}</span>
+			<time>{{ block.time }}</time>
+		</div>
 
 		{% elif block.kind == "notice" %}
 		<div class="stream-notice {{ block.level }}" role="note">

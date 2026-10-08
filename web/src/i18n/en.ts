@@ -100,6 +100,8 @@ export default {
     output: 'Output',
     completed: 'Completed',
     agentActivity: 'Activity',
+    agentBound: '{agent} joined',
+    agentUnbound: '{agent} left',
     agents: '{n} agent | {n} agents',
     details: '{n} detail | {n} details',
     toolCalls: '{n} tool call | {n} tool calls',

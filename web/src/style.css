@@ -124,6 +124,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .stream-notice:hover .message-copy { opacity: .55; }
 .stream-notice.warning > svg { color: var(--warm); opacity: .9; }
 .stream-notice.error > svg { color: var(--danger); opacity: .9; }
+.agent-lifecycle { margin: 0 0 16px; display: flex; align-items: center; gap: 6px; color: var(--muted); font: 10px/1.5 'Fira Code', monospace; animation: dialog-in .18s ease-out; }
+.agent-lifecycle + .agent-lifecycle { margin-top: -10px; }
+.agent-lifecycle > svg { flex-shrink: 0; }
+.agent-lifecycle.bound > svg { color: var(--accent); }
+.agent-lifecycle > span { min-width: 0; overflow-wrap: anywhere; }
+.agent-lifecycle time { margin-left: auto; flex-shrink: 0; font-size: 8px; opacity: .45; }
 .markdown, .plain-text { font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
 .markdown { white-space: normal; }
 .markdown > :first-child { margin-top: 0; }
