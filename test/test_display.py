@@ -6,6 +6,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
+from prompt_toolkit.application import get_app_session
+from prompt_toolkit.data_structures import Size
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output.vt100 import Vt100_Output
 import rich.console
 
 from xun.display_abstract import (
@@ -13,6 +17,7 @@ from xun.display_abstract import (
     AgentRunningEndEvent,
     AgentRunningStartEvent,
     ConfirmEvent,
+    DisplayAbstract,
     DisplayEvent,
     ModelMessageEvent,
     ToolCallEvent,
@@ -32,6 +37,54 @@ from xun.displays.display import Display
 
 
 class DisplayTest(unittest.TestCase):
+    def test_choice_context_redraws_after_background_event(self) -> None:
+        started = threading.Event()
+        redrawn = threading.Event()
+
+        class TerminalOutput(io.StringIO):
+            def write(self, text: str) -> int:
+                result = super().write(text)
+                output = self.getvalue()
+                if "Request body" in output:
+                    started.set()
+                if "Request body" in output.partition("background")[2]:
+                    redrawn.set()
+                return result
+
+        output = TerminalOutput()
+        terminal = Vt100_Output(output, lambda: Size(rows=40, columns=100), enable_cpr=False)
+        results: list[str] = []
+        with create_pipe_input() as pipe, patch.object(
+            get_app_session(), "_input", pipe,
+        ), patch.object(get_app_session(), "_output", terminal):
+            display = Display()
+            request = DisplayAbstract.ChoiceRequest(
+                agent_info=AGENT, prompt="Allow?", choices=["Yes", "No"], message="Request body",
+                title="Permission", subtitle="Details",
+            )
+
+            def choose() -> None:
+                results.append(display.get_choice(request))
+
+            thread = threading.Thread(target=choose)
+            thread.start()
+            try:
+                self.assertTrue(started.wait(3))
+                pipe.send_text("\x1b[B")
+                display.on_event(_ev(ModelMessageEvent(
+                    model_call_id="m1", content="background", total_tokens=1,
+                )))
+                self.assertTrue(redrawn.wait(3), repr(output.getvalue()))
+                restored = output.getvalue().partition("background")[2]
+                for text in ("Permission", "Details", "Allow?"):
+                    self.assertIn(text, restored)
+            finally:
+                pipe.send_text("\r")
+                thread.join(3)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(results, ["No"])
+
     def test_events_render_during_console_input(self) -> None:
         display = Display()
         output = io.StringIO()

@@ -37,17 +37,21 @@ class Display(DisplayAbstract):
         self.session.set_command_provider(provider)
 
     def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
+        """Keep the request context in the input UI so background output can redraw it."""
         choices = request.choices
         extra_choice_idx = len(choices) + 1 if request.allow_extra else None
         default_idx = choices.index(request.default) + 1 if request.default in choices else None
+        prompt = "\n".join(part for part in (
+            f"[bold yellow]{request.title}[/bold yellow]" if request.title else None,
+            f"[dim]{request.subtitle}[/dim]" if request.subtitle else None,
+            request.message,
+            f"[bold cyan]{request.prompt}[/bold cyan]" if request.prompt else None,
+        ) if part)
         with self.session.takeover_input():
-            with self.lock:
-                if request.message:
-                    _note(self.console, request.message, request.title, request.subtitle)
             prompt_choices = choices + (["Other (enter your own choice)"] if request.allow_extra else [])
-            choice_idx = self.session.choose(_rl_prompt(self.console, request.prompt), prompt_choices, default_idx or 1)
+            choice_idx = self.session.choose(_rl_prompt(self.console, prompt), prompt_choices, default_idx or 1)
             if request.allow_extra and choice_idx == extra_choice_idx:
-                return self.session.transient_input(_rl_prompt(self.console, "Enter your choice "))
+                return self.session.transient_input(_rl_prompt(self.console, prompt + "\n[bold cyan]Enter your choice [/bold cyan]"))
             return choices[choice_idx - 1]
         
 
@@ -229,7 +233,3 @@ def _rl_prompt(console: rich.console.Console, markup: str) -> str:
         for seg in console.render(text, options=console.options.update(no_wrap=True, justify=None))
         if isinstance(seg.text, str)
     ).rstrip("\n")
-
-def _note(console: rich.console.Console, message: str, title: Optional[str] = "Note", subtitle: Optional[str] = None) -> None:
-    panel = rich.panel.Panel(message, border_style="yellow", title=f"[bold yellow]{title}[/bold yellow]" if title else None, subtitle=f"[dim]{subtitle}[/dim]" if subtitle else None)
-    console.print(panel)
