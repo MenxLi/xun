@@ -9,6 +9,15 @@ from xun.supervisor.runtime import copy_directory, container_name, start_attache
 
 
 class ContainerRuntimeTest(unittest.TestCase):
+    def test_interactive_start_uses_docker_cli_with_inherited_terminal(self) -> None:
+        container = Mock(id="container-id")
+        with patch.object(runtime.subprocess, "run") as run:
+            start_attached(container, interactive=True)
+
+        run.assert_called_once_with(["docker", "start", "-ai", "container-id"], check=True)
+        container.attach_socket.assert_not_called()
+        container.start.assert_not_called()
+
     def test_start_attached_closes_stream_when_start_fails(self) -> None:
         container = Mock()
         stream = container.attach_socket.return_value

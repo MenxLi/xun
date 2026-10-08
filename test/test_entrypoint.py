@@ -123,6 +123,7 @@ class EntrypointCliTest(unittest.TestCase):
         container = Mock(id="container-id")
         client.containers.create.return_value = container
         with patch.object(sys, "argv", ["xunc"]), \
+                patch.dict("os.environ", {"TERM": "xterm-256color"}), \
                 patch("xun.entrypoint.docker.from_env", return_value=client), \
                 patch("xun.entrypoint.start_attached") as start_attached:
             main_container()
@@ -130,6 +131,7 @@ class EntrypointCliTest(unittest.TestCase):
         options = client.containers.create.call_args.kwargs
         self.assertIsNone(options["volumes"])
         self.assertEqual(options["command"], ["xuns", "", "--host", "0.0.0.0"])
+        self.assertEqual(options["environment"]["TERM"], "xterm-256color")
         start_attached.assert_called_once_with(container, interactive=True)
         client.close.assert_called_once_with()
 

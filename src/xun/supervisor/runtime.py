@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import secrets
 import socket
 import subprocess
@@ -29,7 +28,6 @@ _console = Console(stderr=True)
 
 class _AttachStream(Protocol):
     def read(self, size: int) -> bytes: ...
-    def write(self, data: bytes) -> int: ...
     def close(self) -> None: ...
 
 
@@ -45,8 +43,18 @@ def copy_directory(source: str, container: DockerContainer, target: str, include
 
 
 def start_attached(container: DockerContainer, *, interactive: bool) -> None:
+    if interactive:
+        container_id = container.id
+        if not isinstance(container_id, str):
+            raise RuntimeError("Docker SDK returned a container without an ID")
+        try:
+            subprocess.run(["docker", "start", "-ai", container_id], check=True)
+        except FileNotFoundError:
+            raise RuntimeError("docker CLI not found on PATH") from None
+        return
+
     stream = cast(_AttachStream, container.attach_socket(params={
-        "stdin": interactive,
+        "stdin": False,
         "stdout": True,
         "stderr": True,
         "stream": True,
@@ -54,16 +62,6 @@ def start_attached(container: DockerContainer, *, interactive: bool) -> None:
     }))
     try:
         container.start()
-        if interactive:
-            def forward_input() -> None:
-                try:
-                    while chunk := os.read(sys.stdin.fileno(), 8192):
-                        stream.write(chunk)
-                except (AttributeError, OSError, ValueError):
-                    pass
-
-            threading.Thread(target=forward_input, daemon=True).start()
-
         while chunk := stream.read(8192):
             sys.stdout.buffer.write(chunk)
             sys.stdout.buffer.flush()

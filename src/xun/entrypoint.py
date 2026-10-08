@@ -322,7 +322,7 @@ def main_container():
         env_kw, env_set = parse_env_option(args.env)
     except ValueError as error:
         parser.error(str(error))
-    env_kw = CONTAINER_ENV_PATTERNS + env_kw
+    env_kw = CONTAINER_ENV_PATTERNS + ["TERM"] + env_kw
     ports = [p.strip() for pv in args.port for p in pv.split(",") if p.strip()]
 
     requested_mount = args.mount.strip()
