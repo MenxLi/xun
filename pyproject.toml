@@ -36,6 +36,7 @@ xun = "xun:main"
 xuns = "xun:main_serve"
 xunc = "xun:main_container"
 xunx = "xun.supervisor:main"
+xune = "xun.extension:main_extension"
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

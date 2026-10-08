@@ -358,5 +358,39 @@ class VersionGateTest(_ExtensionsTestBase):
         return {info.name: info for info in default_loader.infos()}[name]
 
 
+CLIWIRE = """
+import argparse
+from xun import extension_attr
+_parser = argparse.ArgumentParser(prog='cli-ext')
+_parser.add_argument('--double', type=int, required=True)
+@extension_attr(cli=(_parser, lambda args: args.double * 2))
+def setup_extension(ctx): pass
+"""
+
+class ExtensionCliTest(_ExtensionsTestBase):
+    def _dispatch(self, *argv: str) -> int:
+        with self.assertRaises(SystemExit) as caught:
+            ext_mod.main_extension(list(argv))
+        return caught.exception.code
+
+    def test_parser_and_handler_dispatch(self) -> None:
+        self._write_ext("cliext", CLIWIRE)
+        self.assertEqual(self._dispatch("cliext", "--double", "21"), 42)
+
+    def test_handler_exit_code_passes_through(self) -> None:
+        self._write_ext("cliext", CLIWIRE)
+        self.assertEqual(self._dispatch("cliext", "--double", "0"), 0)
+
+    def test_unknown_extension_exits_2(self) -> None:
+        self.assertEqual(self._dispatch("nothere"), 2)
+
+    def test_extension_without_cli_exits_2(self) -> None:
+        self._write_ext("plain", "def setup_extension(ctx): pass\n")
+        self.assertEqual(self._dispatch("plain"), 2)
+
+    def test_no_args_shows_usage_with_exit_2(self) -> None:
+        self.assertEqual(self._dispatch(), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ Two source forms, each yielding an extension named `{name}`:
 - flat form:    `extensions/{name}.py` (zero ceremony; no relative imports)
 """
 from __future__ import annotations
+import argparse
 import importlib.util
 import inspect
 import re
@@ -16,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 import rich
 from .config import get_home_dir, xun_version
 from .types import CancelledError, JsonType, Result
@@ -29,6 +30,8 @@ ENTRY_FILE = f"{ENTRY_MODULE}.py"
 _DATA_VERSION_DIR_PREFIX = "data_v_"
 _DATA_VERSION = re.compile(r"\w[\w.+-]*")
 """A data_version must be one safe path segment (no leading dot, no traversal)."""
+
+type ExtensionCli = tuple[argparse.ArgumentParser, Callable[[argparse.Namespace], Any]]
 
 class ExtensionStatus(str, Enum):
     """str-Enum so pydantic/JSON treat it as a string."""
@@ -77,11 +80,11 @@ def _compare_versions(a: str, b: str) -> int:
 
 @dataclass(frozen=True)
 class ExtensionAttr:
-    """What an extension declares on its `setup_extension`: the xun API version range
-    it supports (both bounds inclusive) and the version of its own data layout."""
+    """What an extension declares on its `setup_extension`; see `extension_attr`."""
     api_min_version: str | None
     api_max_version: str | None
     data_version: str | None
+    cli: ExtensionCli | None
 
     def __post_init__(self) -> None:
         if self.data_version is not None and not _DATA_VERSION.fullmatch(self.data_version):
@@ -98,13 +101,14 @@ class ExtensionAttr:
         return getattr(fn, "__xun_extension_attr", None)
 
 def extension_attr(api_min_version: str | None = None, api_max_version: str | None = None,
-                   data_version: str | None = None):
+                   data_version: str | None = None, cli: ExtensionCli | None = None):
     """Declare on `setup_extension` which xun API versions are supported — outside the
-    range the extension is SKIPPED, not FAILED — and its data layout version, which
-    selects the `data_v_<version>` subdir of its data dir."""
+    range the extension is SKIPPED, not FAILED — its data layout version (selects the
+    `data_v_<version>` data dir), and optionally `cli=(parser, handler)` run by
+    `xune <name>` (an int return becomes the exit code)."""
     def _wrapper[F: Callable](fn: F) -> F:
         return ExtensionAttr(api_min_version=api_min_version, api_max_version=api_max_version,
-                             data_version=data_version).attach_to(fn)
+                             data_version=data_version, cli=cli).attach_to(fn)
     return _wrapper
 
 @dataclass(frozen=True)
@@ -116,6 +120,7 @@ class Extension:
     api_min_version: str | None = None
     api_max_version: str | None = None
     data_version: str | None = None
+    cli: ExtensionCli | None = None
 
     def version_conflict(self) -> str | None:
         """Why the running xun is outside the declared range, or None when it fits.
@@ -220,6 +225,7 @@ def _distill(name: str, location: Path) -> ScanItem:
             api_min_version = attr.api_min_version if attr else None,
             api_max_version = attr.api_max_version if attr else None,
             data_version = attr.data_version if attr else None,
+            cli = attr.cli if attr else None,
         )
         conflict = ext.version_conflict()
         if conflict:
@@ -336,3 +342,29 @@ class ExtensionLoader:
         return tuple(items)
 
 default_loader = ExtensionLoader()
+
+
+def main_extension(argv: list[str] | None = None) -> None:
+    """Entry point of the `xune` script: run one extension's declared CLI.
+
+        xune <extension> [args...]
+    """
+    argv = sys.argv[1:] if argv is None else argv
+    loaded = {ext.name: ext for ext in default_loader.imported()}
+    with_cli = ", ".join(sorted(name for name, ext in loaded.items() if ext.cli)) or "(none)"
+    if not argv or argv[0] in ("-h", "--help"):
+        rich.print(f"usage: xune <extension> [args...]\nextensions with a CLI: {with_cli}")
+        raise SystemExit(0 if argv else 2)
+    name, *rest = argv
+    ext = loaded.get(name)
+    if ext is None:
+        rich.print(f"[red]unknown extension '{name}'[/red] — loaded: "
+                   f"{', '.join(sorted(loaded)) or '(none)'}")
+        raise SystemExit(2)
+    if ext.cli is None:
+        rich.print(f"[red]extension '{name}' declares no CLI[/red]")
+        raise SystemExit(2)
+    parser, handler = ext.cli
+    parser.prog = f"xune {name}"
+    code = handler(parser.parse_args(rest))
+    raise SystemExit(code if isinstance(code, int) else 0)

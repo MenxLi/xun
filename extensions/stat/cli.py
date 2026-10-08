@@ -1,17 +1,16 @@
-"""CLI entry: `show` the statistics, or read/set `budget`s per user.
+"""CLI entry, declared on `setup_extension` so `xune stat <args>` runs it:
 
-    python -m extensions.stat.cli show --days 7
-    python -m extensions.stat.cli budget set --user alice --day 50K --month 1M
-    python -m extensions.stat.cli budget show
+    xune stat show --days 7
+    xune stat budget set --user alice --day 50K --month 1M
+    xune stat budget show
 
-The db is `default_db_path()` — the same `$XUN_HOME` (else `cwd/.xun`) the agent
-resolves, so run this from where the agent runs, or pass `--db`.
+The db is `default_db_path()` — `$XUN_HOME` else `cwd/.xun` — the same resolution
+the agent uses, so run this where the agent runs.
 Budget numbers are `token_cost` units (see pricing.py); 'none' clears a ceiling.
 """
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -23,7 +22,6 @@ from .query import WINDOWS, Filters, PeriodKind, parse_date, query_stats, time_w
 from .report import budget_line, print_report
 
 CLEAR = ("none", "null", "-")
-"""Anything meaning 'no ceiling' on the command line."""
 
 
 def _limits(args: argparse.Namespace) -> dict[PeriodKind, float | None]:
@@ -101,7 +99,7 @@ def _db_option(parser: argparse.ArgumentParser) -> None:
                              "where <xun home> is $XUN_HOME else cwd/.xun)")
 
 
-def _parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stat", description="xun tool-call / token statistics and per-user token budgets.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -139,10 +137,5 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+def run(args: argparse.Namespace) -> int:
     return args.handler(args)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

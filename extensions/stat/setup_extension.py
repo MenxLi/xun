@@ -1,6 +1,6 @@
 """Log tool calls and token usage to SQLite and cap them with per-user budgets.
 
-`/stat` reports; budgets are managed by `python -m extensions.stat.cli budget`.
+`/stat` reports; budgets are managed by `xune stat budget`.
 See README.md for the schema and the cost formula.
 """
 from __future__ import annotations
@@ -10,14 +10,15 @@ import time
 from xun import Agent, Command, ExtensionContext, HookArgs, extension_attr
 from xun.display_event import HTMLInfoEvent
 
-from . import budget
+from . import budget, cli
+from .cli import build_parser
 from .db import DATA_VERSION, TOKEN, TOOLCALL, ToolCallRow, TokenRow, current_username, init_db, writer
 from .query import Filters, parse_date, query_stats, time_window, window_label
 from .report import stats_html
 
 USAGE = "Usage: /stat [days=N] [until=YYYYMMDD] [user=NAME] [top=N]"
 
-@extension_attr(data_version=DATA_VERSION)
+@extension_attr(data_version=DATA_VERSION, cli=(build_parser(), cli.run))
 def setup_extension(ctx: ExtensionContext) -> None:
     db_path = init_db(ctx.data_dir() / "stat.db")
 

@@ -41,11 +41,15 @@ Change the three weights in `pricing.PRICING`; they feed both the Python and the
 ## CLI
 
 ```
-python -m extensions.stat.cli show [--db PATH] [--user NAME] [--days N] [--until YYYYMMDD] [--top N]
-python -m extensions.stat.cli budget show
-python -m extensions.stat.cli budget set [--user NAME] [--day COST] [--week COST] [--month COST]
-python -m extensions.stat.cli budget clear [--user NAME]
+xune stat show [--db PATH] [--user NAME] [--days N] [--until YYYYMMDD] [--top N]
+xune stat budget show
+xune stat budget set [--user NAME] [--day COST] [--week COST] [--month COST]
+xune stat budget clear [--user NAME]
 ```
+
+`xune <extension>` is the core runner: it loads the extension and dispatches to the
+`(parser, handler)` its `@extension_attr(cli=...)` declares. The db resolves like
+the agent's does (`$XUN_HOME`, else `cwd/.xun`), so run it from the agent's directory.
 
 Counts accept a `K`/`M`/`B` suffix (`--day 50K`), and `none` removes a ceiling. `budget set` leaves periods it is not given untouched; the current user comes from `_XUN_USERNAME`. Budgets are `token_cost` units, not tokens.
 

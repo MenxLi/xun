@@ -1,10 +1,6 @@
 # Extensions
 
-Drop Python code under `$XUN_HOME/extensions/` (default `./.xun/extensions/`, override with `XUN_HOME`) and every agent picks up its effects — tools, hooks, commands, config tweaks — at initialization. No registration or wiring needed.
-
-Extensions are **trusted code**: they run at import time with full process privileges, like a shell rc file.
-
-To see if your extensions were loaded, use built-in `/extensions` command.
+Drop Python code under `$XUN_HOME/extensions/` (default `./.xun/extensions/`) and every agent picks up its effects — tools, hooks, commands, config tweaks — at initialization. No registration needed. Extensions are **trusted code**: they run at import time with full process privileges, like a shell rc file. Check what loaded with the built-in `/extensions` command.
 
 ## Source forms
 
@@ -12,14 +8,14 @@ Each source yields one extension named `{name}`:
 
 | Form | Path | Notes |
 |---|---|---|
-| Package | `extensions/{name}/setup_extension.py` | Entry file name is fixed; supports relative imports of sibling helper modules |
-| Flat | `extensions/{name}.py` | Zero ceremony; no relative imports |
+| Package | `extensions/{name}/setup_extension.py` | supports relative imports of siblings |
+| Flat | `extensions/{name}.py` | zero ceremony; no relative imports |
 
-A directory without `setup_extension.py` is skipped with a warning; if both forms exist for the same `{name}`, the flat file is shadowed by the package. Files starting with `.` or `__` are ignored.
+A directory without `setup_extension.py` is skipped with a warning; the package form shadows the flat file of the same name; `.`/`__` files are ignored. The first line of the module docstring becomes the description shown by `/extensions`.
 
 ## Entry function
 
-The module must define `setup_extension(ctx)`, called once per agent with the agent being initialized:
+The module defines `setup_extension(ctx)`, called once per agent — including sub-agents — with a fresh context:
 
 ```python
 """Log every tool call."""
@@ -29,56 +25,46 @@ def setup_extension(ctx: ExtensionContext) -> None:
     ctx.agent.hooks.before_tool_call.add(lambda args: print(args.tool_calls))
 ```
 
-`ctx` carries the target `agent` plus the extension's `name`. Typical effects, all through `ctx.agent`:
+Typical effects, all through `ctx.agent`:
 
-- **Hooks**: `ctx.agent.hooks.before_tool_call.add(...)` (see `src/xun/hooks.py`)
-- **Tools**: define functions and register them on `ctx.agent.toolbox`, e.g. via `@tool_attr(name="web_search", override=True)` to replace a built-in tool
-- **Config**: mutate `ctx.agent.config` (setup runs before model auto-detect, so overrides take effect)
-- **Settings**: read user-provided config through `ctx.settings`
-- **Files**: `ctx.data_dir()` returns the extension's private dir `$XUN_HOME/extension_data/{name}/`, created on demand; keeps extension data out of the home root and separate from the read-only source tree
+- **Hooks**: `ctx.agent.hooks.<event>.add(...)` (see `src/xun/hooks.py`)
+- **Tools**: register functions on `ctx.agent.toolbox` (`@tool_attr(override=True)` replaces a built-in)
+- **Config**: mutate `ctx.agent.config` (setup runs before model auto-detect)
+- **Settings**: `ctx.settings` — the extension's bag from `config.json`, keyed by name: `{ "extension_settings": { "my_ext": { ... } } }`
+- **Files**: `ctx.data_dir()` — private dir `$XUN_HOME/extension_data/{name}/`, created on demand
 
-```python
-"""Cache results between runs."""
-from xun import ExtensionContext
+## Declaring metadata
 
-def setup_extension(ctx: ExtensionContext) -> None:
-    cache = ctx.data_dir() / "cache.json"   # .../extension_data/{name}/cache.json
-```
-
-Extension settings live under `extension_settings` in config.json, keyed by extension name:
-
-```json
-{ "extension_settings": { "my_ext": { "base_url": "https://..." } } }
-```
-
-Inside `extensions/my_ext.py`, `ctx.settings` resolves to the bag above (an empty dict when unset); tools reach the same bag through `ctx.agent.config.extension_settings`.
-
-The first line of the module docstring becomes the extension's description, shown by the `/extensions` command.
-
-## Skills
-
-`skills/` is an optional extension implementing progressive disclosure for standard `SKILL.md` bundles. Copy it to `$XUN_HOME/extensions/skills/`, then install its dependency with `pip install pyyaml`.
-
-## Version compatibility
-
-Declare the xun versions an extension supports on the entry function; both bounds are inclusive:
+`@extension_attr` on the entry function declares three optional things:
 
 ```python
-"""Needs a recent xun."""
+import argparse
 from xun import ExtensionContext, extension_attr
 
-@extension_attr(api_min_version="1.2", api_max_version="2.0")
+_parser = argparse.ArgumentParser()
+_parser.add_argument("--user", default="me")
+
+def _run(args):
+    print(args.user)
+    return 0
+
+@extension_attr(api_min_version="1.2", api_max_version="2.0",
+                data_version="1", cli=(_parser, _run))
 def setup_extension(ctx: ExtensionContext) -> None:
     ...
 ```
 
-Outside the range the extension is **skipped** — listed as `skipped` by `/extensions` with the reason, warned once at scan time, never imported into agents, and never counted as `failed`. Query the running version with `xun_version()`; when xun runs without package metadata (a source checkout) the gate passes.
+- **`api_min_version` / `api_max_version`** — supported xun versions, both bounds inclusive. Outside the range the extension is **skipped** (not `failed`): warned at scan, listed with the reason by `/extensions`. Source checkouts without version metadata always pass the gate.
+- **`data_version`** — version of the data layout: `data_dir()` resolves to `extension_data/{name}/data_v_<version>/`, so bumping it starts fresh while old dirs stay untouched. One safe path segment; a bad value fails the extension at scan.
+- **`cli=(parser, handler)`** — run by the core `xune` command: `xune <name> [args...]` parses with the extension's parser and calls the handler (an int return is the exit code); bare `xune` lists extensions that declare a CLI. The core imports the extension, so its data under `$XUN_HOME` resolves exactly as the agent sees it — no `PYTHONPATH` or module paths to fiddle with.
+
+See `stat/` for a full example.
 
 ## Load semantics
 
-- Sources are imported **once per process** (cached), then `setup_extension` is re-run with a fresh context for every agent — including sub-agents.
-- Extensions apply in **name-sorted order**, deterministic across both forms.
-- Import failure or setup failure only prints a warning: a broken extension never blocks startup or the other extensions (this README itself is skipped as a non-source file since it isn't `.py`). A version mismatch is likewise a warning, and shows up as `skipped` rather than `failed`.
-- Opt out with `enable_extensions: false` in `$XUN_HOME/config.json`; internal helper agents set this automatically.
+- Sources are imported **once per process** (cached); `setup_extension` re-runs per agent.
+- Extensions apply in **name-sorted order**.
+- Import or setup failure only warns: a broken extension never blocks startup or the others.
+- Opt out with `enable_extensions: false` in `$XUN_HOME/config.json` (internal helper agents set this automatically).
 
-The implementation lives in [`src/xun/extension.py`](../src/xun/extension.py). Any `.py` source alongside this README serves as a working example.
+`skills/` is an optional bundled extension for `SKILL.md` bundles — copy it in and `pip install pyyaml`. Implementation: [`src/xun/extension.py`](../src/xun/extension.py); any `.py` alongside this README is a working example.

@@ -17,7 +17,8 @@ from .agent import Agent
 __all__ = [
     "Agent", "AgentConfig",
     "Workspace", 
-    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr", "extension_data_dir",
+    "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr",
+    "extension_data_dir",
     "xun_version",
     "AgentGetterProtocol", "AgentGetterParam", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",

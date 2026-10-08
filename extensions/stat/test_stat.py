@@ -66,7 +66,7 @@ class _DbTestBase(unittest.TestCase):
 
     def call_cli(self, *argv: str) -> int:
         with redirect_stdout(StringIO()):
-            return cli.main([*argv, "--db", str(self.db_path)])
+            return cli.run(cli.build_parser().parse_args([*argv, "--db", str(self.db_path)]))
 
 
 class PricingTest(unittest.TestCase):
@@ -315,7 +315,7 @@ class CliTest(_DbTestBase):
         init_db(self.db_path)
         self.log_token(TODAY, prompt=1500, cached=600, completion=150)
         with patch.dict(os.environ, {"_XUN_USERNAME": "alice"}), redirect_stdout(StringIO()) as out:
-            rc = cli.main(["show", "--db", str(self.db_path)])
+            rc = cli.run(cli.build_parser().parse_args(["show", "--db", str(self.db_path)]))
         self.assertEqual(rc, 0)
         self.assertIn("1.50K", out.getvalue())  # prompt tokens, in units
         self.assertIn("unlimited", out.getvalue())
