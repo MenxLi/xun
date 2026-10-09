@@ -89,12 +89,13 @@ def get_instruction(
 def setup_agent(
     name: str = "agent",
     tools: list[Callable] = [],
-    default_tools: bool = False,
+    default_tools: bool = False,    # off to keep `tools` explicit
     default_system_prompt: bool = True,
     default_commands: bool = True,
     display: DisplayAbstract | None = None,
     workdir: Path | str | None = None,
     ) -> "Agent[Agent.T.Init]":
+    """Quickly set up a CLI agent with builtins."""
     toolbox = ToolBox()
     if default_tools:
         # top-agent can spawn worker agents to execute tasks.

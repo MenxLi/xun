@@ -62,22 +62,6 @@ pip install .
 ```
 </details>
 
-## Documentation
-
-This README and `demo.ipynb` provide brief overviews of Xun and its features.
-
-If you want more detailed documentation, please visit the web interface provided by `xuns`.
-
-Opens the web application without LLM configured (If you don't want to set up LLM):
-```sh
-xuns --no-initial-agent
-```
-
-Then visit: `http://localhost:18960/docs/`
-
-> **Documentation is included in PyPI releases.** Start `xuns/xunc` to browse the
-> bilingual site at `/docs/`. Need a refresh? Let Xun write its own bilingual
-> manual; see [Building Documentation](README-BUILD-DOCS.md).
 
 ## Session Entrypoints
 
@@ -95,21 +79,37 @@ to turn off this behavior, set `load_project_instructions: false` in the agent's
 
 ## API
 
-**Basic**: Quickly set up an agent with plain functions as tools — no decorators, no classes needed. 
+Start an interactive CLI session (like `xun`), with your custom tool:
 
 ```python
-from xun import setup_agent
+from xun import setup_agent, interactive_session
 
-def add(a: int, b: int) -> int:
-    """Add two numbers."""
-    return a + b
+def weather(city: str) -> str:
+    """Query the weather for a given city."""
+    return f"Sunny in {city}"
 
-agent = setup_agent(tools = [add])
-agent.instruct("Add 2 and 3.").execute()
+agent = setup_agent(tools=[weather])
+interactive_session(agent, task="What is the weather in Paris?")
 ```
 
-**Advanced**: The framework is flexible and extensible.
-Additional features are shown in [demo.ipynb](demo.ipynb), including:
+The underlying `Agent` API gives you more control:
+
+```python
+from xun import Agent
+
+greeting = (
+    Agent()                 # Agent[Uninit]
+        .initialize()       # Agent[Init]
+        .instruct("Hi~")    # Agent[Init]
+        .execute()          # Result[str, ErrorInfo]
+        .unwrap()           # str
+    )
+print(greeting)
+```
+> Hi! How can I help you today? 😊
+
+**More**: The framework is flexible and extensible.
+Features are shown in [demo.ipynb](demo.ipynb), including:
 - `Agent` configuration
 - Display extension
 - Output validation
@@ -275,3 +275,21 @@ See [extensions/mcp/README.md](extensions/mcp/README.md) for full details.
 - **Core stays compact.** The two double as proof that the extension system suffices for real features.
 
 </details>
+
+
+## Documentation
+
+This README and `demo.ipynb` provide brief overviews of Xun and its features.
+
+If you want more detailed documentation, please visit the web interface provided by `xuns`.
+
+Opens the web application without LLM configured (If you don't want to set up LLM):
+```sh
+xuns --no-initial-agent
+```
+
+Then visit: `http://localhost:18960/docs/`
+
+> **Documentation is included in PyPI releases.** Start `xuns/xunc` to browse the
+> bilingual site at `/docs/`. Need a refresh? Let Xun write its own bilingual
+> manual; see [Building Documentation](README-BUILD-DOCS.md).
