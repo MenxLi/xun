@@ -22,7 +22,7 @@ class Display(DisplayAbstract):
         self.console = rich.console.Console()
         self.lock = threading.Lock()
         self.session = CliSession()
-        self.set_event_buffer_size(event_buffer_size)
+        self.with_buffer_size(event_buffer_size)
 
     def _print(self, *args, **kwargs):
         with self.lock:

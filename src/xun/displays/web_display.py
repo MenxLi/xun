@@ -113,7 +113,7 @@ class WebDisplay(DisplayAbstract):
     ) -> None:
         super().__init__()
         self.expose_files = expose_files
-        self.set_event_buffer_size(event_buffer_size)
+        self.with_buffer_size(event_buffer_size)
         self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None

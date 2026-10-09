@@ -70,12 +70,7 @@ class AgentDisplayProtocol(Protocol):
     config: AgentConfig
 
 class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
-    """Display-facing helpers for Agent: event emission, messages and prompts.
-
-    Generic over the agent lifecycle state: the hook-firing helpers (info /
-    warning / error / get_choice / get_confirm) require the Init state, so they
-    are only callable through `Agent[T.Init]` (the self annotations name this
-    mixin, not Agent, which keeps them valid supertypes of the class)."""
+    """Display-facing helpers for Agent: event emission, messages and prompts."""
     def display_event(self, ev: DisplayEventType) -> None:
         event = DisplayEvent(
             name=ev.__class__.__name__,

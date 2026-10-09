@@ -1,7 +1,7 @@
 """Event ring buffer and standalone-HTML rendering, shared by every display."""
 
 from __future__ import annotations
-from typing import Any, Optional, Sequence, Literal
+from typing import Any, Optional, Sequence, Literal, Self
 from collections import deque
 import json
 import threading
@@ -269,9 +269,9 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
 class DisplayEventStoreMixin:
     """Event ring buffer and standalone-HTML rendering. """
 
-    DEFAULT_EVENT_BUFFER_SIZE = 100
-    """Small on purpose: payloads can be large (tool results, base64 images), so
-    heavy consumers set their own capacity via `set_event_buffer_size`."""
+    DEFAULT_EVENT_BUFFER_SIZE = 0
+    """Zero on purpose: payloads can be large (tool results, base64 images),
+    consumers need to set their own capacity via `with_buffer_size`."""
 
     _event_ring: deque[DisplayEvent]
     _event_ring_lock: threading.Lock
@@ -284,11 +284,12 @@ class DisplayEventStoreMixin:
             self._event_ring = deque(maxlen=self.DEFAULT_EVENT_BUFFER_SIZE)
         return self._event_ring, self._event_ring_lock
 
-    def set_event_buffer_size(self, max_events: int) -> None:
+    def with_buffer_size(self, max_events: int) -> Self:
         """Set how many events the ring buffer retains (oldest dropped beyond that)."""
         ring, lock = self._event_store()
         with lock:
             self._event_ring = deque(ring, maxlen=max_events)
+        return self
 
     def _record_event(self, event: DisplayEvent) -> None:
         """Store an event for later rendering. `display_event` calls this for every event."""
