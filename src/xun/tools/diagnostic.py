@@ -2,7 +2,6 @@ import json
 import py_compile
 import shutil
 import subprocess
-import difflib
 from typing import Callable, Literal
 from ..toolcall import ToolCallContext
 from .common import resolve_path
@@ -65,35 +64,6 @@ def _check_bash(path) -> dict:
     return {"valid": False, "error_msg": (result.stderr or result.stdout).strip()}
 
 
-def diff_files(
-    ctx: ToolCallContext,
-    path_a: str,
-    path_b: str,
-) -> str:
-    """
-    Show a unified diff between two files.
-    Useful for inspecting what changed between versions of a file.
-    Returns an empty string if the files are identical.
-    """
-    ra = resolve_path(ctx, path_a)
-    rb = resolve_path(ctx, path_b)
-
-    if not ra.path.exists():
-        raise FileNotFoundError(f"File not found: {ra.path}")
-    if not rb.path.exists():
-        raise FileNotFoundError(f"File not found: {rb.path}")
-
-    lines_a = ra.path.read_text().splitlines(keepends=True)
-    lines_b = rb.path.read_text().splitlines(keepends=True)
-
-    diff = difflib.unified_diff(
-        lines_a, lines_b,
-        fromfile=str(ra.path.name),
-        tofile=str(rb.path.name),
-    )
-    return "".join(diff)
-
-
 def check_lint(
     ctx: ToolCallContext,
     path: str,
@@ -149,4 +119,4 @@ def check_lint(
 
 
 def expose_diagnostic_tools() -> list[Callable]:
-    return [check_syntax, diff_files, check_lint]
+    return [check_syntax, check_lint]

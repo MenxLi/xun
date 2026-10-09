@@ -1,5 +1,6 @@
 import os
 import re
+from itertools import islice
 from pathlib import Path
 import shutil
 from typing import Optional, Literal, Callable
@@ -134,22 +135,27 @@ def fs_read_file(
 ) -> str:
     """
     Read content from a file at the specified path.
-    You can specify the starting line and ending line to read a specific range of lines from the file.
+    Preserves line endings, including whether the last line has a newline.
+    You can skip lines and limit how many lines are returned.
     - line_offset: The number of lines to skip from the start of the file (default is 0).
     - line_limit: The maximum number of lines to read (default is None, which means read all lines from the offset).
     - include_line_numbers: Whether to include line numbers in the output (default is False). \
         If set to True, each line will be prefixed with its line number (e.g., "1: line content"). \
         The line numbers will be based on the original file, not the offset.
     """
+    if line_offset < 0:
+        raise ValueError("line_offset must be non-negative.")
+    if line_limit is not None and line_limit < 0:
+        raise ValueError("line_limit must be non-negative.")
     rpath = resolve_path(ctx, path).path
-    lines = rpath.read_text().splitlines()
-    if line_offset >= len(lines):
-        return ""
     end_line = line_offset + line_limit if line_limit is not None else None
-    if include_line_numbers:
-        return "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines[line_offset:end_line], start=line_offset))
-    else:
-        return "\n".join(lines[line_offset:end_line])
+    with rpath.open("r", newline="") as file:
+        lines = islice(file, line_offset, end_line)
+        if include_line_numbers:
+            return "".join(
+                f"{i}: {line}" for i, line in enumerate(lines, start=line_offset + 1)
+            )
+        return "".join(lines)
 
 @tool_attr(name="write_file")
 def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
