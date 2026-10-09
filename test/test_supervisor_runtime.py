@@ -47,34 +47,40 @@ class ContainerRuntimeTest(unittest.TestCase):
 
 
 class StartShellTest(unittest.TestCase):
-    def _shell(self, status: str = "running", home: str = "/.xun", probe_error: str | None = None):
+    def _shell(self, status: str = "running", **kwargs: object):
         def docker(*args: str) -> str:
             if args[0] == "inspect":
                 return status
-            if probe_error:
-                raise RuntimeError(probe_error)
-            return home
+            raise AssertionError(f"unexpected docker call: {args}")
         with patch.object(runtime, "_docker", side_effect=docker), \
                 patch.object(runtime.subprocess, "call", return_value=0) as call:
-            code = start_shell("instance", "alice")
+            code = start_shell("instance", "alice", **kwargs)
         return code, call
 
-    def test_shell_runs_bash_in_resolved_home(self) -> None:
+    def test_shell_runs_bash_in_container_workdir(self) -> None:
         code, call = self._shell()
         self.assertEqual(code, 0)
-        argv = call.call_args.args[0]
-        self.assertEqual(argv[:4], ["docker", "exec", "-it", "--workdir"])
-        self.assertEqual(argv[4], "/.xun")
-        self.assertEqual(argv[5], container_name("instance", "alice"))
-        self.assertEqual(argv[6], "bash")
+        self.assertEqual(
+            call.call_args.args[0],
+            ["docker", "exec", "-it", container_name("instance", "alice"), "bash"],
+        )
+
+    def test_shell_runs_exec_command_with_cwd(self) -> None:
+        _, call = self._shell(
+            exec_cmd="xune stat budget set --username alice --day 5M", cwd="/workspace"
+        )
+        self.assertEqual(
+            call.call_args.args[0],
+            [
+                "docker", "exec", "-it", "--workdir", "/workspace",
+                container_name("instance", "alice"),
+                "xune", "stat", "budget", "set", "--username", "alice", "--day", "5M",
+            ],
+        )
 
     def test_paused_container_is_refused(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "paused"):
             self._shell(status="paused")
-
-    def test_missing_probe_output_is_reported(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "no python"):
-            self._shell(probe_error="no python")
 
 
 if __name__ == "__main__":

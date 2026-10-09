@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import shlex
 import socket
 import subprocess
 import sys
@@ -292,8 +293,8 @@ def _docker(*args: str) -> str:
     return result.stdout.strip()
 
 
-def start_shell(instance: str, username: str) -> int:
-    """Interactive bash in the container's XUN_HOME; returns its exit code."""
+def start_shell(instance: str, username: str, exec_cmd: str = "bash", cwd: str | None = None) -> int:
+    """Interactive exec in the container's default workdir (or `cwd`); returns its exit code."""
     name = container_name(instance, username)
     try:
         status = _docker("inspect", "-f", "{{.State.Status}}", name)
@@ -303,6 +304,7 @@ def start_shell(instance: str, username: str) -> int:
         # a paused container would hang `exec`, so it must be refused explicitly
         hint = "; run `xunx resume` first" if status == "paused" else ""
         raise RuntimeError(f"{name} is {status}{hint}")
-    home = _docker("exec", name, "python3", "-c",
-                   "import xun.config; print(xun.config.get_home_dir())")
-    return subprocess.call(["docker", "exec", "-it", "--workdir", home, name, "bash"])
+    argv = ["docker", "exec", "-it"]
+    if cwd is not None:
+        argv += ["--workdir", cwd]
+    return subprocess.call([*argv, name, *shlex.split(exec_cmd)])

@@ -61,8 +61,10 @@ def _build_parser() -> argparse.ArgumentParser:
     upgrade.add_argument("username", nargs="*")
     upgrade.add_argument("--all", action="store_true")
 
-    shell = commands.add_parser("shell", help="Open a bash shell in a user's container XUN_HOME.")
+    shell = commands.add_parser("shell", help="Open a shell in a user's container.")
     shell.add_argument("username")
+    shell.add_argument("--exec", default="bash", metavar="CMD", help="program to run, quoted as one command line (default: bash)")
+    shell.add_argument("--cwd", help="working directory in the container (default: the container's workdir)")
 
     serve = commands.add_parser("serve", help="Run the multiplexing server.")
     serve.add_argument("--host", default="0.0.0.0")
@@ -135,7 +137,7 @@ def main() -> None:
             if store.get(args.username) is None:
                 parser.error(f"user does not exist: {args.username}")
             try:
-                code = start_shell(instance_id(store.path), args.username)
+                code = start_shell(instance_id(store.path), args.username, exec_cmd=args.exec, cwd=args.cwd)
             except RuntimeError as error:
                 parser.error(str(error))
             sys.exit(code)
