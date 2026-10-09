@@ -533,10 +533,10 @@ def run_command(
 
 
 class CmdExecResult(TypedDict):
-    args: str
     stdout: str
     stderr: str
     returncode: int
+    duration: str
 
 
 def truncate_output(text: str, max_output_size: Optional[int]) -> str:
@@ -593,6 +593,7 @@ def bash(
     for exe in spec.commands:
         _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=cwd)
 
+    start_time = time.monotonic()
     result = run_command(
         spec.command_line,
         timeout=timeout,
@@ -600,12 +601,17 @@ def bash(
         env_overrides=envs,
         cancel_check=ctx.agent.cancel_event.is_set,
     )
+    elapsed_time = time.monotonic() - start_time
+    elapsed_str = (
+        f"{elapsed_time:.2f}s" if elapsed_time < 60 
+        else f"{int(elapsed_time)//60}m{int(elapsed_time)%60:02d}s"
+        )
 
     return CmdExecResult(
-        args=spec.command_line,
         stdout=truncate_output(result.stdout.strip(), max_output_size),
         stderr=truncate_output(result.stderr.strip(), max_output_size),
         returncode=result.returncode,
+        duration=elapsed_str
     )
 
 

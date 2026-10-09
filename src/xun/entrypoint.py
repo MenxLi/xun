@@ -279,8 +279,6 @@ def main():
             if not user_input:
                 raise ValueError("Instruction is required in non-interactive mode.")
             non_interactive_session(agent, user_input)
-    except:
-        raise
     finally:
         if Agent.is_initialized(agent):
             agent.finalize()
