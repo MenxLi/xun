@@ -52,8 +52,9 @@ def agent_risk_access(
         "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject).\n\n"
 
         "The command should be rejected if it is potentially harmful, or work outside the working directory or allowed paths (subdirectories are allowed). \n"
-        "A command is doomed to be potentially harmful if it may disrupt the system or irreversibly modify important files. \n"
-        "The command is considered safe if it is a readonly command, \n"
+        "A command is doomed to be potentially harmful if it may disrupt the system or irreversibly modify important files "
+        "(installing packages may be an exception, return unsure for these to allow user confirmation). \n"
+        "The command is considered safe if it is a readonly command. \n"
         "Otherwise, it should be confirmed with the user before execution. \n\n"
 
         "You have tools to read files (only within the allowed paths), "
