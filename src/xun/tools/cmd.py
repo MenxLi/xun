@@ -1,569 +1,28 @@
-"""
-The bash command execution is highly un-controlled and nearly impossible to control safely without external sandboxing.
-The code in this module are best-effort assessments of command risk and should not be relied upon for complete safety.
-"""
-from dataclasses import dataclass
+"""Blocking commands and agent-owned background bash jobs."""
+
+from contextlib import ExitStack
+from dataclasses import dataclass, field
+import math
 import os
+from pathlib import Path
 import shlex
 import shutil
 import signal
 import subprocess
+from tempfile import TemporaryFile
+from threading import Event, Lock, Thread
 import time
-from pathlib import Path
-from pydantic import BaseModel
-from typing import Callable, Optional, Literal, Sequence
+from typing import BinaryIO, Callable, Literal, Sequence
+import uuid
+
 from typing_extensions import TypedDict
+
+from ..agent_state import RuntimeEntry
 from ..toolcall import ToolCallContext
 from ..types import CancelledError
-from .common import resolve_path, get_policy
+from .cmd_policy import prepare_command
 
-SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
-AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
-COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
-SAFE_REDIRECTION_TARGETS = {"/dev/null"}
-
-UNSURE_KIND = Literal[
-    "install_package_outside_allowed_paths", 
-    "change_system_status", 
-    "modify_existing_files", 
-    "unable_to_assess", 
-    "other",
-]
-MUST_CONFIRM_UNSURE_KINDS: set[UNSURE_KIND] = {
-    "install_package_outside_allowed_paths",
-    "change_system_status",
-    # deliberate exclusion of "unable_to_assess" for `auto_confirm` to be handy
-}
-class RiskAccessResult(BaseModel):
-    policy: Literal['allow', 'unsure', 'reject']
-    reason: Optional[str] = None
-    unsure_kind: Optional[UNSURE_KIND] = None
-def agent_risk_access(
-    ctx: ToolCallContext,
-    cmd: str, 
-    workdir: Path,
-    extra_allowed_paths: Sequence[Path] = (),
-    ) -> RiskAccessResult:
-    from .. import Agent, NullDisplay, ToolBox
-    from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
-    base = Agent(
-        name="Command Risk Assessment", 
-        display=NullDisplay(), 
-        toolbox = ToolBox().register(
-            fs_read_file, fs_list, fs_glob_files, fs_grep_files
-            ),
-        api_call_semaphore=ctx.agent.api_call_semaphore, 
-        workspace=ctx.agent.workspace,
-        cancel_event=ctx.agent.cancel_event.derive(),
-    )
-    # internal helper agent: no extensions (minimal privilege)
-    base.config.enable_extensions = False
-
-    agent: "Agent[Agent.T.Init]" = base.system(
-        "You are an agent that is responsible for accessing shell commands. "
-        "The command will be run under given working directory. "
-        "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject).\n\n"
-
-        "The command should be rejected if it is potentially harmful, or work outside the working directory or allowed paths (subdirectories are allowed). \n"
-        "A command is doomed to be potentially harmful if it may disrupt the system or irreversibly modify important files "
-        "(installing trusted packages may be exempt, return unsure for these to allow user confirmation). \n"
-        "The command is considered safe if it is a readonly command. \n"
-        "Otherwise, it should be confirmed with the user before execution by assessing it as `unsure`. \n\n"
-
-        "You have tools to read files (only within the allowed paths), "
-        "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
-        "If you determine that the command is safe, you can output a reason as null. "
-        "Otherwise, you should provide a concise (less than 20 words) reason for your decision, "
-        "moreover, if you are unsure, you should indicate the reason kind from the predefined categories. \n"
-        "If using tools, restrict to at most 3 tool calls, otherwise return unsure with your current assessment."
-    ).instruct(
-        f"Given the command: `{cmd}`\n"
-        f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
-        f"Extra allowed paths: `{extra_allowed_paths}`\n"
-        f"Please determine the risk access policy for this command. "
-    ).initialize()
-    res = agent.execute(schema=RiskAccessResult, max_iterations=8)
-    if res.is_err():
-        return RiskAccessResult(policy='unsure', reason=f"Failed to assess command risk: {res.unwrap_err()}", unsure_kind="unable_to_assess")
-    res_ok = res.unwrap()
-    if res_ok.policy == 'unsure' and res_ok.unsure_kind is None:
-        res_ok.unsure_kind = "other"
-    return res_ok
-
-@dataclass(frozen=True)
-class CommandSegment:
-    """
-    Represents a shell command segment (executable + arguments) that is delimited by command operators.
-    This allows checking allowlists based on full command invocations, e.g., "python -m unittest".
-    """
-    tokens: tuple[str, ...]
-
-    @property
-    def executable(self) -> str:
-        """The first token, which is the command name or path."""
-        return self.tokens[0] if self.tokens else ""
-
-    @property
-    def command_str(self) -> str:
-        """Reconstruct the command as it would appear."""
-        # Use a simple space join. This is for comparison against allowlist entries.
-        # Note: quoting and whitespace may differ, but we expect allowlist entries to be in a normalized form.
-        return " ".join(self.tokens)
-
-    def _matches_allowlist_prefix(self, prefix: tuple[str, ...]) -> bool:
-        """Check if the segment starts with the given prefix at token boundaries."""
-        return len(self.tokens) >= len(prefix) and self.tokens[:len(prefix)] == prefix
-
-    def is_allowlisted(self, ctx: ToolCallContext) -> bool:
-        """
-        Check if this command segment is allowed.
-        It is allowed if:
-          - The executable (first token) is in the command allowlist.
-          - OR, the command starts with a multi-token entry in the allowlist
-            (e.g. "git diff --cached" starts with the allowlisted "git diff").
-        """
-        policy = get_policy(ctx)
-        if self.executable in policy.command_allowlist.allowlist:
-            return True
-        if self.command_str in policy.command_allowlist.allowlist:
-            return True
-        return any(
-            self._matches_allowlist_prefix(prefix) for prefix in policy.command_allowlist.allowlist_prefix
-        )
-
-
-@dataclass(frozen=True)
-class ExecutableSpec:
-    value: str
-
-    @property
-    def path(self) -> Path:
-        return Path(self.value)
-
-    @property
-    def is_bare_command(self) -> bool:
-        return self.path.name == self.value
-
-
-@dataclass(frozen=True)
-class CommandSpec:
-    command_line: str
-    argv: tuple[str, ...]
-    commands: tuple[ExecutableSpec, ...]
-    segments: tuple[CommandSegment, ...]
-
-    @property
-    def disallowed_operators(self) -> tuple[str, ...]:
-        return _disallowed_shell_operators(self.argv)
-
-
-def _safe_redirection_span(argv: tuple[str, ...], index: int) -> int | None:
-    if index + 1 < len(argv) and argv[index] == ">" and argv[index + 1] in SAFE_REDIRECTION_TARGETS:
-        return 2
-
-    if (
-        index + 2 < len(argv)
-        and argv[index] in {"1", "2"}
-        and argv[index + 1] == ">"
-        and argv[index + 2] in SAFE_REDIRECTION_TARGETS
-    ):
-        return 3
-
-    if index + 2 < len(argv) and argv[index] == "2" and argv[index + 1] == ">&" and argv[index + 2] == "1":
-        return 3
-
-    return None
-
-
-def _disallowed_shell_operators(argv: tuple[str, ...]) -> tuple[str, ...]:
-    disallowed: set[str] = set()
-    index = 0
-
-    while index < len(argv):
-        token = argv[index]
-
-        if token in AUTO_APPROVED_SHELL_OPERATORS:
-            index += 1
-            continue
-
-        safe_redirection_span = _safe_redirection_span(argv, index)
-        if safe_redirection_span is not None:
-            index += safe_redirection_span
-            continue
-
-        if token in SHELL_OPERATORS:
-            disallowed.add(token)
-
-        index += 1
-
-    return tuple(sorted(disallowed))
-
-
-@dataclass(frozen=True)
-class ConfirmationPolicy:
-    allow_unlisted: bool
-    reasons: tuple[str, ...]
-    rejection_message: str | None
-
-    @property
-    def requires_confirmation(self) -> bool:
-        return bool(self.reasons)
-
-
-def _extract_exes(argv: list[str]) -> tuple[ExecutableSpec, ...]:
-    """Extract each executable token (the head of every command in the chain)."""
-    commands: list[ExecutableSpec] = []
-    expect_command = True
-
-    for token in argv:
-        if token == "(":
-            expect_command = True
-            continue
-        if token == ")":
-            continue
-        if token in COMMAND_CHAIN_OPERATORS:
-            expect_command = True
-            continue
-        if expect_command and token not in SHELL_OPERATORS:
-            commands.append(ExecutableSpec(token))
-            expect_command = False
-
-    return tuple(commands)
-
-
-def _extract_segments(argv: list[str]) -> tuple[CommandSegment, ...]:
-    """Extract full command segments, splitting on chain operators."""
-    segments = []
-    current: list[str] = []
-
-    def flush():
-        if current:
-            segments.append(CommandSegment(tuple(current)))
-            current.clear()
-
-    for token in argv:
-        if token in COMMAND_CHAIN_OPERATORS:
-            flush()
-            continue
-        if token in ("(", ")"):
-            continue
-        # Include all other tokens in the segment (operators like >, <, etc.)
-        current.append(token)
-
-    flush()
-    return tuple(segments)
-
-
-def _parse_command_spec(command_line: str) -> CommandSpec:
-    if not command_line.strip():
-        raise ValueError("Command must not be empty.")
-
-    lexer = shlex.shlex(command_line, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    argv = list(lexer)
-    if not argv:
-        raise ValueError("Command must not be empty.")
-
-    commands = _extract_exes(argv)
-    if not commands:
-        raise ValueError("Command must contain an executable.")
-
-    segments = _extract_segments(argv)
-
-    return CommandSpec(
-        command_line=command_line,
-        argv=tuple(argv),
-        commands=commands,
-        segments=segments,
-    )
-
-
-def _first_matching_command(
-    spec: CommandSpec,
-    predicate: Callable[[ExecutableSpec], bool],
-) -> ExecutableSpec | None:
-    return next((command for command in spec.commands if predicate(command)), None)
-
-
-def _first_matching_segment(
-    segments: tuple[CommandSegment, ...],
-    predicate: Callable[[CommandSegment], bool],
-) -> CommandSegment | None:
-    return next((seg for seg in segments if predicate(seg)), None)
-
-
-def _command_path_reason(spec: CommandSpec) -> str | None:
-    if _first_matching_command(spec, lambda command: not command.is_bare_command):
-        return "command chain includes a path-based command"
-    return None
-
-
-def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if "`" in command_line:
-        reasons.append("uses backtick command substitution")
-    if "\n" in command_line or "\r" in command_line:
-        reasons.append("uses line-separated commands")
-    return tuple(reasons)
-
-
-def _command_substitutions(command_line: str) -> tuple[str, ...]:
-    substitutions: list[str] = []
-    index = 0
-    quote: str | None = None
-
-    while index < len(command_line):
-        character = command_line[index]
-        if character == "\\" and quote != "'":
-            index += 2
-            continue
-        if character in {"'", '"'}:
-            if quote is None:
-                quote = character
-            elif quote == character:
-                quote = None
-            index += 1
-            continue
-        if quote != "'" and command_line.startswith("$(", index):
-            start = index + 2
-            depth = 1
-            cursor = start
-            inner_quote: str | None = None
-            while cursor < len(command_line) and depth:
-                inner_character = command_line[cursor]
-                if inner_character == "\\" and inner_quote != "'":
-                    cursor += 2
-                    continue
-                if inner_character in {"'", '"'}:
-                    if inner_quote is None:
-                        inner_quote = inner_character
-                    elif inner_quote == inner_character:
-                        inner_quote = None
-                elif inner_quote != "'" and command_line.startswith("$(", cursor):
-                    depth += 1
-                    cursor += 1
-                elif inner_quote is None and inner_character == ")":
-                    depth -= 1
-                    if depth == 0:
-                        substitutions.append(command_line[start:cursor])
-                        index = cursor
-                cursor += 1
-        index += 1
-
-    return tuple(substitutions)
-
-
-def _command_substitution_reasons(ctx: ToolCallContext, command_line: str) -> tuple[str, ...]:
-    reasons: list[str] = []
-    for substitution in _command_substitutions(command_line):
-        try:
-            policy = _confirmation_policy(ctx, _parse_command_spec(substitution))
-        except ValueError:
-            reasons.append("contains an invalid command substitution")
-            continue
-        if policy.requires_confirmation:
-            reasons.append(f"command substitution requires confirmation: $({substitution})")
-    return tuple(reasons)
-
-
-def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> ConfirmationPolicy:
-    reasons: list[str] = []
-
-    # Check if any segment is not allowlisted.
-    unallowlisted_segment = _first_matching_segment(spec.segments, lambda seg: not seg.is_allowlisted(ctx))
-    path_reason = _command_path_reason(spec)
-    syntax_reasons = _shell_syntax_reasons(spec.command_line)
-    substitution_reasons = _command_substitution_reasons(ctx, spec.command_line)
-
-    if unallowlisted_segment is not None:
-        reasons.append(f"command '{unallowlisted_segment.executable}' is not allowlisted in full command '{unallowlisted_segment.command_str}'")
-    if spec.disallowed_operators:
-        reasons.append(f"uses shell operators requiring confirmation ({', '.join(spec.disallowed_operators)})")
-    if path_reason is not None:
-        reasons.append(path_reason)
-    reasons.extend(syntax_reasons)
-    reasons.extend(substitution_reasons)
-
-    rejection_message = None
-    if unallowlisted_segment is not None:
-        rejection_message = f"Command '{unallowlisted_segment.executable}' is not allowlisted."
-    elif spec.disallowed_operators:
-        rejection_message = "Shell redirections and background operators are not allowed without confirmation, except for exact safe forms like 2>&1 and >/dev/null."
-    elif path_reason is not None:
-        rejection_message = "Path-based commands (absolute or relative) are not allowed without confirmation."
-    elif syntax_reasons:
-        rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
-    elif substitution_reasons:
-        rejection_message = "A command substitution contains a command that is not allowlisted."
-
-    return ConfirmationPolicy(
-        allow_unlisted=(unallowlisted_segment is not None) or (path_reason is not None),
-        reasons=tuple(reasons),
-        rejection_message=rejection_message,
-    )
-
-
-def _confirm_command_execution(
-    ctx: ToolCallContext, 
-    spec: CommandSpec, 
-    policy: ConfirmationPolicy, 
-    workdir_resolved: Path
-    ) -> bool:
-    if not policy.requires_confirmation:
-        return False
-    
-    agent_check_res = agent_risk_access(
-        ctx,
-        spec.command_line,
-        workdir=workdir_resolved,
-        extra_allowed_paths=[ctx.agent.workspace.tempdir.path],
-    )
-    if agent_check_res.policy == 'allow':
-        return True
-    
-    # In auto-confirm mode, ctx.agent.get_confirm returns the default choice:
-    # 'unsure' defaults to Yes (allowed), 'reject' defaults to No (raises below).
-    reasons_str = " and ".join(policy.reasons)
-    message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
-    if policy.rejection_message:
-        message += f"\n{policy.rejection_message}"
-    if agent_check_res.reason:
-        message += f"\n(Risk assessment: {agent_check_res.reason})"
-        if agent_check_res.unsure_kind:
-            message += f" [{agent_check_res.unsure_kind}]"
-    outcome = ctx.agent.get_choice(
-        "Allow command? (choose 'Other' to reject with a message)", ["Yes", "No"],
-        message=message,
-        title="Command Confirmation" if agent_check_res.policy == 'unsure' else "Dangerous Command Confirmation",
-        subtitle=ctx.agent.name,
-        default="Yes" if agent_check_res.policy == 'unsure' else "No",
-        allow_extra=True,
-        skip_auto_confirm=(
-            agent_check_res.policy == 'unsure'
-            and agent_check_res.unsure_kind in MUST_CONFIRM_UNSURE_KINDS
-            )
-    )
-    if outcome.choice != "Yes":
-        rejection = (
-            f"user message: {outcome.choice}"
-            if outcome.choice != "No"
-            else f"risk assessment: {agent_check_res.reason}"
-        )
-        raise RuntimeError(f"Command `{spec.command_line}` was rejected by confirmation. ({rejection})")
-
-    return policy.allow_unlisted
-
-
-def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path) -> str | None:
-    raw_command = command.value
-    if not raw_command:
-        raise ValueError("Command must not be empty.")
-
-    if not command.is_bare_command:
-        if not allow_unlisted:
-            raise ValueError("A path-based command requires explicit confirmation before execution.")
-        path = command.path if command.path.is_absolute() else cwd / command.path
-        if not path.is_file():
-            raise ValueError(f"Command '{raw_command}' was not found.")
-        return str(path)
-
-    executable = shutil.which(raw_command)
-    if executable is not None:
-        return executable
-
-    # Bare shell builtins such as `cd` are resolved by the invoked bash.
-    return None
-
-
-def _soft_kill_process(process: subprocess.Popen[str]) -> None:
-    if os.name == "nt":
-        process.terminate()
-        return
-
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-
-
-def _hard_kill_process(process: subprocess.Popen[str]) -> None:
-    if os.name == "nt":
-        process.kill()
-        return
-
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-
-
-def _terminate_and_collect(process: subprocess.Popen[str]) -> tuple[str, str]:
-    _soft_kill_process(process)
-    try:
-        stdout, stderr = process.communicate(timeout=5)
-    except subprocess.TimeoutExpired:
-        _hard_kill_process(process)
-        stdout, stderr = process.communicate()
-    return stdout, stderr
-
-
-def run_command(
-    target: str | Sequence[str],
-    timeout: float,
-    cwd: Path,
-    env_overrides: Optional[dict[str, str]],
-    cancel_check: Callable[[], bool],
-    ) -> subprocess.CompletedProcess[str]:
-    """Run `target` to completion: a string goes through bash, an argv sequence is
-    exec'd directly (no shell, each item stays one literal argument).
-    The command line shown in messages and the result follows the same rule."""
-    command_line = target if isinstance(target, str) else shlex.join(target)
-    envs = os.environ.copy()
-    if env_overrides:
-        envs.update(env_overrides)
-
-    popen_kwargs: dict[str, object] = {
-        "text": True,
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "env": envs,
-        "cwd": cwd,
-    }
-    if isinstance(target, str):
-        popen_kwargs.update(shell=True, executable=shutil.which("bash") or "/bin/sh")
-    if os.name != "nt":
-        popen_kwargs["start_new_session"] = True
-
-    process = subprocess.Popen(target, **popen_kwargs)  # type: ignore[call-overload]  # nosec B602
-    deadline = time.monotonic() + timeout
-    try:
-        while True:
-            try:
-                stdout, stderr = process.communicate(timeout=0.2)
-                break
-            except subprocess.TimeoutExpired:
-                if cancel_check():
-                    _terminate_and_collect(process)
-                    raise CancelledError(
-                        f"Command `{command_line}` was cancelled by user."
-                    )
-                if time.monotonic() >= deadline:
-                    raise
-            except KeyboardInterrupt:
-                _terminate_and_collect(process)
-                raise
-    except subprocess.TimeoutExpired:
-        _terminate_and_collect(process)
-        raise RuntimeError(
-            f"Command `{command_line}` timed out after {timeout:g}s and was terminated."
-        )
-
-    return subprocess.CompletedProcess(
-        args=command_line,
-        returncode=process.returncode,
-        stdout=stdout,
-        stderr=stderr,
-    )
+_POOL_CREATION_LOCK = Lock()
 
 
 class CmdExecResult(TypedDict):
@@ -573,85 +32,375 @@ class CmdExecResult(TypedDict):
     duration: str
 
 
-def truncate_output(text: str, max_output_size: Optional[int]) -> str:
+class CommandHandle(TypedDict):
+    id: str
+
+
+class CommandInfo(CommandHandle):
+    command: str
+    status: Literal["running", "finished"]
+
+
+class CommandOutput(CommandInfo):
+    stdout: str
+    stderr: str
+    returncode: int | None
+    duration: str
+
+
+class WaitTimeout(CommandHandle):
+    status: Literal["timeout"]
+    notice: str
+
+
+def _validate_timeout(timeout: float | None) -> None:
+    if timeout is not None and (not math.isfinite(timeout) or timeout < 0):
+        raise ValueError("timeout must be finite and non-negative, or null.")
+
+
+def _validate_output_size(max_output_size: int | None) -> None:
+    if max_output_size is not None and max_output_size <= 0:
+        raise ValueError("max_output_size must be positive, or null.")
+
+
+def truncate_output(text: str, max_output_size: int | None) -> str:
     """Preserve head and tail, with a marker in between, when over the limit."""
+    _validate_output_size(max_output_size)
     if max_output_size is not None and len(text) > max_output_size:
-        assert max_output_size > 0, "max_output_size must be positive"
-        part_size = max_output_size // 2
-        return f"{text[:part_size]}\n[... truncated output ...]\n{text[-part_size:]}"
+        head = (max_output_size + 1) // 2
+        tail = max_output_size // 2
+        return f"{text[:head]}\n[... truncated output ...]\n{text[-tail:] if tail else ''}"
     return text
 
 
-# Unlisted commands, unsupported shell operators, and path-based commands still require confirmation.
+def _duration(elapsed: float) -> str:
+    return f"{elapsed:.2f}s" if elapsed < 60 else f"{int(elapsed)//60}m{int(elapsed)%60:02d}s"
+
+
+def _environment(overrides: dict[str, str] | None) -> dict[str, str]:
+    return os.environ | (overrides or {})
+
+
+def _signal_process(process: subprocess.Popen[str] | subprocess.Popen[bytes], hard: bool = False) -> None:
+    try:
+        if os.name == "nt":
+            process.kill() if hard else process.terminate()
+        else:
+            os.killpg(process.pid, signal.SIGKILL if hard else signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+
+def _terminate_and_collect(process: subprocess.Popen[str]) -> tuple[str, str]:
+    _signal_process(process)
+    try:
+        return process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        _signal_process(process, hard=True)
+        return process.communicate()
+
+
+def run_command(
+    target: str | Sequence[str],
+    timeout: float,
+    cwd: Path,
+    env_overrides: dict[str, str] | None,
+    cancel_check: Callable[[], bool],
+) -> subprocess.CompletedProcess[str]:
+    """Run a string through bash, or execute an argv sequence without a shell."""
+    _validate_timeout(timeout)
+    command_line = target if isinstance(target, str) else shlex.join(target)
+    process = subprocess.Popen(
+        target,
+        shell=isinstance(target, str),
+        executable=(shutil.which("bash") or "/bin/sh") if isinstance(target, str) else None,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=_environment(env_overrides),
+        cwd=cwd,
+        start_new_session=os.name != "nt",
+    )  # nosec B602
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel_check():
+                    _terminate_and_collect(process)
+                    raise CancelledError(f"Command `{command_line}` was cancelled by user.")
+                if time.monotonic() >= deadline:
+                    raise
+    except subprocess.TimeoutExpired:
+        _terminate_and_collect(process)
+        raise RuntimeError(f"Command `{command_line}` timed out after {timeout:g}s and was terminated.")
+    except KeyboardInterrupt:
+        _terminate_and_collect(process)
+        raise
+    return subprocess.CompletedProcess(command_line, process.returncode, stdout, stderr)
+
+
+@dataclass
+class CommandJob:
+    command: str
+    process: subprocess.Popen[bytes]
+    stdout: BinaryIO
+    stderr: BinaryIO
+    files: ExitStack
+    started: float
+    finished: Event = field(default_factory=Event)
+    lock: Lock = field(default_factory=Lock)
+    ended: float | None = None
+    error: OSError | None = None
+    closed: bool = False
+
+    @classmethod
+    def start(cls, command: str, cwd: Path, envs: dict[str, str] | None) -> "CommandJob":
+        with ExitStack() as files:
+            stdout = files.enter_context(TemporaryFile())
+            stderr = files.enter_context(TemporaryFile())
+            started = time.monotonic()
+            process = subprocess.Popen(
+                command, shell=True, executable=shutil.which("bash") or "/bin/sh",
+                stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                cwd=cwd, env=_environment(envs),
+                start_new_session=True,
+            )  # nosec B602
+            job = cls(command, process, stdout, stderr, files.pop_all(), started)
+        try:
+            Thread(target=job._watch, name=f"bash-{process.pid}", daemon=True).start()
+        except RuntimeError:
+            job.finished.set()
+            job.close()
+            raise
+        return job
+
+    def _watch(self) -> None:
+        try:
+            self.process.wait()
+            _signal_process(self.process, hard=True)
+        except OSError as error:
+            self.error = error
+        finally:
+            self.ended = time.monotonic()
+            self.finished.set()
+
+    def _read(self, stream: BinaryIO, max_output_size: int | None) -> str:
+        size = os.fstat(stream.fileno()).st_size
+        # pread does not move the shared file offset used by the child to write.
+        window = size if max_output_size is None else max_output_size * 4
+        data = os.pread(stream.fileno(), min(size, window), 0)
+        if size > window:
+            data += os.pread(stream.fileno(), window, max(window, size - window))
+        return truncate_output(data.decode("utf-8", errors="replace").strip(), max_output_size)
+
+    def output(self, identifier: str, max_output_size: int | None) -> CommandOutput:
+        with self.lock:
+            if self.closed:
+                raise ValueError(f"Command no longer available: {identifier}")
+            if self.error is not None:
+                raise RuntimeError(f"Failed to monitor command: {identifier}") from self.error
+            done = self.finished.is_set()
+            return CommandOutput(
+                id=identifier, command=self.command, status="finished" if done else "running",
+                stdout=self._read(self.stdout, max_output_size),
+                stderr=self._read(self.stderr, max_output_size),
+                returncode=self.process.returncode if done else None,
+                duration=_duration((self.ended if self.ended is not None else time.monotonic()) - self.started),
+            )
+
+    def stop(self) -> None:
+        with self.lock:
+            if self.closed:
+                raise ValueError("Command no longer available.")
+            if self.finished.is_set() and self.error is None:
+                return
+            _signal_process(self.process)
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                # Kill surviving descendants even if the shell has already exited.
+                _signal_process(self.process, hard=True)
+            self.process.wait()
+            self.finished.wait()
+
+    def close(self) -> None:
+        self.stop()
+        with self.lock:
+            self.files.close()
+            self.closed = True
+
+
+@dataclass
+class CommandPool(RuntimeEntry[dict[str, CommandJob]]):
+    lock: Lock = field(default_factory=Lock, repr=False, compare=False)
+    closed: bool = False
+
+    @classmethod
+    def of(cls, ctx: ToolCallContext) -> "CommandPool":
+        def create() -> CommandPool:
+            pool = cls({})
+            ctx.agent.hooks.before_finalize.add(lambda _: pool.shutdown())
+            return pool
+        with _POOL_CREATION_LOCK:
+            return ctx.agent.state.get_entry("__bash_jobs", or_else=create)
+
+    def get(self, identifier: str) -> CommandJob:
+        with self.lock:
+            job = self.value.get(identifier)
+        if job is None:
+            raise ValueError(f"Command not found: {identifier}")
+        return job
+
+    def collect(self, identifier: str, max_output_size: int | None) -> CmdExecResult:
+        with self.lock:
+            job = self.value.get(identifier)
+            if job is None:
+                raise ValueError(f"Command not found: {identifier}")
+            output = job.output(identifier, max_output_size)
+            if output["returncode"] is None:
+                raise RuntimeError(f"Command is still running: {identifier}")
+            job.close()
+            del self.value[identifier]
+        return CmdExecResult(
+            stdout=output["stdout"], stderr=output["stderr"],
+            returncode=output["returncode"], duration=output["duration"],
+        )
+
+    def shutdown(self) -> None:
+        with self.lock:
+            self.closed = True
+            jobs = list(self.value.values())
+            self.value.clear()
+        with ExitStack() as cleanup:
+            for job in jobs:
+                cleanup.callback(job.close)
+
+
 def bash(
     ctx: ToolCallContext,
     command: str,
     timeout: float = 300,
-    cd: Optional[str] = None,
-    envs: Optional[dict[str, str]] = None,
-    max_output_size: Optional[int] = 16_000,
+    cd: str | None = None,
+    envs: dict[str, str] | None = None,
+    max_output_size: int | None = 16_000,
 ) -> CmdExecResult:
     """
-    Runs a command and returns its output.
-    Commands are always run through bash (falling back to sh) with inherited environment variables.
-
-    The command runs in the current process working directory, and cannot change it persistently.
-
-    - `envs` can be used to set environment variables for the command.
-    - `cd` can be used to change the directory before running. Prefer setting `cd` argument instead of using `cd` in the command itself.
-    - If the output exceeds `max_output_size` characters, it will be truncated with the initial and final parts preserved, and a `[... truncated output ...]` marker inserted in between. Set to `None` to disable truncation.
-
-    The command is running in a blocking way, will wait until the command finishes before return.
-    Commands will be terminated if they exceed the timeout in seconds.
-
-    if need to run non-blocking command, please use `nohup` or `&` operator and confirm the shell operators.
-    Do remember to check and cleanup the background processes if run non-blocking, the system won't do it for you.
+    Run through bash (or sh), returning output, exit code and duration.
+    `cd` defaults to the workspace; `envs` overrides inherited variables for this call.
+    Timeout (seconds) or cancellation terminates the command.
+    `max_output_size` limits characters per stream, preserving head/tail plus a marker;
+    null disables truncation. For non-blocking execution, use `bash_background`.
     """
-    spec = _parse_command_spec(command)
-    policy = _confirmation_policy(ctx, spec)
-
-    # Determine workdir with safety validation
-    cwd: Path
-    if cd is not None:
-        resolved = resolve_path(ctx, cd, raise_on_invalid=False)
-        if not resolved.valid:
-            raise ValueError(
-                f"Workdir `{cd}` is not within agent's workspace "
-                f"(workdir: {ctx.agent.workspace.workdir}, or its temporary directory)."
-            )
-        cwd = resolved.path
-    else:
-        cwd = ctx.agent.workspace.workdir
-
-    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=cwd)
-    for exe in spec.commands:
-        _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=cwd)
-
-    start_time = time.monotonic()
-    result = run_command(
-        spec.command_line,
-        timeout=timeout,
-        cwd=cwd,
-        env_overrides=envs,
-        cancel_check=ctx.agent.cancel_event.is_set,
-    )
-    elapsed_time = time.monotonic() - start_time
-    elapsed_str = (
-        f"{elapsed_time:.2f}s" if elapsed_time < 60 
-        else f"{int(elapsed_time)//60}m{int(elapsed_time)%60:02d}s"
-        )
-
+    _validate_timeout(timeout)
+    _validate_output_size(max_output_size)
+    cwd = prepare_command(ctx, command, cd)
+    start = time.monotonic()
+    result = run_command(command, timeout, cwd, envs, ctx.agent.cancel_event.is_set)
     return CmdExecResult(
         stdout=truncate_output(result.stdout.strip(), max_output_size),
         stderr=truncate_output(result.stderr.strip(), max_output_size),
-        returncode=result.returncode,
-        duration=elapsed_str
+        returncode=result.returncode, duration=_duration(time.monotonic() - start),
     )
+
+
+def bash_background(
+    ctx: ToolCallContext,
+    command: str,
+    cd: str | None = None,
+    envs: dict[str, str] | None = None,
+) -> CommandHandle:
+    """
+    Start a background command and return its id; same approval/cd/envs rules as `bash`.
+    No time limit; stdin is closed. 
+    Use `bash_read` for output, `bash_wait` for the result, or `bash_stop` to terminate.
+    Output is spooled to disk. The process group is cleaned up on exit or agent
+    finalization; jobs cannot be restored after restart.
+    """
+    cwd = prepare_command(ctx, command, cd)
+    ctx.agent.check_cancel()
+    pool = CommandPool.of(ctx)
+    identifier = uuid.uuid4().hex
+    with pool.lock:
+        if pool.closed:
+            raise RuntimeError("Cannot start a command after its pool has shut down.")
+        pool.value[identifier] = CommandJob.start(command, cwd, envs)
+    return CommandHandle(id=identifier)
+
+
+def bash_list(ctx: ToolCallContext) -> list[CommandInfo]:
+    """List background commands, including finished jobs awaiting result collection."""
+    pool = CommandPool.of(ctx)
+    with pool.lock:
+        return [
+            CommandInfo(id=identifier, command=job.command,
+                        status="finished" if job.finished.is_set() else "running")
+            for identifier, job in pool.value.items()
+        ]
+
+
+def bash_read(
+    ctx: ToolCallContext,
+    identifier: str,
+    max_output_size: int | None = 16_000,
+) -> CommandOutput:
+    """
+    Read cumulative output, status, exit code and duration without waiting or consuming.
+    `max_output_size` limits characters per stream (head/tail plus marker); null returns
+    all output. Decode as UTF-8, replacing invalid bytes.
+    """
+    _validate_output_size(max_output_size)
+    return CommandPool.of(ctx).get(identifier).output(identifier, max_output_size)
+
+
+def bash_wait(
+    ctx: ToolCallContext,
+    identifier: str,
+    timeout: float | None = 300,
+    max_output_size: int | None = 16_000,
+) -> CmdExecResult | WaitTimeout:
+    """
+    Collect the final result and remove the job; output limits are as in `bash_read`.
+    `timeout` is seconds: 0 polls, null waits indefinitely. Timeout returns
+    {"status": "timeout", "id": ..., "notice": ...} without stopping the command.
+    Cancellation stops the command but retains its output.
+    """
+    _validate_timeout(timeout)
+    _validate_output_size(max_output_size)
+    pool = CommandPool.of(ctx)
+    job = pool.get(identifier)
+    deadline = None if timeout is None else time.monotonic() + timeout
+    try:
+        while not job.finished.is_set():
+            ctx.agent.check_cancel()
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                return WaitTimeout(
+                    id=identifier, status="timeout",
+                    notice="The command is still running; call bash_wait again with this id.",
+                )
+            job.finished.wait(0.2 if remaining is None else min(0.2, remaining))
+        ctx.agent.check_cancel()
+    except (CancelledError, KeyboardInterrupt):
+        job.stop()
+        raise
+    return pool.collect(identifier, max_output_size)
+
+
+def bash_stop(ctx: ToolCallContext, identifier: str) -> CommandInfo:
+    """Terminate the command's process group and reap it. Retain output for read/wait."""
+    job = CommandPool.of(ctx).get(identifier)
+    job.stop()
+    return CommandInfo(id=identifier, command=job.command, status="finished")
 
 
 def expose_cmd_tools() -> list[Callable]:
     import rich
     if os.name == "nt":
-        rich.print("[Warning] The bash tool is not available on Windows. Skip registering it.")
+        rich.print("[Warning] The bash tools are not available on Windows. Skip registering them.")
         return []
-    return [bash]
+    return [bash, bash_background, bash_wait, bash_read, bash_list, bash_stop]
