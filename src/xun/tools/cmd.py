@@ -278,7 +278,7 @@ def bash(
     max_output_size: int | None = 16_000,
 ) -> CmdExecResult:
     """
-    Run through bash (or sh), returning output, exit code and duration.
+    Run through bash, returning output, exit code and duration.
     `cd` defaults to the workspace; `envs` overrides inherited variables for this call.
     Timeout (seconds) or cancellation terminates the command.
     `max_output_size` limits characters per stream, preserving head/tail plus a marker;
@@ -308,16 +308,17 @@ def bash_spawn(
     Prefer this over other background execution methods (such as `&` and `nohup`).
 
     Stdout/stderr stream in real time to `bash_<id>.stdout.log` /
-    `bash_<id>.stderr.log` under the workspace temp directory. 
+    `bash_<id>.stderr.log` under the workspace temp directory.
 
-    `bash_kill` to terminate, `bash_running` to list running commands; a finished
-    command is only visible to `bash_wait` until its result is returned.
+    With the id: `bash_wait` to await completion and get the exit code,
+    `bash_running` to list running commands, `bash_kill` to terminate early.
+    A finished command stays visible to `bash_wait` until its result is returned.
     On agent finalization, running commands are killed and all logs are deleted.
     """
     cwd = prepare_command(ctx, command, cd)
     ctx.agent.check_cancel()
     pool = CommandPool.of(ctx)
-    identifier = uuid.uuid4().hex
+    identifier = uuid.uuid4().hex[:8]
     with pool.lock:
         if pool.closed:
             raise RuntimeError("Cannot start a command after its pool has shut down.")
