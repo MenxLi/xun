@@ -16,29 +16,15 @@ AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
 COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
 SAFE_REDIRECTION_TARGETS = {"/dev/null"}
 
-UNSURE_KIND = Literal[
-    "install_package_outside_allowed_paths", 
-    "change_system_status", 
-    "modify_existing_files", 
-    "unable_to_assess", 
-    "other",
-]
-MUST_CONFIRM_UNSURE_KINDS: set[UNSURE_KIND] = {
-    "install_package_outside_allowed_paths",
-    # "change_system_status",   # temporarily excluded
-
-    # deliberate exclusion of "unable_to_assess" for `auto_confirm` to be handy
-}
-class RiskAccessResult(BaseModel):
+class RiskAssessResult(BaseModel):
     policy: Literal['allow', 'unsure', 'reject']
     reason: Optional[str] = None
-    unsure_kind: Optional[UNSURE_KIND] = None
-def agent_risk_access(
+def agent_risk_assess(
     ctx: ToolCallContext,
     cmd: str, 
     workdir: Path,
     extra_allowed_paths: Sequence[Path] = (),
-    ) -> RiskAccessResult:
+    ) -> RiskAssessResult:
     from .. import Agent, NullDisplay, ToolBox
     from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
     base = Agent(
@@ -55,7 +41,7 @@ def agent_risk_access(
     base.config.enable_extensions = False
 
     agent: "Agent[Agent.T.Init]" = base.system(
-        "You are an agent that is responsible for accessing shell commands. "
+        "You are an agent that is responsible for assessing shell commands. "
         "The command will be run under given working directory. "
         "You must determine whether the command is safe to execute (allow), requires user confirmation (unsure), or should be rejected outright (reject).\n\n"
 
@@ -68,22 +54,18 @@ def agent_risk_access(
         "You have tools to read files (only within the allowed paths), "
         "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
         "If you determine that the command is safe, you can output a reason as null. "
-        "Otherwise, you should provide a concise (less than 20 words) reason for your decision, "
-        "moreover, if you are unsure, you should indicate the reason kind from the predefined categories. \n"
+        "Otherwise, you should provide a concise (less than 20 words) reason for your decision. \n"
         "If using tools, restrict to at most 3 tool calls, otherwise return unsure with your current assessment."
     ).instruct(
         f"Given the command: `{cmd}`\n"
         f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
         f"Extra allowed paths: `{extra_allowed_paths}`\n"
-        f"Please determine the risk access policy for this command. "
+        f"Please determine the risk policy for this command. "
     ).initialize()
-    res = agent.execute(schema=RiskAccessResult, max_iterations=8)
+    res = agent.execute(schema=RiskAssessResult, max_iterations=8)
     if res.is_err():
-        return RiskAccessResult(policy='unsure', reason=f"Failed to assess command risk: {res.unwrap_err()}", unsure_kind="unable_to_assess")
-    res_ok = res.unwrap()
-    if res_ok.policy == 'unsure' and res_ok.unsure_kind is None:
-        res_ok.unsure_kind = "other"
-    return res_ok
+        return RiskAssessResult(policy='unsure', reason=f"Failed to assess command risk: {res.unwrap_err()}")
+    return res.unwrap()
 
 @dataclass(frozen=True)
 class CommandSegment:
@@ -407,7 +389,7 @@ def _confirm_command_execution(
     if not policy.requires_confirmation:
         return False
     
-    agent_check_res = agent_risk_access(
+    agent_check_res = agent_risk_assess(
         ctx,
         spec.command_line,
         workdir=workdir_resolved,
@@ -424,8 +406,6 @@ def _confirm_command_execution(
         message += f"\n{policy.rejection_message}"
     if agent_check_res.reason:
         message += f"\n(Risk assessment: {agent_check_res.reason})"
-        if agent_check_res.unsure_kind:
-            message += f" [{agent_check_res.unsure_kind}]"
     outcome = ctx.agent.get_choice(
         "Allow command? (choose 'Other' to reject with a message)", ["Yes", "No"],
         message=message,
@@ -433,10 +413,6 @@ def _confirm_command_execution(
         subtitle=ctx.agent.name,
         default="Yes" if agent_check_res.policy == 'unsure' else "No",
         allow_extra=True,
-        skip_auto_confirm=(
-            agent_check_res.policy == 'unsure'
-            and agent_check_res.unsure_kind in MUST_CONFIRM_UNSURE_KINDS
-            )
     )
     if outcome.choice != "Yes":
         rejection = (

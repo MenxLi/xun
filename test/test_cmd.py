@@ -15,7 +15,7 @@ from xun.tools.cmd import (
     CmdExecResult, CommandPool, bash, bash_background, bash_list, bash_read, bash_stop, bash_wait,
     expose_cmd_tools, run_command, truncate_output,
 )
-from xun.tools.cmd_policy import RiskAccessResult
+from xun.tools.cmd_policy import RiskAssessResult
 from xun.tools.cmd_policy import _confirmation_policy, _parse_command_spec
 from xun.types import CancelledError
 from xun.workspace import DeferredTempDirectory, Workspace
@@ -133,8 +133,8 @@ class CmdExecutionTest(unittest.TestCase):
         self.addCleanup(self.agent.finalize)
         self.ctx = ToolCallContext(self.agent, "bash", None)
         self.assessment = self.enterContext(patch(
-            "xun.tools.cmd_policy.agent_risk_access",
-            return_value=RiskAccessResult(policy="allow"),
+            "xun.tools.cmd_policy.agent_risk_assess",
+            return_value=RiskAssessResult(policy="allow"),
         ))
 
     def command(self, code: str) -> str:
@@ -401,7 +401,7 @@ class CmdExecutionTest(unittest.TestCase):
         self.assertEqual(bash_list(self.ctx), [])
 
     def test_rejected_commands_and_invalid_cwd_never_spawn(self) -> None:
-        self.assessment.return_value = RiskAccessResult(policy="reject", reason="test rejection")
+        self.assessment.return_value = RiskAssessResult(policy="reject", reason="test rejection")
         self.enterContext(patch.object(self.agent.display, "get_choice", return_value="No"))
         with patch("xun.tools.cmd.subprocess.Popen") as spawn:
             for tool in (bash, bash_background):
