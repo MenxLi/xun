@@ -116,13 +116,10 @@ const items = computed<StreamItem[]>(() => {
       if (last?.kind === 'tools') last.tools.push(item)
       else current.steps.push({ kind: 'tools', key: `steps-${item.key}`, tools: [item] })
       current.last = data
-    } else if (data.name === 'ConfirmEvent' && data.payload.source === 'auto') {
-      const current = ensureActivity(data, index)
-      current.autoApprovals += 1
-      current.last = data
-      addPreview(batch!, data, index, data.payload.prompt)
     } else if (data.name === 'ConfirmEvent') {
       const current = ensureActivity(data, index)
+      // Auto-confirms keep the header count and render as a collapsed pill inside the batch.
+      if (data.payload.source === 'auto') current.autoApprovals += 1
       current.steps.push({ kind: 'confirm', key: `confirm-${index}`, event: data })
       current.last = data
       addPreview(batch!, data, index, data.payload.prompt)
@@ -293,10 +290,8 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
       </details>
 
       <template v-else>
-        <ConfirmPill v-if="item.data.name === 'ConfirmEvent'" :event="item.data" />
-
         <div
-          v-else-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'"
+          v-if="item.data.name === 'AgentBindEvent' || item.data.name === 'AgentUnbindEvent'"
           class="agent-lifecycle"
           :class="{ bound: item.data.name === 'AgentBindEvent' }"
           role="note"

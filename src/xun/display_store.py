@@ -71,6 +71,7 @@ class RenderStep:
     choice: str = ""
     message: Optional[str] = None
     time: str = ""
+    source: str = "user"
 
 
 @dataclass
@@ -227,12 +228,12 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
                 close_batch()
                 blocks.append(Block(kind="lifecycle", level="unbound", name=event.agent.name, time=stamp))
             case ConfirmEvent() as p:
+                # Auto-confirms keep the batch counter and still render as a pill, matching the web UI.
                 activity = open_activity(event)
                 if p.source == "auto":
                     activity.approvals += 1
-                else:
-                    activity.steps.append(RenderStep(kind="confirm", prompt=p.prompt, choices=tuple(p.choices),
-                                                     choice=p.choice, message=p.message, time=stamp))
+                activity.steps.append(RenderStep(kind="confirm", prompt=p.prompt, choices=tuple(p.choices),
+                                                 choice=p.choice, message=p.message, time=stamp, source=p.source))
             case HTMLInfoEvent() as p:
                 close_batch()
                 blocks.append(Block(kind="html_info", title=p.title, html=p.html, time=stamp))

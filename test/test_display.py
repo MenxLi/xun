@@ -356,7 +356,9 @@ class RenderHistoryAsHtmlTest(unittest.TestCase):
         # user message stands alone; the auto-confirm and tool call collapse into one batch
         self.assertIn("activity-batch", html)
         self.assertIn("1 auto-confirmed", html)
-        self.assertIn("1 details", html)
+        # the auto-confirm renders both as a header count and as a pill alongside the tool call
+        self.assertIn("2 details", html)
+        self.assertIn("Auto-confirmed", html)
         self.assertIn("done", html)
 
     def test_agent_lifecycle_events_render_as_pills(self) -> None:
