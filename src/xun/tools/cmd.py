@@ -1,6 +1,5 @@
 """Blocking commands and agent-owned background bash jobs."""
 
-from contextlib import ExitStack
 from dataclasses import dataclass, field
 import math
 import os
@@ -9,10 +8,9 @@ import shlex
 import shutil
 import signal
 import subprocess
-from tempfile import TemporaryFile
 from threading import Event, Lock, Thread
 import time
-from typing import BinaryIO, Callable, Literal, Sequence
+from typing import Callable, Literal, Sequence
 import uuid
 
 from typing_extensions import TypedDict
@@ -32,24 +30,29 @@ class CmdExecResult(TypedDict):
     duration: str
 
 
-class CommandHandle(TypedDict):
+class SpawnResult(TypedDict):
     id: str
+    stdout_log: str
+    stderr_log: str
 
 
-class CommandInfo(CommandHandle):
+class RunningCommand(TypedDict):
+    id: str
     command: str
-    status: Literal["running", "finished"]
+    stdout_log: str
+    stderr_log: str
+    uptime: str
 
 
-class CommandOutput(CommandInfo):
-    stdout: str
-    stderr: str
-    returncode: int | None
+class CommandResult(TypedDict):
+    stdout_log: str
+    stderr_log: str
+    returncode: int
     duration: str
 
 
-class WaitTimeout(CommandHandle):
-    status: Literal["timeout"]
+class StillRunning(TypedDict):
+    status: Literal["running"]
     notice: str
 
 
@@ -146,76 +149,56 @@ def run_command(
 class CommandJob:
     command: str
     process: subprocess.Popen[bytes]
-    stdout: BinaryIO
-    stderr: BinaryIO
-    files: ExitStack
+    stdout_log: Path
+    stderr_log: Path
     started: float
-    finished: Event = field(default_factory=Event)
-    lock: Lock = field(default_factory=Lock)
+    done: Event = field(default_factory=Event)
     ended: float | None = None
     error: OSError | None = None
-    closed: bool = False
+    stop_lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     @classmethod
-    def start(cls, command: str, cwd: Path, envs: dict[str, str] | None) -> "CommandJob":
-        with ExitStack() as files:
-            stdout = files.enter_context(TemporaryFile())
-            stderr = files.enter_context(TemporaryFile())
-            started = time.monotonic()
-            process = subprocess.Popen(
-                command, shell=True, executable=shutil.which("bash") or "/bin/sh",
-                stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
-                cwd=cwd, env=_environment(envs),
-                start_new_session=True,
-            )  # nosec B602
-            job = cls(command, process, stdout, stderr, files.pop_all(), started)
+    def start(
+        cls, identifier: str, command: str, cwd: Path,
+        envs: dict[str, str] | None, log_dir: Path,
+    ) -> "CommandJob":
+        stdout_log = log_dir / f"bash_{identifier}.stdout.log"
+        stderr_log = log_dir / f"bash_{identifier}.stderr.log"
+        started = time.monotonic()
+        try:
+            with open(stdout_log, "wb") as stdout, open(stderr_log, "wb") as stderr:
+                process = subprocess.Popen(
+                    command, shell=True, executable=shutil.which("bash") or "/bin/sh",
+                    stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                    cwd=cwd, env=_environment(envs),
+                    start_new_session=True,
+                )  # nosec B602
+        except OSError:
+            stdout_log.unlink(missing_ok=True)
+            stderr_log.unlink(missing_ok=True)
+            raise
+        job = cls(command, process, stdout_log, stderr_log, started)
         try:
             Thread(target=job._watch, name=f"bash-{process.pid}", daemon=True).start()
         except RuntimeError:
-            job.finished.set()
-            job.close()
+            job.stop()
             raise
         return job
 
     def _watch(self) -> None:
         try:
             self.process.wait()
+            # Kill surviving descendants even if the shell has already exited.
             _signal_process(self.process, hard=True)
         except OSError as error:
             self.error = error
         finally:
             self.ended = time.monotonic()
-            self.finished.set()
-
-    def _read(self, stream: BinaryIO, max_output_size: int | None) -> str:
-        size = os.fstat(stream.fileno()).st_size
-        # pread does not move the shared file offset used by the child to write.
-        window = size if max_output_size is None else max_output_size * 4
-        data = os.pread(stream.fileno(), min(size, window), 0)
-        if size > window:
-            data += os.pread(stream.fileno(), window, max(window, size - window))
-        return truncate_output(data.decode("utf-8", errors="replace").strip(), max_output_size)
-
-    def output(self, identifier: str, max_output_size: int | None) -> CommandOutput:
-        with self.lock:
-            if self.closed:
-                raise ValueError(f"Command no longer available: {identifier}")
-            if self.error is not None:
-                raise RuntimeError(f"Failed to monitor command: {identifier}") from self.error
-            done = self.finished.is_set()
-            return CommandOutput(
-                id=identifier, command=self.command, status="finished" if done else "running",
-                stdout=self._read(self.stdout, max_output_size),
-                stderr=self._read(self.stderr, max_output_size),
-                returncode=self.process.returncode if done else None,
-                duration=_duration((self.ended if self.ended is not None else time.monotonic()) - self.started),
-            )
+            self.done.set()
 
     def stop(self) -> None:
-        with self.lock:
-            if self.closed:
-                raise ValueError("Command no longer available.")
-            if self.finished.is_set() and self.error is None:
+        with self.stop_lock:
+            if self.done.is_set() and self.error is None:
                 return
             _signal_process(self.process)
             try:
@@ -223,22 +206,31 @@ class CommandJob:
             except subprocess.TimeoutExpired:
                 pass
             finally:
-                # Kill surviving descendants even if the shell has already exited.
                 _signal_process(self.process, hard=True)
-            self.process.wait()
-            self.finished.wait()
+            self.done.wait()
 
-    def close(self) -> None:
-        self.stop()
-        with self.lock:
-            self.files.close()
-            self.closed = True
+    def running_info(self, identifier: str) -> RunningCommand:
+        return RunningCommand(
+            id=identifier, command=self.command,
+            stdout_log=str(self.stdout_log), stderr_log=str(self.stderr_log),
+            uptime=_duration(time.monotonic() - self.started),
+        )
+
+    def result(self) -> CommandResult:
+        if self.error is not None:
+            raise RuntimeError(f"Failed to monitor command: {self.command}") from self.error
+        return CommandResult(
+            stdout_log=str(self.stdout_log), stderr_log=str(self.stderr_log),
+            returncode=self.process.returncode,
+            duration=_duration((self.ended if self.ended is not None else time.monotonic()) - self.started),
+        )
 
 
 @dataclass
 class CommandPool(RuntimeEntry[dict[str, CommandJob]]):
     lock: Lock = field(default_factory=Lock, repr=False, compare=False)
     closed: bool = False
+    log_files: set[Path] = field(default_factory=set)
 
     @classmethod
     def of(cls, ctx: ToolCallContext) -> "CommandPool":
@@ -256,29 +248,25 @@ class CommandPool(RuntimeEntry[dict[str, CommandJob]]):
             raise ValueError(f"Command not found: {identifier}")
         return job
 
-    def collect(self, identifier: str, max_output_size: int | None) -> CmdExecResult:
+    def running(self) -> list[RunningCommand]:
         with self.lock:
-            job = self.value.get(identifier)
-            if job is None:
-                raise ValueError(f"Command not found: {identifier}")
-            output = job.output(identifier, max_output_size)
-            if output["returncode"] is None:
-                raise RuntimeError(f"Command is still running: {identifier}")
-            job.close()
-            del self.value[identifier]
-        return CmdExecResult(
-            stdout=output["stdout"], stderr=output["stderr"],
-            returncode=output["returncode"], duration=output["duration"],
-        )
+            return [job.running_info(identifier)
+                    for identifier, job in self.value.items() if not job.done.is_set()]
+
+    def remove(self, identifier: str) -> None:
+        with self.lock:
+            self.value.pop(identifier, None)
 
     def shutdown(self) -> None:
         with self.lock:
             self.closed = True
             jobs = list(self.value.values())
             self.value.clear()
-        with ExitStack() as cleanup:
-            for job in jobs:
-                cleanup.callback(job.close)
+            logs, self.log_files = self.log_files, set()
+        for job in jobs:
+            job.stop()
+        for log in logs:
+            log.unlink(missing_ok=True)
 
 
 def bash(
@@ -294,7 +282,7 @@ def bash(
     `cd` defaults to the workspace; `envs` overrides inherited variables for this call.
     Timeout (seconds) or cancellation terminates the command.
     `max_output_size` limits characters per stream, preserving head/tail plus a marker;
-    null disables truncation. For non-blocking execution, use `bash_background`.
+    null disables truncation. For non-blocking execution, use `bash_spawn`.
     """
     _validate_timeout(timeout)
     _validate_output_size(max_output_size)
@@ -308,19 +296,23 @@ def bash(
     )
 
 
-def bash_background(
+def bash_spawn(
     ctx: ToolCallContext,
     command: str,
     cd: str | None = None,
     envs: dict[str, str] | None = None,
-) -> CommandHandle:
+) -> SpawnResult:
     """
-    Start a background command and return its id; same approval/cd/envs rules as `bash`.
-    No time limit; stdin is closed. 
+    Start a background command and return its id and log file paths; same
+    approval/cd/envs rules as `bash`. No time limit; stdin is closed.
     Prefer this over other background execution methods (such as `&` and `nohup`).
-    Use `bash_read` for output, `bash_wait` for the result, or `bash_stop` to terminate.
-    Output is spooled to disk. The process group is cleaned up on exit or agent
-    finalization; jobs cannot be restored after restart.
+
+    Stdout/stderr stream in real time to `bash_<id>.stdout.log` /
+    `bash_<id>.stderr.log` under the workspace temp directory. 
+
+    `bash_kill` to terminate, `bash_running` to list running commands; a finished
+    command is only visible to `bash_wait` until its result is returned.
+    On agent finalization, running commands are killed and all logs are deleted.
     """
     cwd = prepare_command(ctx, command, cd)
     ctx.agent.check_cancel()
@@ -329,74 +321,61 @@ def bash_background(
     with pool.lock:
         if pool.closed:
             raise RuntimeError("Cannot start a command after its pool has shut down.")
-        pool.value[identifier] = CommandJob.start(command, cwd, envs)
-    return CommandHandle(id=identifier)
+        job = CommandJob.start(identifier, command, cwd, envs, ctx.agent.workspace.tempdir.path)
+        pool.value[identifier] = job
+        pool.log_files.update((job.stdout_log, job.stderr_log))
+    return SpawnResult(id=identifier, stdout_log=str(job.stdout_log), stderr_log=str(job.stderr_log))
 
 
-def bash_list(ctx: ToolCallContext) -> list[CommandInfo]:
-    """List background commands, including finished jobs awaiting result collection."""
-    pool = CommandPool.of(ctx)
-    with pool.lock:
-        return [
-            CommandInfo(id=identifier, command=job.command,
-                        status="finished" if job.finished.is_set() else "running")
-            for identifier, job in pool.value.items()
-        ]
-
-
-def bash_read(
-    ctx: ToolCallContext,
-    identifier: str,
-    max_output_size: int | None = 16_000,
-) -> CommandOutput:
-    """
-    Read cumulative output, status, exit code and duration without waiting or consuming.
-    `max_output_size` limits characters per stream (head/tail plus marker); null returns
-    all output. Decode as UTF-8, replacing invalid bytes.
-    """
-    _validate_output_size(max_output_size)
-    return CommandPool.of(ctx).get(identifier).output(identifier, max_output_size)
+def bash_running(ctx: ToolCallContext) -> list[RunningCommand]:
+    """List the background commands currently running, with id, command, log paths and uptime."""
+    return CommandPool.of(ctx).running()
 
 
 def bash_wait(
     ctx: ToolCallContext,
     identifier: str,
-    timeout: float | None = 300,
-    max_output_size: int | None = 16_000,
-) -> CmdExecResult | WaitTimeout:
+    timeout: float | None = 600,
+) -> CommandResult | StillRunning:
     """
-    Collect the final result and remove the job; output limits are as in `bash_read`.
-    `timeout` is seconds: 0 polls, null waits indefinitely. Timeout returns
-    {"status": "timeout", "id": ..., "notice": ...} without stopping the command.
-    Cancellation stops the command but retains its output.
+    Wait for the command to exit and return its exit code, duration and log paths,
+    forgetting the command (the logs stay until agent finalization). Read them for output.
+
+    `timeout` is seconds: 0 polls, null waits indefinitely.
+    While still running, return {"status": "running", ...} without stopping the command.
     """
     _validate_timeout(timeout)
-    _validate_output_size(max_output_size)
     pool = CommandPool.of(ctx)
     job = pool.get(identifier)
     deadline = None if timeout is None else time.monotonic() + timeout
     try:
-        while not job.finished.is_set():
+        while not job.done.is_set():
             ctx.agent.check_cancel()
             remaining = None if deadline is None else deadline - time.monotonic()
             if remaining is not None and remaining <= 0:
-                return WaitTimeout(
-                    id=identifier, status="timeout",
+                return StillRunning(
+                    status="running",
                     notice="The command is still running; call bash_wait again with this id.",
                 )
-            job.finished.wait(0.2 if remaining is None else min(0.2, remaining))
+            job.done.wait(0.2 if remaining is None else min(0.2, remaining))
         ctx.agent.check_cancel()
     except (CancelledError, KeyboardInterrupt):
         job.stop()
         raise
-    return pool.collect(identifier, max_output_size)
+    result = job.result()
+    pool.remove(identifier)
+    return result
 
 
-def bash_stop(ctx: ToolCallContext, identifier: str) -> CommandInfo:
-    """Terminate the command's process group and reap it. Retain output for read/wait."""
-    job = CommandPool.of(ctx).get(identifier)
+def bash_kill(ctx: ToolCallContext, identifier: str) -> CommandResult:
+    """Terminate the command's process group and return the same result as `bash_wait`,
+    forgetting the command (the logs stay until agent finalization)."""
+    pool = CommandPool.of(ctx)
+    job = pool.get(identifier)
     job.stop()
-    return CommandInfo(id=identifier, command=job.command, status="finished")
+    result = job.result()
+    pool.remove(identifier)
+    return result
 
 
 def expose_cmd_tools() -> list[Callable]:
@@ -404,4 +383,4 @@ def expose_cmd_tools() -> list[Callable]:
     if os.name == "nt":
         rich.print("[Warning] The bash tools are not available on Windows. Skip registering them.")
         return []
-    return [bash, bash_background, bash_wait, bash_read, bash_list, bash_stop]
+    return [bash, bash_spawn, bash_wait, bash_running, bash_kill]

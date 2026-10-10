@@ -5,6 +5,7 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -12,7 +13,7 @@ from xun import Agent, NullDisplay, ToolBox
 from xun.toolcall import ToolCallContext
 from xun.agent_state import AgentState
 from xun.tools.cmd import (
-    CmdExecResult, CommandPool, bash, bash_background, bash_list, bash_read, bash_stop, bash_wait,
+    CmdExecResult, CommandPool, CommandResult, bash, bash_spawn, bash_kill, bash_running, bash_wait,
     expose_cmd_tools, run_command, truncate_output,
 )
 from xun.tools.cmd_policy import RiskAssessResult
@@ -141,19 +142,25 @@ class CmdExecutionTest(unittest.TestCase):
         return shlex.join([sys.executable, "-u", "-c", code])
 
     def start(self, code: str) -> str:
-        return bash_background(self.ctx, self.command(code))["id"]
+        return bash_spawn(self.ctx, self.command(code))["id"]
 
-    def wait(
-        self, identifier: str, timeout: float | None = 5, max_output_size: int | None = 16_000,
-    ) -> CmdExecResult:
-        result = bash_wait(self.ctx, identifier, timeout=timeout, max_output_size=max_output_size)
+    def logs(self, identifier: str) -> tuple[Path, Path]:
+        tempdir = self.agent.workspace.tempdir.path
+        return (tempdir / f"bash_{identifier}.stdout.log",
+                tempdir / f"bash_{identifier}.stderr.log")
+
+    def read_log(self, identifier: str, stream: int = 0) -> str:
+        return self.logs(identifier)[stream].read_text(errors="replace").strip()
+
+    def wait(self, identifier: str, timeout: float | None = 5) -> CommandResult:
+        result = bash_wait(self.ctx, identifier, timeout=timeout)
         assert "returncode" in result, result
         return result
 
     def await_output(self, identifier: str, expected: str) -> None:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
-            if expected in bash_read(self.ctx, identifier)["stdout"]:
+            if expected in self.read_log(identifier):
                 return
             time.sleep(0.01)
         self.fail(f"Command did not produce {expected!r}")
@@ -190,14 +197,16 @@ class CmdExecutionTest(unittest.TestCase):
         for timeout in (0, 0.02):
             result = bash_wait(self.ctx, identifier, timeout=timeout)
             assert "status" in result
-            self.assertEqual(result["status"], "timeout")
-            self.assertEqual(result["id"], identifier)
-            self.assertEqual(set(result), {"id", "status", "notice"})
+            self.assertEqual(result["status"], "running")
+            self.assertEqual(set(result), {"status", "notice"})
             self.assertIsNone(job.process.poll())
-        self.assertEqual(bash_list(self.ctx)[0]["status"], "running")
-        self.assertIsNone(bash_read(self.ctx, identifier)["returncode"])
+        [info] = bash_running(self.ctx)
+        self.assertEqual(info["id"], identifier)
+        self.assertEqual(Path(info["stdout_log"]), self.logs(identifier)[0])
+        self.assertEqual(Path(info["stderr_log"]), self.logs(identifier)[1])
+        self.assertRegex(info["uptime"], r"^\d+(\.\d+)?s$|^\d+m\d{2}s$")
 
-    def test_read_is_cumulative_and_does_not_move_child_write_offset(self) -> None:
+    def test_logs_stream_while_running_and_wait_returns_result_with_logs(self) -> None:
         gate = self.cwd / "gate"
         identifier = self.start(
             "import pathlib, time; print('first'); "
@@ -205,99 +214,90 @@ class CmdExecutionTest(unittest.TestCase):
             "\nwhile not gate.exists(): time.sleep(0.01)\nprint('last')"
         )
         self.await_output(identifier, "first")
-        for _ in range(3):
-            self.assertEqual(bash_read(self.ctx, identifier)["stdout"], "first")
+        self.assertEqual(self.read_log(identifier), "first")
         gate.touch()
+        stdout_log, stderr_log = self.logs(identifier)
         result = self.wait(identifier, timeout=None)
-        self.assertEqual(result["stdout"], "first\nlast")
-        self.assertEqual(result["returncode"], 0)
-        self.assertEqual(bash_list(self.ctx), [])
+        self.assertEqual(result, {
+            "stdout_log": str(stdout_log), "stderr_log": str(stderr_log),
+            "returncode": 0, "duration": result["duration"],
+        })
+        self.assertEqual(self.read_log(identifier), "first\nlast")
+        self.assertEqual(bash_running(self.ctx), [])
 
     def test_background_environment_cwd_and_nonzero_exit(self) -> None:
         (self.cwd / "child").mkdir()
-        identifier = bash_background(
+        spawn = bash_spawn(
             self.ctx,
             self.command("import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
                          "print('error', file=sys.stderr); sys.exit(9)"),
             cd="child", envs={"XUN_TEST": "value"},
-        )["id"]
-        result = self.wait(identifier)
-        self.assertEqual(result["stdout"], f"{self.cwd / 'child'}\nvalue")
-        self.assertEqual(result["stderr"], "error")
-        self.assertEqual(result["returncode"], 9)
+        )
+        identifier = spawn["id"]
+        self.assertEqual(Path(spawn["stdout_log"]), self.logs(identifier)[0])
+        self.assertEqual(Path(spawn["stderr_log"]), self.logs(identifier)[1])
+        self.assertEqual(self.wait(identifier)["returncode"], 9)
+        self.assertEqual(self.read_log(identifier), f"{self.cwd / 'child'}\nvalue")
+        self.assertEqual(self.read_log(identifier, stream=1), "error")
 
-    def test_finished_jobs_remain_until_collected_and_release_files(self) -> None:
+    def test_finished_jobs_stay_waitable_until_result_returned(self) -> None:
         identifier = self.start("print('done')")
-        pool = CommandPool.of(self.ctx)
-        job = pool.get(identifier)
-        self.assertTrue(job.finished.wait(5))
-        self.assertEqual(bash_list(self.ctx)[0]["status"], "finished")
-        snapshot = bash_read(self.ctx, identifier)
-        self.assertEqual(snapshot["status"], "finished")
-        self.assertEqual(snapshot["returncode"], 0)
-        self.assertEqual(snapshot["stdout"], "done")
-        time.sleep(0.02)
-        self.assertEqual(bash_read(self.ctx, identifier)["duration"], snapshot["duration"])
-        self.assertEqual(set(snapshot), {
-            "id", "command", "status", "stdout", "stderr", "returncode", "duration",
-        })
+        job = CommandPool.of(self.ctx).get(identifier)
+        self.assertTrue(job.done.wait(5))
+        self.assertEqual(bash_running(self.ctx), [])
         with patch("xun.tools.cmd._signal_process") as signal_process:
-            bash_stop(self.ctx, identifier)
+            kill = bash_kill(self.ctx, identifier)
             signal_process.assert_not_called()
-        result = self.wait(identifier, timeout=0)
-        self.assertEqual(result["stdout"], "done")
-        self.assertTrue(job.stdout.closed)
-        self.assertTrue(job.stderr.closed)
+        self.assertEqual(kill["returncode"], 0)
+        self.assertEqual(self.logs(identifier), (Path(kill["stdout_log"]), Path(kill["stderr_log"])))
+        self.assertEqual(self.read_log(identifier), "done")
+        self.assertEqual(self.logs(identifier)[0].stat().st_size, len("done\n"))
         with self.assertRaisesRegex(ValueError, "Command not found"):
-            bash_read(self.ctx, identifier)
+            bash_wait(self.ctx, identifier, timeout=0)
 
-    def test_large_output_spools_both_streams_and_bounded_reads_preserve_head_tail(self) -> None:
+    def test_large_output_streams_unbounded_to_logs(self) -> None:
         identifier = self.start(
             "import sys; print('HEAD' + 'x' * 1_000_000 + 'TAIL'); "
             "print('ERRHEAD' + 'y' * 1_000_000 + 'ERRTAIL', file=sys.stderr)"
         )
-        self.assertTrue(CommandPool.of(self.ctx).get(identifier).finished.wait(5))
-        with patch("xun.tools.cmd.os.pread", wraps=os.pread) as pread:
-            snapshot = bash_read(self.ctx, identifier, max_output_size=32)
-        self.assertTrue(all(call.args[1] <= 128 for call in pread.call_args_list))
-        marker = "\n[... truncated output ...]\n"
-        self.assertEqual(snapshot["stdout"], "HEAD" + "x" * 12 + marker + "x" * 12 + "TAIL")
-        self.assertEqual(snapshot["stderr"], "ERRHEAD" + "y" * 9 + marker + "y" * 9 + "ERRTAIL")
-        result = self.wait(identifier, max_output_size=None)
-        self.assertEqual(len(result["stdout"]), 1_000_008)
-        self.assertEqual(len(result["stderr"]), 1_000_014)
+        self.assertTrue(CommandPool.of(self.ctx).get(identifier).done.wait(5))
+        self.assertEqual(self.wait(identifier)["returncode"], 0)
+        self.assertEqual(len(self.read_log(identifier)), 1_000_008)
+        self.assertEqual(len(self.read_log(identifier, stream=1)), 1_000_014)
 
     def test_output_truncation_handles_small_limits_and_unicode(self) -> None:
         self.assertEqual(truncate_output("abcdef", 1), "a\n[... truncated output ...]\n")
-        identifier = self.start("print('\\u4e2d' * 100 + '\\U0001f642' * 100)")
-        result = self.wait(identifier, max_output_size=5)
-        self.assertEqual(result["stdout"], "\u4e2d" * 3 + "\n[... truncated output ...]\n" + "\U0001f642" * 2)
+        self.assertEqual(
+            truncate_output("\u4e2d" * 100 + "\U0001f642" * 100, 5),
+            "\u4e2d" * 3 + "\n[... truncated output ...]\n" + "\U0001f642" * 2,
+        )
 
-    def test_stop_reaps_process_and_preserves_output(self) -> None:
+    def test_kill_reaps_process_returns_result_and_untracks(self) -> None:
         identifier = self.start("import time; print('ready'); time.sleep(60)")
         self.await_output(identifier, "ready")
         job = CommandPool.of(self.ctx).get(identifier)
-        self.assertEqual(bash_stop(self.ctx, identifier)["status"], "finished")
-        self.assertIsNotNone(job.process.poll())
-        self.assertEqual(bash_read(self.ctx, identifier)["stdout"], "ready")
-        self.assertEqual(bash_stop(self.ctx, identifier)["status"], "finished")
-        result = self.wait(identifier)
+        result = bash_kill(self.ctx, identifier)
         self.assertNotEqual(result["returncode"], 0)
+        self.assertEqual(Path(result["stdout_log"]), self.logs(identifier)[0])
+        self.assertIsNotNone(job.process.poll())
+        self.assertEqual(self.read_log(identifier), "ready")
+        self.assertEqual(bash_running(self.ctx), [])
+        with self.assertRaisesRegex(ValueError, "Command not found"):
+            bash_kill(self.ctx, identifier)
 
-    def test_stop_escalates_when_sigterm_is_ignored(self) -> None:
+    def test_kill_escalates_when_sigterm_is_ignored(self) -> None:
         identifier = self.start(
             "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
             "print('ready'); time.sleep(60)"
         )
         self.await_output(identifier, "ready")
         job = CommandPool.of(self.ctx).get(identifier)
-        bash_stop(self.ctx, identifier)
-        self.assertTrue(job.finished.is_set())
+        self.assertNotEqual(bash_kill(self.ctx, identifier)["returncode"], 0)
+        self.assertTrue(job.done.is_set())
         self.assertIsNotNone(job.process.poll())
-        bash_wait(self.ctx, identifier)
 
     @unittest.skipUnless(sys.platform == "linux", "uses /proc to distinguish zombies")
-    def test_stop_kills_surviving_descendants(self) -> None:
+    def test_kill_kills_surviving_descendants(self) -> None:
         ready = self.cwd / "child-ready"
         child_code = (
             "import signal, pathlib, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -310,10 +310,10 @@ class CmdExecutionTest(unittest.TestCase):
             "print(child.pid); time.sleep(60)"
         )
         deadline = time.monotonic() + 5
-        while not bash_read(self.ctx, identifier)["stdout"] and time.monotonic() < deadline:
+        while not self.read_log(identifier) and time.monotonic() < deadline:
             time.sleep(0.01)
-        pid = int(bash_read(self.ctx, identifier)["stdout"])
-        bash_stop(self.ctx, identifier)
+        pid = int(self.read_log(identifier))
+        bash_kill(self.ctx, identifier)
         proc_status = Path(f"/proc/{pid}/stat")
         deadline = time.monotonic() + 5
         while proc_status.exists() and time.monotonic() < deadline:
@@ -329,8 +329,10 @@ class CmdExecutionTest(unittest.TestCase):
         with self.assertRaises(CancelledError):
             bash_wait(self.ctx, identifier)
         self.agent.cancel_event.event.clear()
-        self.assertEqual(bash_read(self.ctx, identifier)["status"], "finished")
-        self.assertEqual(self.wait(identifier)["stdout"], "ready")
+        self.assertTrue(CommandPool.of(self.ctx).get(identifier).done.wait(5))
+        self.assertEqual(bash_running(self.ctx), [])
+        self.assertEqual(self.read_log(identifier), "ready")
+        self.assertNotEqual(self.wait(identifier)["returncode"], 0)
 
     def test_finalize_cleans_all_jobs_and_temporary_files(self) -> None:
         identifiers = [self.start("import time; time.sleep(60)") for _ in range(2)]
@@ -338,16 +340,16 @@ class CmdExecutionTest(unittest.TestCase):
         jobs = [pool.get(identifier) for identifier in identifiers]
         self.agent.finalize()
         self.assertEqual(pool.value, {})
-        for job in jobs:
+        for identifier, job in zip(identifiers, jobs):
             self.assertIsNotNone(job.process.poll())
-            self.assertTrue(job.finished.is_set())
-            self.assertTrue(job.stdout.closed)
-            self.assertTrue(job.stderr.closed)
+            self.assertTrue(job.done.is_set())
+            for log in self.logs(identifier):
+                self.assertFalse(log.exists())
         with self.assertRaisesRegex(RuntimeError, "pool has shut down"):
-            bash_background(self.ctx, "echo no")
+            bash_spawn(self.ctx, "echo no")
 
     def test_invalid_identifiers_report_errors(self) -> None:
-        for tool in (bash_read, bash_wait, bash_stop):
+        for tool in (bash_wait, bash_kill):
             with self.subTest(tool=tool.__name__):
                 with self.assertRaisesRegex(ValueError, "Command not found"):
                     tool(self.ctx, "unknown")
@@ -357,33 +359,34 @@ class CmdExecutionTest(unittest.TestCase):
         other = Agent.inherit(self.agent).initialize()
         self.addCleanup(other.finalize)
         other_ctx = ToolCallContext(other, "bash", None)
-        self.assertEqual(bash_list(other_ctx), [])
+        self.assertEqual(bash_running(other_ctx), [])
         with self.assertRaisesRegex(ValueError, "Command not found"):
-            bash_read(other_ctx, identifier)
+            bash_wait(other_ctx, identifier, timeout=0)
         self.assertNotIn("__bash_jobs", self.agent.state.to_json())
-        self.assertEqual(self.wait(identifier)["stdout"], "done")
+        self.assertEqual(self.wait(identifier)["returncode"], 0)
 
     def test_concurrent_starts_share_one_pool(self) -> None:
         with ThreadPoolExecutor(max_workers=4) as executor:
-            handles = list(executor.map(lambda _: bash_background(self.ctx, "echo done"), range(8)))
+            handles = list(executor.map(lambda _: bash_spawn(self.ctx, "echo done"), range(8)))
         identifiers = {handle["id"] for handle in handles}
-        self.assertEqual({info["id"] for info in bash_list(self.ctx)}, identifiers)
+        self.assertEqual(set(CommandPool.of(self.ctx).value), identifiers)
         for identifier in identifiers:
-            self.assertEqual(self.wait(identifier)["stdout"], "done")
-        self.assertEqual(bash_list(self.ctx), [])
+            self.assertEqual(self.wait(identifier)["returncode"], 0)
+        self.assertEqual(bash_running(self.ctx), [])
 
     def test_background_stdin_is_closed(self) -> None:
         identifier = self.start("import sys; print(repr(sys.stdin.read()))")
-        self.assertEqual(self.wait(identifier)["stdout"], "''")
+        self.assertEqual(self.wait(identifier)["returncode"], 0)
+        self.assertEqual(self.read_log(identifier), "''")
 
     def test_cancelled_start_does_not_spawn(self) -> None:
         self.agent.cancel_event.event.set()
         with patch("xun.tools.cmd.subprocess.Popen") as spawn:
             with self.assertRaises(CancelledError):
-                bash_background(self.ctx, "echo no")
+                bash_spawn(self.ctx, "echo no")
             spawn.assert_not_called()
         self.agent.cancel_event.event.clear()
-        self.assertEqual(bash_list(self.ctx), [])
+        self.assertEqual(bash_running(self.ctx), [])
 
     def test_invalid_options_do_not_start_jobs(self) -> None:
         for timeout in (-1, float("nan"), float("inf")):
@@ -394,41 +397,28 @@ class CmdExecutionTest(unittest.TestCase):
         for limit in (0, -1):
             with self.assertRaises(ValueError):
                 bash(self.ctx, "echo no", max_output_size=limit)
-            with self.assertRaises(ValueError):
-                bash_read(self.ctx, "unknown", max_output_size=limit)
-            with self.assertRaises(ValueError):
-                bash_wait(self.ctx, "unknown", max_output_size=limit)
-        self.assertEqual(bash_list(self.ctx), [])
+        self.assertEqual(bash_running(self.ctx), [])
 
     def test_rejected_commands_and_invalid_cwd_never_spawn(self) -> None:
         self.assessment.return_value = RiskAssessResult(policy="reject", reason="test rejection")
         self.enterContext(patch.object(self.agent.display, "get_choice", return_value="No"))
         with patch("xun.tools.cmd.subprocess.Popen") as spawn:
-            for tool in (bash, bash_background):
+            for tool in (bash, bash_spawn):
                 with self.subTest(tool=tool.__name__):
                     with self.assertRaisesRegex(RuntimeError, "rejected by confirmation"):
                         tool(self.ctx, self.command("print('no')"))
                     with self.assertRaisesRegex(ValueError, "not within agent"):
                         tool(self.ctx, "echo no", cd=str(self.cwd.parent))
             spawn.assert_not_called()
-        self.assertEqual(bash_list(self.ctx), [])
+        self.assertEqual(bash_running(self.ctx), [])
 
-    def test_spawn_failure_leaves_no_jobs_or_open_output_files(self) -> None:
-        from tempfile import TemporaryFile
-        streams = []
-
-        def create_stream():
-            stream = TemporaryFile()
-            streams.append(stream)
-            return stream
-
+    def test_spawn_failure_leaves_no_jobs_or_log_files(self) -> None:
         with patch("xun.tools.cmd.subprocess.Popen", side_effect=OSError("spawn failed")):
-            with patch("xun.tools.cmd.TemporaryFile", side_effect=create_stream) as create:
-                with self.assertRaisesRegex(OSError, "spawn failed"):
-                    bash_background(self.ctx, "echo no")
-        self.assertEqual(bash_list(self.ctx), [])
-        self.assertEqual(create.call_count, 2)
-        self.assertTrue(all(stream.closed for stream in streams))
+            with self.assertRaisesRegex(OSError, "spawn failed"):
+                bash_spawn(self.ctx, "echo no")
+        self.assertEqual(bash_running(self.ctx), [])
+        tempdir = self.agent.workspace.tempdir.exist_path
+        self.assertEqual(list(tempdir.glob("bash_*")), [])
 
     def test_blocking_timeout_and_cancellation_terminate_command(self) -> None:
         command = self.command("import time; time.sleep(60)")
@@ -444,7 +434,7 @@ class CmdExecutionTest(unittest.TestCase):
         from xun.toolcall import Function
         tools = expose_cmd_tools()
         self.assertEqual([tool.__name__ for tool in tools], [
-            "bash", "bash_background", "bash_wait", "bash_read", "bash_list", "bash_stop",
+            "bash", "bash_spawn", "bash_wait", "bash_running", "bash_kill",
         ])
         toolbox = ToolBox().with_defaults("cmd")
         for tool in tools:
@@ -458,4 +448,3 @@ class CmdExecutionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-from concurrent.futures import ThreadPoolExecutor
