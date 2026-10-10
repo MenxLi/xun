@@ -25,7 +25,8 @@ UNSURE_KIND = Literal[
 ]
 MUST_CONFIRM_UNSURE_KINDS: set[UNSURE_KIND] = {
     "install_package_outside_allowed_paths",
-    "change_system_status",
+    # "change_system_status",   # temporarily excluded
+
     # deliberate exclusion of "unable_to_assess" for `auto_confirm` to be handy
 }
 class RiskAccessResult(BaseModel):

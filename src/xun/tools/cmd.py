@@ -317,6 +317,7 @@ def bash_background(
     """
     Start a background command and return its id; same approval/cd/envs rules as `bash`.
     No time limit; stdin is closed. 
+    Prefer this over other background execution methods (such as `&` and `nohup`).
     Use `bash_read` for output, `bash_wait` for the result, or `bash_stop` to terminate.
     Output is spooled to disk. The process group is cleaned up on exit or agent
     finalization; jobs cannot be restored after restart.
