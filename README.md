@@ -77,6 +77,9 @@ As mentioned above, Xun provides multiple entrypoints for different usage scenar
 The agent respects `AGENTS.md` at its working directory, 
 to turn off this behavior, set `load_project_instructions: false` in the agent's configuration.
 
+In addition to the above, `xune` runs a specific extension's CLI, 
+see [extensions/README.md](extensions/README.md) for more details.
+
 ## API
 
 Start an interactive CLI session (like `xun`), with your custom tool:

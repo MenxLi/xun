@@ -41,15 +41,19 @@ Typical effects, all through `ctx.agent`:
 import argparse
 from xun import ExtensionContext, extension_attr
 
-_parser = argparse.ArgumentParser()
-_parser.add_argument("--user", default="me")
+parser = argparse.ArgumentParser()
+parser.add_argument("--user", default="me")
 
-def _run(args):
+def run(args):
     print(args.user)
     return 0
 
-@extension_attr(api_min_version="1.2", api_max_version="2.0",
-                data_version="1", cli=(_parser, _run))
+@extension_attr(
+    api_min_version="1.2",
+    api_max_version="2.0",
+    data_version="1",
+    cli=(parser, run)
+)
 def setup_extension(ctx: ExtensionContext) -> None:
     ...
 ```
@@ -57,6 +61,12 @@ def setup_extension(ctx: ExtensionContext) -> None:
 - **`api_min_version` / `api_max_version`** — supported xun versions, both bounds inclusive. Outside the range the extension is **skipped** (not `failed`): warned at scan, listed with the reason by `/extensions`. Source checkouts without version metadata always pass the gate.
 - **`data_version`** — version of the data layout: `data_dir()` resolves to `extension_data/{name}/data_v_<version>/`, so bumping it starts fresh while old dirs stay untouched. One safe path segment; a bad value fails the extension at scan.
 - **`cli=(parser, handler)`** — run by the core `xune` command: `xune <name> [args...]` parses with the extension's parser and calls the handler (an int return is the exit code); bare `xune` lists extensions that declare a CLI. The core imports the extension, so its data under `$XUN_HOME` resolves exactly as the agent sees it — no `PYTHONPATH` or module paths to fiddle with.
+
+Run an extension's CLI directly with `xune`:
+
+```bash
+xune <extension_name> --user alice
+```
 
 See `stat/` for a full example.
 
