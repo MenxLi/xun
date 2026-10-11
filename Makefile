@@ -39,7 +39,7 @@ doc-clean:
 	if [ -d "site" ]; then \
 		rm -rf site; \
 	fi \
-	&& rm -rf $(DOC_PATH) && git checkout -- $(DOC_PATH); \
+	&& rm -rf docs/ && git checkout -- docs/; \
 	if [ -f "mkdocs.yml" ]; then \
 		rm -f mkdocs.yml; \
 	fi
