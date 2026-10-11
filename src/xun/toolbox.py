@@ -29,7 +29,7 @@ class ToolBox:
     }
     SUBAGENT_DEPTH_FLAG = "__subagent_depth"
     SUBAGENT_MAX_DEPTH = 3
-    SUBAGENT_TOOLS = ("agent_run", "agent_run_background", "agent_wait", "agent_list")
+    SUBAGENT_TOOLS = ("agent_run", "agent_spawn", "agent_wait", "agent_list")
 
     def __init__(self):
         self._tools: dict[str, Function] = {}

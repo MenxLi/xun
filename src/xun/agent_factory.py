@@ -134,9 +134,9 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         return r
     
     @except_safe
-    def agent_run_background(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> dict[Literal['id'], str]:
+    def agent_spawn(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> dict[Literal['id'], str]:
         """
-        Runs an agent in the background without blocking the main thread.
+        Spawns an agent to run in the background without blocking the main thread.
 
         Same as `agent_run`, but executes the agent in the background and immediately returns its identifier.
         Call `agent_wait` with this identifier to retrieve the result. 
@@ -148,8 +148,8 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
     @except_safe
     def agent_wait(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int] = 300) -> Result[str, ErrorInfo] | dict[str, str]:
         """
-        Waits for a background agent to complete its task. 
-        Will remove the agent from the background pool once it has finished. 
+        Waits for a spawned agent to complete its task. 
+        Will remove the agent from the pool once it has finished. 
 
         Input: The identifier of the background agent and an optional timeout in seconds
             (defaults to 300; pass null to wait indefinitely).
@@ -176,4 +176,4 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
                 {"id": k, "status": "running" if not v.finished.is_set() else "finished"} for k, v in pool.value.items()
             ]
 
-    return [agent_run, agent_run_background, agent_wait, agent_list]
+    return [agent_run, agent_spawn, agent_wait, agent_list]
