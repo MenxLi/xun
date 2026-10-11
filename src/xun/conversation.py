@@ -87,10 +87,6 @@ class Conversation:
         if is_compressed is not None:
             prompt.is_compressed = is_compressed
     
-    # backward compat. (skill extension use it). TODO: remove in v1.4
-    def set_persistent_section(self, name: str, content: str) -> None:
-        return self.set_system_persistent_section(name, content)
-
     def set_system_persistent_section(self, name: str, content: str) -> None:
         if self.messages and isinstance(self.messages[0], SystemPrompt):
             sections = self.messages[0].persist_sections

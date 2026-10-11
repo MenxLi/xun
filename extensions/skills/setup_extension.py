@@ -20,7 +20,7 @@ def _discovery_hint(agent: Agent[Agent.T.Init]) -> str:
             f"sets `name` and `description` under one of:\n{roots_hint}\nThey are picked up automatically on the next message.")
 
 
-@extension_attr(api_min_version="1.3.0")
+@extension_attr(api_min_version="1.4.0")
 def setup_extension(ctx: ExtensionContext) -> None:
     agent = ctx.agent
     ensure_fresh(agent)

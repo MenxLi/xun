@@ -111,10 +111,9 @@ def require(agent: Agent[Agent.T.Alive], name: str) -> Skill:
 
 
 def refresh(agent: Agent[Agent.T.Alive]) -> None:
-    # TODO: change to use set_system_persistent_section after v1.4
     discovered, _ = skills(agent)
     if not discovered:
-        agent.conversation.set_persistent_section(SECTION_NAME, "")
+        agent.conversation.set_system_persistent_section(SECTION_NAME, "")
         return
     entries = [{"name": skill.name, "description": skill.description} for skill in discovered]
     active = sorted(session(agent).active)
@@ -125,7 +124,7 @@ def refresh(agent: Agent[Agent.T.Alive]) -> None:
     ]
     if active:
         content.append(f"Active skills: {', '.join(active)}. Call activate_skill again to reread its instructions.")
-    agent.conversation.set_persistent_section(SECTION_NAME, "\n".join(content))
+    agent.conversation.set_system_persistent_section(SECTION_NAME, "\n".join(content))
 
 
 def _tool_name(func: Callable) -> str:

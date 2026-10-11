@@ -1,5 +1,44 @@
 # 更新日志
 
+## 1.4.0
+
+### 核心与工具
+
+- bash 工具集重设计：新增后台命令工具集，智能体可启动、等待、终止与查看长时间运行的命令，输出分离为日志文件，结果附执行时长。
+- 命令风险评估重设计：按命令行结构逐项判定，危险模式直接拒绝而不进入确认；确认时可选填拒绝理由并回传给智能体，评估结论附简要原因。
+- 收紧默认命令允许列表：移除 `curl` / `wget` / `sed` 等风险命令，改走风险评估与确认。
+- `apply_patch` 基于 `git apply` 重写：跨平台行为一致、报错信息更清晰（需要安装 Git）。
+- 子智能体支持后台执行：`agent_run_parallel` 替换为 agent 异步接口，可并行派发多个子智能体并按需收取结果。
+- 取消错误携带取消原因。
+
+### 扩展系统
+
+- 新增 `xune` 命令：扩展可声明专属 CLI（`cli=(parser, handler)`），通过 `xune <name> ...` 直接运行。
+- 扩展可声明 `data_version`，框架提供布局统一、按版本隔离的数据目录（`ExtensionContext.data_dir`）。
+- 新增 `completion_token_update` 钩子：推送每次模型调用的 token 用量（含缓存命中数）。
+- 新增 `stat` 扩展：记录 token 与工具调用用量，注册在会话中展示报表，可通过 `xune stat` 管理报表与按日/周/月的用户预算。
+- 内置扩展声明所依赖的最低核心 API 版本：MCP ≥ 1.3.0，Skills / stat ≥ 1.4.0。
+
+### API 变更
+
+- `Agent.state` 升级为类型化容器 `AgentState`：区分持久 / 运行时条目，获取改用 `get_entry(key, factory)`。
+- 生命周期类型标注移入 `agent_lifecycle.py`。
+- `cancellable_execution()` 更名 `run_scope()`。
+- `set_persistent_section` 更名 `set_system_persistent_section`。
+- `to_json` / `from_json` 改以结构化 JSON 为接口；新增 `ToJson` / `FromJson` 协议导出。
+- 事件缓冲默认容量改为 0（由消费方设置），设置方法改为链式的 `with_buffer_size()`。
+- 子智能体工具集重新设计：`agent_run_parallel` 替换为 agent 异步接口。
+
+### CLI 与容器
+
+- 交互式 CLI 显示样式优化；文件相关命令在所有交互式入口统一注册。
+- 修复 `xunc` 向容器转发参数的问题。
+- 新增 `xunx shell <user>`：进入用户容器 shell，可用 `--exec` / `--cwd` 指定程序与工作目录。
+
+### Web 服务与前端
+
+- 智能体加入 / 离开事件仅在末尾批次显示预览；自动确认标记并入活动批次展示。
+
 ## 1.3.0
 
 ### 扩展系统
