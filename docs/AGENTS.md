@@ -1,10 +1,35 @@
 
 docs用MkDocs构建（material主题 + mkdocs-static-i18n插件），中/英双语，主要分以下几个章节：
 
-- 软件概述（主要讲解软件的主要功能和最主要的设计特点，两个页面）
-- 软件安装和内置会话入口(xun/xuns/xunc/xunx，以及额外的xune，需要参数列表)
-- API 文档（就各主要功能进行讲解，例如Agent 初始化，显示拓展、Type-State Pattern，Config等）
+大纲（仅供参考，标题、内容务必根据实际情况调整）：
+
+- 概述
+    - 软件主要功能与应用场景
+    - 软件设计特点与取舍
+    - 软件安装（包括从源码安装和Docker镜像构建）
+
+- 内置会话入口（需要参数说明）
+    - xun/xuns 交互式入口
+    - xunc/xunx 沙箱执行
+    - xune 扩展 CLI 运行入口
+
+- API 文档
+    - Agent 初始化（最好直接使用Agent类，快速配置可用setup_agent方法）
+    - Config 字段与配置方法
+    - Agent生命周期（Type-State Pattern）
+    - 显示扩展
+    - 结构化输出
+    - 工具设置（Tool Attributes & Tool Context）
+    - 内置子智能体派生策略与工厂
+    - Hooks
+    - 链式取消
+    - WebDisplay挂载
+
 - 插件开发指南（内容简明，主要介绍机制、主要扩展点和示例等）
+    - 插件和API的区别与联系（见下文“API 和插件的分工”）和加载机制
+    - 插件快速开发指南与简要示例
+    - Extension Attributes
+
 - 更新日志（我已整理，你转为英文即可）
 
 > API 和插件的分工：
