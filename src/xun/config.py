@@ -89,8 +89,6 @@ class ModelConfig(ConfigModel):
             else:
                 raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model in the config.")
 
-# allow the model to stay unset, so it can be auto-detected from the provider
-FALLBACK_ENV = { f"XUN_OPENAI_MODEL": "", f"XUN_AUTO_CONFIRM": "false" }
 class AgentConfig(ConfigModel):
     auto_confirm: bool
     auto_compact: AutoCompactionConfig
@@ -136,10 +134,16 @@ class AgentConfig(ConfigModel):
             fallback_env=FALLBACK_ENV
             )
 
+# allow the model to stay unset, so it can be auto-detected from the provider
+FALLBACK_ENV = {
+    f"XUN_OPENAI_MODEL": "", 
+    f"XUN_AUTO_CONFIRM": "false", 
+    f"XUN_ENABLE_EXTENSIONS": "true",
+    }
 def _default_config_template() -> dict:
     return {
         "auto_confirm": r"${XUN_AUTO_CONFIRM}",
-        "enable_extensions": True,
+        "enable_extensions": r"${XUN_ENABLE_EXTENSIONS}",
         "load_project_instructions": True,
         "auto_compact": {
             "enabled": True,

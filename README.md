@@ -237,7 +237,7 @@ The config supports `${XUN_...}` placeholders which are substituted from environ
 | `provider.openai_api_key` | `${XUN_OPENAI_API_KEY}` | API key. |
 | `model.name` | `${XUN_OPENAI_MODEL}` (empty) | Model identifier. If the resolved value is empty, available models are auto-detected from the API. |
 | `auto_confirm` | `${XUN_AUTO_CONFIRM}` | Automatically confirm actions without prompting. |
-| `enable_extensions` | — | Load extensions from `$XUN_HOME/extensions/`. Internal helper agents set this to `false` automatically. |
+| `enable_extensions` | `${XUN_ENABLE_EXTENSIONS}` | Load extensions from `$XUN_HOME/extensions/`. Internal helper agents set this to `false` automatically. |
 | `load_project_instructions` | — | Automatically load `AGENTS.md` from the working directory into the system prompt. |
 | `extension_settings` | — | Per-extension settings, keyed by extension name; each extension reads its own through `ctx.settings` (see Extensions). |
 

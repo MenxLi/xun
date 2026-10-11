@@ -10,7 +10,7 @@ build-docker: build-web
 
 doc:
 	xunc . \
-		--env "XUN_AUTO_CONFIRM=true" \
+		--env "XUN_AUTO_CONFIRM=true,XUN_ENABLE_EXTENSIONS=false" \
 		--exec "xun --non-interactive '请按照docs/AGENTS.md的要求制作文档'" \
 		--name "xun-doc" \
 		--port ""
