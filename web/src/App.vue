@@ -340,6 +340,7 @@ function switchSession(path: string, updateHistory = true) {
   sessionBuffers.select(path)
   configureSession(path)
   resetSessionData()
+  settings.lastSession = path
   if (updateHistory) window.history.replaceState(null, '', chatUrl(path))
   connect()
 }
@@ -510,7 +511,7 @@ const languageOptions: Array<{ value: Language; labelKey: string; icon: typeof G
 
 onMounted(async () => {
   await loadSessions()
-  const requested = new URLSearchParams(location.search).get('session') || '/'
+  const requested = new URLSearchParams(location.search).get('session') || settings.lastSession || '/'
   const initial = sessions.value.some(session => session.path === requested)
     ? requested
     : sessions.value[0]?.path || '/'

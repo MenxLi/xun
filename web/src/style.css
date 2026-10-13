@@ -316,6 +316,8 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .eyebrow { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .06em; }
 .agent-select { height: 34px; margin: 10px 10px 4px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--input); color: var(--ink); font-size: 10px; text-overflow: ellipsis; }
 .file-toolbar { height: 42px; padding: 4px 7px; flex: none; display: flex; align-items: center; gap: 1px; border-bottom: 1px solid var(--line); }
+.file-search { flex: none; display: flex; align-items: center; gap: 6px; margin: 6px 8px 2px; padding: 0 8px; height: 28px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); }
+.file-search input { min-width: 0; flex: 1; height: 100%; padding: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 11px; }
 .crumb { min-width: 0; flex: 1; padding: 0 5px; overflow: hidden; color: var(--muted); font: 10px/1 'Fira Code', monospace; text-overflow: ellipsis; white-space: nowrap; }
 .file-list { min-height: 100px; flex: 1; overflow-y: auto; padding: 5px; }
 .file-row { height: 34px; display: flex; align-items: center; border-radius: 4px; }
@@ -380,11 +382,14 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .render-toggle button { width: 24px; height: 20px; padding: 0; border: 0; border-radius: 4px; display: inline-grid; place-items: center; color: var(--muted); background: transparent; cursor: pointer; }
 .render-toggle button:hover:not(.active) { color: var(--ink); }
 .render-toggle button.active { color: var(--ink); background: var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
-.file-preview pre { min-height: 0; flex: 1; margin: 0; padding: 11px; overflow: auto; color: #eaf0ec; background: var(--code); font-size: 10px; line-height: 1.55; white-space: pre; }
-.file-preview img { min-height: 0; flex: 1; width: 100%; object-fit: contain; padding: 11px; background: var(--panel); }
+.file-preview pre { min-height: 0; flex: 1; margin: 0; padding: 11px; overflow: auto; color: #eaf0ec; background: var(--code); font-size: calc(10px * var(--zoom, 1)); line-height: 1.55; white-space: pre; }
+.preview-image { min-height: 0; flex: 1; overflow: auto; padding: 11px; background: var(--panel); }
+.preview-image img { display: block; max-width: none; margin: 0 auto; object-fit: contain; }
+.zoom-level { min-width: 38px; height: 22px; padding: 0 2px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font: 10px/1 'Fira Code', monospace; cursor: pointer; }
+.zoom-level:hover { color: var(--ink); background: var(--hover); }
 .preview-document { min-height: 0; width: 100%; flex: 1; border: 0; background: var(--panel); }
-.preview-rendered { min-height: 0; flex: 1; padding: 11px 14px; overflow: auto; }
-.preview-editor { min-height: 0; flex: 1; width: 100%; margin: 0; padding: 11px; border: 0; outline: 0; resize: none; overflow: auto; color: #eaf0ec; background: var(--code); font: 10px/1.55 'Fira Code', monospace; white-space: pre; tab-size: 2; }
+.preview-rendered { min-height: 0; flex: 1; padding: 11px 14px; overflow: auto; zoom: var(--zoom, 1); }
+.preview-editor { min-height: 0; flex: 1; width: 100%; margin: 0; padding: 11px; border: 0; outline: 0; resize: none; overflow: auto; color: #eaf0ec; background: var(--code); font: calc(10px * var(--zoom, 1))/1.55 'Fira Code', monospace; white-space: pre; tab-size: 2; }
 .preview-editor:focus-visible { outline: none; }
 .preview-banner { flex: none; display: flex; align-items: center; gap: 8px; padding: 5px 10px; color: var(--ink); background: var(--hover); font-size: 10px; }
 .preview-banner.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }

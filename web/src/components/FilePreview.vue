@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, Pencil, RotateCcw, Save, X } from 'lucide-vue-next'
+import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, Pencil, RotateCcw, Save, X, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import MarkdownText from './MarkdownText.vue'
 import { api, errorMessage, writeConflict } from '../api'
@@ -36,6 +36,11 @@ const saving = ref(false)
 const saveError = ref('')
 const conflict = ref<'stale' | 'exists' | null>(null)
 const editor = ref<HTMLTextAreaElement>()
+const zoom = ref(1)
+const ZOOM_MIN = 0.25
+const ZOOM_MAX = 5
+const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`)
+const pdfUrl = computed(() => `${documentUrl.value}#zoom=${Math.round(zoom.value * 100)}`)
 
 const dirty = computed(() => buffer.value !== text.value)
 const canEdit = computed(() => kind.value === 'text' && !error.value && !loading.value && fullscreen.value)
@@ -74,7 +79,33 @@ watch(view, mode => {
   if (mode === 'edit') void nextTick(() => editor.value?.focus())
 }, { immediate: true })
 
+watch(zoom, () => {
+  if (view.value === 'render' && render.value === 'html') applyFrameZoom(document.querySelector<HTMLIFrameElement>('.file-preview.is-active-preview .preview-document'))
+})
+
 watch(dirty, value => emit('dirtyChange', value))
+
+function setZoom(value: number) {
+  zoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100))
+}
+
+function zoomBy(factor: number) {
+  setZoom(zoom.value * factor)
+}
+
+function onWheel(event: WheelEvent) {
+  if (!event.ctrlKey && !event.metaKey) return
+  event.preventDefault()
+  zoomBy(event.deltaY < 0 ? 1.1 : 1 / 1.1)
+}
+
+function applyFrameZoom(frame: HTMLIFrameElement | null | undefined) {
+  try {
+    if (frame?.contentDocument?.body) frame.contentDocument.body.style.zoom = String(zoom.value)
+  } catch {
+    // cross-origin
+  }
+}
 
 function enterEdit() {
   if (kind.value !== 'text' || error.value || loading.value) return
@@ -91,9 +122,11 @@ function onDocumentLoad(event: Event) {
   const frame = event.target as HTMLIFrameElement
   try {
     frame.contentDocument?.addEventListener('dblclick', onContentDblClick)
+    frame.contentDocument?.addEventListener('wheel', onWheel, { passive: false })
   } catch {
     // cross-origin
   }
+  applyFrameZoom(frame)
 }
 
 async function write(force: boolean): Promise<'saved' | 'conflict' | 'error'> {
@@ -167,7 +200,7 @@ function onEditorKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <section class="file-preview" :class="{ 'is-fullscreen': fullscreen }">
+  <section class="file-preview is-active-preview" :class="{ 'is-fullscreen': fullscreen }" :style="{ '--zoom': zoom }" @wheel="onWheel">
     <ResizeHandle v-if="!fullscreen" orientation="vertical" @drag="delta => emit('resize', delta)" />
     <header>
       <span>{{ entry.path }}<i v-if="dirty" class="dirty-mark" :title="t('preview.unsaved')"></i></span>
@@ -191,6 +224,11 @@ function onEditorKeydown(event: KeyboardEvent) {
             <RotateCcw :size="14" />
           </button>
         </template>
+        <template v-if="kind !== 'unsupported' && !(kind === 'text' && error)">
+          <button class="icon-button" :title="t('preview.zoomOut')" :disabled="zoom <= ZOOM_MIN" @click="zoomBy(1 / 1.25)"><ZoomOut :size="14" /></button>
+          <button class="zoom-level" :title="t('preview.zoomReset')" @click="setZoom(1)">{{ zoomLabel }}</button>
+          <button class="icon-button" :title="t('preview.zoomIn')" :disabled="zoom >= ZOOM_MAX" @click="zoomBy(1.25)"><ZoomIn :size="14" /></button>
+        </template>
         <button class="icon-button" :title="fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen">
           <Minimize2 v-if="fullscreen" :size="14" />
           <Maximize2 v-else :size="14" />
@@ -200,7 +238,7 @@ function onEditorKeydown(event: KeyboardEvent) {
     </header>
 
     <template v-if="kind === 'image'">
-      <img v-show="!error" :src="contentUrl" :alt="entry.name" @error="error = t('preview.imageError')">
+      <div v-show="!error" class="preview-image"><img :src="contentUrl" :alt="entry.name" :style="{ width: `${zoom * 100}%` }" @error="error = t('preview.imageError')"></div>
       <div v-if="error" class="preview-error">{{ error }}</div>
     </template>
 
@@ -232,7 +270,7 @@ function onEditorKeydown(event: KeyboardEvent) {
       </template>
     </template>
 
-    <iframe v-else-if="kind === 'pdf'" class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
+    <iframe v-else-if="kind === 'pdf'" :key="pdfUrl" class="preview-document" :src="pdfUrl" :title="t('preview.previewOf', { name: entry.name })" />
 
     <div v-else class="preview-unsupported">
       <FileQuestion :size="20" />

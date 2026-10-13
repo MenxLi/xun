@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Check, Clock, Copy, Download, File, FilePlus, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Check, Clock, Copy, Download, File, FilePlus, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Bot, Search, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
@@ -27,6 +27,11 @@ const path = computed({
   set: value => { state.value.path = value },
 })
 const entries = ref<FileEntry[]>([])
+const filter = ref('')
+const visibleEntries = computed(() => {
+  const query = filter.value.trim().toLowerCase()
+  return query ? entries.value.filter(entry => entry.name.toLowerCase().includes(query)) : entries.value
+})
 const previewEntry = ref<FileInfo | null>(null)
 const openInEdit = ref(false)
 const infoEntry = ref<PathInfo | null>(null)
@@ -474,6 +479,11 @@ function serveRemaining(server: ServeServer): string {
       <input :ref="setFileInput" hidden type="file" multiple @change="onPick">
     </div>
 
+    <div class="file-search">
+      <Search :size="13" />
+      <input v-model="filter" type="search" :placeholder="t('files.search')" :aria-label="t('files.search')" :disabled="!available || !agentId" @keydown.esc.stop="filter = ''">
+    </div>
+
     <div v-if="error" class="file-error">{{ error }}</div>
     <div v-if="activeServers.length" class="serve-strip">
       <div v-for="server in activeServers" :key="server.key" class="serve-row" :class="{ fresh: server.key === freshKey }">
@@ -492,6 +502,7 @@ function serveRemaining(server: ServeServer): string {
     <div class="file-list" :aria-busy="loading || uploading" @scroll="closeMenu">
       <div v-if="available === false" class="file-empty">{{ t('files.accessDisabled') }}</div>
       <div v-else-if="available && agentId && !loading && !entries.length && inlineAction === null" class="file-empty">{{ t('files.emptyFolder') }}</div>
+      <div v-else-if="available && agentId && !loading && !visibleEntries.length && inlineAction === null" class="file-empty">{{ t('files.noMatches') }}</div>
       <div v-if="inlineAction === 'create' || inlineAction === 'createFile'" class="file-row editing">
         <div class="file-name inline-name">
           <Folder v-if="inlineAction === 'create'" :size="16" />
@@ -499,7 +510,7 @@ function serveRemaining(server: ServeServer): string {
           <input :ref="setInlineInput" v-model="inlineValue" :disabled="inlineBusy" :aria-invalid="!!inlineError" :title="inlineError || t('files.pathHint')" @input="inlineError = ''; error = ''" @keydown.enter.prevent="submitInlineEdit" @keydown.esc.prevent.stop="cancelInlineEdit()" @blur="submitInlineEdit">
         </div>
       </div>
-      <div v-for="entry in entries" :key="entry.path" class="file-row">
+      <div v-for="entry in visibleEntries" :key="entry.path" class="file-row">
         <div v-if="inlineAction === 'move' && inlineEntry?.path === entry.path" class="file-name inline-name">
           <Folder v-if="entry.kind === 'directory'" :size="16" />
           <File v-else :size="16" />
@@ -507,6 +518,7 @@ function serveRemaining(server: ServeServer): string {
         </div>
         <button v-else class="file-name" :title="entry.name" @click="open(entry)">
           <Folder v-if="entry.kind === 'directory'" :size="16" />
+          <Bot v-else-if="entry.name === 'AGENTS.md'" :size="16" />
           <File v-else :size="16" />
           <span>{{ entry.name }}</span>
           <span v-if="servingFor(entry.path)" class="row-serve-badge" :title="t('files.serveRunning')"><Globe :size="11" /></span>

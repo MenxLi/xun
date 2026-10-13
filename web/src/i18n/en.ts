@@ -123,6 +123,7 @@ export default {
     sourceUser: 'user',
   },
   files: {
+    search: 'Filter files and folders',
     workspace: 'Workspace',
     files: 'Files',
     closeFiles: 'Close files',
@@ -130,6 +131,7 @@ export default {
     refresh: 'Refresh',
     fileActions: 'File actions',
     accessDisabled: 'File access is disabled.',
+    noMatches: 'No matching files.',
     emptyFolder: 'This folder is empty.',
     newFolder: 'New folder',
     newFile: 'New file',
@@ -170,6 +172,9 @@ export default {
     serveExpires: 'Expires in {time}',
   },
   preview: {
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    zoomReset: 'Reset zoom',
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit fullscreen',
     closePreview: 'Close preview',
