@@ -30,6 +30,7 @@ export default {
     languageEn: 'English',
     languageZh: '简体中文',
     renderMarkdown: 'Render Markdown',
+    docsTitle: 'Documentation',
     messageAgent: 'Message {name}',
   },
   sessions: {

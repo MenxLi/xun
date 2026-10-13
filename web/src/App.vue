@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, Check, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type, Wifi, WifiOff } from 'lucide-vue-next'
-import { api, appUrl, chatUrl, configureSession, formatTokens } from './api'
+import { Bot, BookOpen, Check, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type, Wifi, WifiOff } from 'lucide-vue-next'
+import { api, appUrl, chatUrl, configureSession, docsUrl, formatTokens } from './api'
 import i18n, { resolveLocale, type Language } from './i18n'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
@@ -545,7 +545,7 @@ onBeforeUnmount(() => {
     />
 
     <main class="chat-shell">
-      <header class="topbar">
+      <header class="topbar" :class="{ 'settings-open': settingsOpen }">
         <div class="brand">
           <button class="icon-button" :title="showSessions ? t('app.hideSessions') : t('app.showSessions')" @click="toggleSessions">
             <PanelLeftClose v-if="showSessions" :size="18" />
@@ -585,7 +585,10 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <label class="setting-toggle"><span>{{ t('app.renderMarkdown') }}</span><input v-model="settings.markdown" type="checkbox"></label>
-              <div class="settings-version">v{{ version }}</div>
+              <div class="settings-footer">
+                <a class="icon-button" :href="docsUrl()" target="_blank" rel="noopener" :title="t('app.docsTitle')" :aria-label="t('app.docsTitle')"><BookOpen :size="15" /></a>
+                <span class="settings-version">v{{ version }}</span>
+              </div>
             </div>
           </div>
           <button class="icon-button" :title="showFiles ? t('app.hideWorkspace') : t('app.showWorkspace')" @click="toggleFiles">
@@ -643,6 +646,7 @@ onBeforeUnmount(() => {
     </main>
 
     <div v-if="narrowLayout && showFiles" class="mobile-scrim workspace-scrim" @click="closeFiles" />
+    <div v-if="settingsOpen" class="settings-scrim" @click="settingsOpen = false" />
     <FileBrowser v-if="showFiles" v-model:state="browserState" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" :session-key="currentSessionPath" @close="closeFiles" />
 
   </div>

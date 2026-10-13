@@ -25,6 +25,10 @@ export function chatUrl(sessionPath: string): string {
   return `${url.pathname}${url.search}`
 }
 
+export function docsUrl(): string {
+  return `${serviceRoot}/docs/`
+}
+
 interface ApiFailure extends Error {
   status?: number
   detail?: { code?: string; modified_at?: number }
