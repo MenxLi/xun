@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 if TYPE_CHECKING:
     from .agent import Agent, _Uninit
 from typing import Callable
@@ -28,7 +28,6 @@ class ToolBox:
         "diagnostic": expose_diagnostic_tools,
     }
     SUBAGENT_DEPTH_FLAG = "__subagent_depth"
-    SUBAGENT_MAX_DEPTH = 3
     SUBAGENT_TOOLS = ("agent_run", "agent_spawn", "agent_wait", "agent_list")
 
     def __init__(self):
@@ -92,7 +91,11 @@ class ToolBox:
         self.register(func)
         return func
 
-    def with_subagent_provider(self, agent_getter: "AgentGetterProtocol | None" = None):
+    def with_subagent_provider(
+        self, 
+        agent_getter: "AgentGetterProtocol | None" = None, 
+        max_depth: int = 2,
+        ) -> Self:
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
@@ -105,13 +108,21 @@ class ToolBox:
                 agent = Agent.inherit(ctx.agent).system(get_subagent_prompt())
                 if param.name:
                     agent.name = param.name
-                parent_entry = ctx.agent.state.get_entry(self.SUBAGENT_DEPTH_FLAG)
-                depth = (parent_entry.value if isinstance(parent_entry, RuntimeEntry) else 0) + 1
-                agent.state[self.SUBAGENT_DEPTH_FLAG] = RuntimeEntry(depth)
-                if depth > self.SUBAGENT_MAX_DEPTH:
-                    agent.toolbox.disable_subagent()
                 return agent
             agent_getter = _agent_getter
+
+        def wrap_agent_getter(ag: "AgentGetterProtocol"):
+            def wrap(param: AgentGetterParam):
+                agent = ag(param)
+                parent = param.tool_context.agent
+                parent_entry = parent.state.get_entry(self.SUBAGENT_DEPTH_FLAG)
+                depth = (parent_entry.value if isinstance(parent_entry, RuntimeEntry) else 0) + 1
+                agent.state[self.SUBAGENT_DEPTH_FLAG] = RuntimeEntry(depth)
+                if depth > max_depth:
+                    agent.toolbox.disable_subagent()
+                return agent
+            return wrap
+        agent_getter = wrap_agent_getter(agent_getter)
         self.register(*agent_run_factory(agent_getter))
         return self
 
