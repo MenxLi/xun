@@ -16,7 +16,6 @@ class AgentThread:
     finished: Event
     agent: Optional["Agent[Agent.T.Init]"] = None
     result: Optional[Result[str, ErrorInfo]] = None
-    shares_cancel: bool = True
 
 @dataclass
 class AgentPool(RuntimeEntry[dict[str, AgentThread]]):
@@ -67,7 +66,6 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
             param = AgentGetterParam(tool_context = ctx, name = name)
             with agent_getter(param) as agent:
                 agent_t.agent = agent
-                agent_t.shares_cancel = agent.cancel_event.is_chain_of(ctx.agent.cancel_event)
                 agent_t.result = agent.instruct(task, _emit_event = False).execute(context = ctx.value)
         except CancelledError as e:
             agent_t.result = Result.Err(ErrorInfo(error=e.reason, details=e.reason))
@@ -76,7 +74,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         finally:
             agent_t.finished.set()
     
-    def agent_thread_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> tuple[str, AgentThread]:
+    def agent_thread_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> str:
         identifier = uuid.uuid4().hex[:8]
         agent_t = AgentThread(finished=Event())
         AgentPool.of(ctx.agent).add(identifier, agent_t)
@@ -84,7 +82,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
             target=agent_run_impl, args=(ctx, task, name, agent_t),
             name=f"subagent-{identifier}", daemon=True,
         ).start()
-        return identifier, agent_t
+        return identifier
     
     def agent_wait_impl(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int]) -> Result[str, ErrorInfo] | dict[str, str]:
         pool = AgentPool.of(ctx.agent)
@@ -102,10 +100,11 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
                         "notice": "the agent is still running; call agent_wait again with this id to keep waiting",
                     }
         except (CancelledError, KeyboardInterrupt) as e:
-            # hand the signal to the child as its own flag: the chained one
-            # dies when the parent's quick next run starts and would orphan a child
-            # still between checkpoints; detached children opt out of this path
-            if agent_t.shares_cancel and (child := agent_t.agent) is not None:
+            # hand chained children their own flag (the chained one dies at the
+            # parent's next run entry); detached children (custom getter with
+            # inherit_cancel_event=False) survive our cancellation
+            if (child := agent_t.agent) is not None \
+                and child.cancel_event.is_chain_of(ctx.agent.cancel_event):
                 child.cancel()
             raise e
         pool.remove(identifier)
@@ -131,7 +130,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         • The new agent starts with a blank context and cannot access the parent conversation history unless explicitly included in the instruction.
         • Prefer instructing the new agent to return results directly in its final message. File I/O can also be used for larger outputs or intermediate results when necessary, but should explicitly be mentioned in the instruction.
         """
-        identifier, _ = agent_thread_run(ctx, task, name)
+        identifier = agent_thread_run(ctx, task, name)
         r = agent_wait_impl(ctx, identifier, timeout_seconds=None)
         assert isinstance(r, Result)  # unreachable without a deadline
         return r
@@ -145,7 +144,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         Call `agent_wait` with this identifier to retrieve the result. 
         Call `agent_list` to see all currently running background agents.
         """
-        identifier, _ = agent_thread_run(ctx, task, name)
+        identifier = agent_thread_run(ctx, task, name)
         return {"id": identifier}
     
     @except_safe
