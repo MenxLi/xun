@@ -16,6 +16,7 @@ class AgentThread:
     finished: Event
     agent: Optional["Agent[Agent.T.Init]"] = None
     result: Optional[Result[str, ErrorInfo]] = None
+    shares_cancel: bool = True
 
 @dataclass
 class AgentPool(RuntimeEntry[dict[str, AgentThread]]):
@@ -66,6 +67,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
             param = AgentGetterParam(tool_context = ctx, name = name)
             with agent_getter(param) as agent:
                 agent_t.agent = agent
+                agent_t.shares_cancel = agent.cancel_event.is_chain_of(ctx.agent.cancel_event)
                 agent_t.result = agent.instruct(task, _emit_event = False).execute(context = ctx.value)
         except CancelledError as e:
             agent_t.result = Result.Err(ErrorInfo(error=e.reason, details=e.reason))
@@ -102,8 +104,8 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         except (CancelledError, KeyboardInterrupt) as e:
             # hand the signal to the child as its own flag: the chained one
             # dies when the parent's quick next run starts and would orphan a child
-            # still between checkpoints
-            if (child := agent_t.agent) is not None:
+            # still between checkpoints; detached children opt out of this path
+            if agent_t.shares_cancel and (child := agent_t.agent) is not None:
                 child.cancel()
             raise e
         pool.remove(identifier)

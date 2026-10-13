@@ -27,6 +27,15 @@ class ChainedEvent:
     def derive(self) -> ChainedEvent:
         return ChainedEvent(parent=self)
 
+    def is_chain_of(self, other: "ChainedEvent") -> bool:
+        """True if self is other or a derived descendant of other."""
+        node: Optional[ChainedEvent] = self
+        while node is not None:
+            if node is other:
+                return True
+            node = node.parent
+        return False
+
 
 class AgentRunningStateProtocol(Protocol):
     """The Agent surface that running-state helpers rely on."""
