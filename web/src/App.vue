@@ -20,6 +20,7 @@ const inputHistory = useInputHistoryStore()
 const sessionBuffers = useSessionBuffersStore()
 const { t } = useI18n()
 const version = __XUN_VERSION__
+const sessionStorageKey = chatUrl('/').split('?')[0]
 
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
@@ -338,6 +339,7 @@ function switchSession(path: string, updateHistory = true) {
   if (path === currentSessionPath.value && socket && socket.readyState < WebSocket.CLOSING) return
   disconnect()
   sessionBuffers.select(path)
+  settings.lastSessions[sessionStorageKey] = path
   configureSession(path)
   resetSessionData()
   if (updateHistory) window.history.replaceState(null, '', chatUrl(path))
@@ -510,8 +512,8 @@ const languageOptions: Array<{ value: Language; labelKey: string; icon: typeof G
 
 onMounted(async () => {
   await loadSessions()
-  const requested = new URLSearchParams(location.search).get('session') || '/'
-  const initial = sessions.value.some(session => session.path === requested)
+  const requested = new URLSearchParams(location.search).get('session') || settings.lastSessions[sessionStorageKey] || '/'
+  const initial = sessionError.value !== '' || sessions.value.some(session => session.path === requested)
     ? requested
     : sessions.value[0]?.path || '/'
   switchSession(initial)

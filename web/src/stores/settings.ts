@@ -12,6 +12,7 @@ export const useSettingsStore = defineStore('settings', {
     filesOpen: true,
     filesWidth: 310,
     previewHeight: 260,
+    lastSessions: {} as Record<string, string>,
   }),
   persist: true,
 })

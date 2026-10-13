@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Check, Clock, Copy, Download, File, FilePlus, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Square, Trash2, Upload, X } from 'lucide-vue-next'
+import { ArrowLeft, Bot, Check, Clock, Copy, Download, File, FilePlus, Folder, FolderArchive, FolderPlus, FolderUp, Globe, Info, MoreHorizontal, Pencil, RefreshCw, Search, Square, Trash2, Upload, X } from 'lucide-vue-next'
 import FilePreview from './FilePreview.vue'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
@@ -27,6 +27,8 @@ const path = computed({
   set: value => { state.value.path = value },
 })
 const entries = ref<FileEntry[]>([])
+const search = ref('')
+const entryIcon = (entry: FileEntry) => entry.kind === 'directory' ? Folder : entry.name.toLowerCase() === 'agents.md' ? Bot : File
 const previewEntry = ref<FileInfo | null>(null)
 const openInEdit = ref(false)
 const infoEntry = ref<PathInfo | null>(null)
@@ -42,6 +44,12 @@ const inlineValue = ref('')
 const inlineBusy = ref(false)
 const inlineError = ref('')
 const inlineInput = ref<HTMLInputElement>()
+const filteredEntries = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  if (!query) return entries.value
+  const editingPath = inlineAction.value === 'move' ? inlineEntry.value?.path : undefined
+  return entries.value.filter(entry => entry.path === editingPath || entry.name.toLowerCase().includes(query))
+})
 const loading = ref(false)
 const activeMenu = ref<'toolbar' | 'entry' | null>(null)
 const activeEntry = ref<FileEntry | null>(null)
@@ -169,6 +177,7 @@ async function restoreBrowserState() {
   const agentId = props.agentId
   const previewPath = state.value.previewPath
   metadataRequest += 1
+  search.value = ''
   closeMenu()
   cancelInlineEdit(true)
   previewEntry.value = null
@@ -393,6 +402,8 @@ function goUp() {
   void refresh()
 }
 
+watch(path, () => { search.value = '' })
+
 async function loadServers() {
   if (!props.available || !props.agentId) {
     servers.value = []
@@ -474,6 +485,11 @@ function serveRemaining(server: ServeServer): string {
       <input :ref="setFileInput" hidden type="file" multiple @change="onPick">
     </div>
 
+    <div class="file-search">
+      <Search :size="14" />
+      <input v-model="search" type="search" :placeholder="t('files.searchNames')" :aria-label="t('files.searchNames')" :disabled="!available || !agentId" @keydown.esc.stop="search = ''">
+      <button v-if="search" class="icon-button" :title="t('files.clearSearch')" @click="search = ''"><X :size="13" /></button>
+    </div>
     <div v-if="error" class="file-error">{{ error }}</div>
     <div v-if="activeServers.length" class="serve-strip">
       <div v-for="server in activeServers" :key="server.key" class="serve-row" :class="{ fresh: server.key === freshKey }">
@@ -492,6 +508,7 @@ function serveRemaining(server: ServeServer): string {
     <div class="file-list" :aria-busy="loading || uploading" @scroll="closeMenu">
       <div v-if="available === false" class="file-empty">{{ t('files.accessDisabled') }}</div>
       <div v-else-if="available && agentId && !loading && !entries.length && inlineAction === null" class="file-empty">{{ t('files.emptyFolder') }}</div>
+      <div v-else-if="available && agentId && !loading && !filteredEntries.length && inlineAction === null" class="file-empty">{{ t('files.noMatches') }}</div>
       <div v-if="inlineAction === 'create' || inlineAction === 'createFile'" class="file-row editing">
         <div class="file-name inline-name">
           <Folder v-if="inlineAction === 'create'" :size="16" />
@@ -499,15 +516,13 @@ function serveRemaining(server: ServeServer): string {
           <input :ref="setInlineInput" v-model="inlineValue" :disabled="inlineBusy" :aria-invalid="!!inlineError" :title="inlineError || t('files.pathHint')" @input="inlineError = ''; error = ''" @keydown.enter.prevent="submitInlineEdit" @keydown.esc.prevent.stop="cancelInlineEdit()" @blur="submitInlineEdit">
         </div>
       </div>
-      <div v-for="entry in entries" :key="entry.path" class="file-row">
+      <div v-for="entry in filteredEntries" :key="entry.path" class="file-row">
         <div v-if="inlineAction === 'move' && inlineEntry?.path === entry.path" class="file-name inline-name">
-          <Folder v-if="entry.kind === 'directory'" :size="16" />
-          <File v-else :size="16" />
+          <component :is="entryIcon(entry)" :size="16" />
           <input :ref="setInlineInput" v-model="inlineValue" :disabled="inlineBusy" :aria-invalid="!!inlineError" :title="inlineError || t('files.pathHint')" @input="inlineError = ''; error = ''" @keydown.enter.prevent="submitInlineEdit" @keydown.esc.prevent.stop="cancelInlineEdit()" @blur="submitInlineEdit">
         </div>
         <button v-else class="file-name" :title="entry.name" @click="open(entry)">
-          <Folder v-if="entry.kind === 'directory'" :size="16" />
-          <File v-else :size="16" />
+          <component :is="entryIcon(entry)" :size="16" />
           <span>{{ entry.name }}</span>
           <span v-if="servingFor(entry.path)" class="row-serve-badge" :title="t('files.serveRunning')"><Globe :size="11" /></span>
         </button>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, Pencil, RotateCcw, Save, X } from 'lucide-vue-next'
+import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, Pencil, RotateCcw, Save, X, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import MarkdownText from './MarkdownText.vue'
 import { api, errorMessage, writeConflict } from '../api'
@@ -30,6 +30,7 @@ const buffer = ref('')
 const loading = ref(false)
 const error = ref('')
 const fullscreen = ref(false)
+const zoom = ref(100)
 const view = ref<PreviewView>('render')
 const savedAt = ref(0)
 const saving = ref(false)
@@ -57,6 +58,7 @@ watch([() => props.entry.path, () => props.entry.modified_at], ([path, modifiedA
   buffer.value = ''
   view.value = kind.value === 'text' ? (props.openInEdit ? 'edit' : render.value ? 'render' : 'source') : 'render'
   fullscreen.value = view.value === 'edit'
+  if (!previous || previous[0] !== path) zoom.value = 100
   if (props.openInEdit) return  // a staged new file has nothing on disk to read yet
   if (kind.value !== 'text') return
   loading.value = true
@@ -167,7 +169,7 @@ function onEditorKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <section class="file-preview" :class="{ 'is-fullscreen': fullscreen }">
+  <section class="file-preview" :class="{ 'is-fullscreen': fullscreen }" :style="{ '--preview-zoom': zoom / 100 }">
     <ResizeHandle v-if="!fullscreen" orientation="vertical" @drag="delta => emit('resize', delta)" />
     <header>
       <span>{{ entry.path }}<i v-if="dirty" class="dirty-mark" :title="t('preview.unsaved')"></i></span>
@@ -199,8 +201,18 @@ function onEditorKeydown(event: KeyboardEvent) {
       </div>
     </header>
 
+    <div v-if="kind !== 'unsupported'" class="preview-zoom" role="group" :aria-label="t('preview.zoom')">
+      <button class="icon-button" :title="t('preview.zoomOut')" :disabled="zoom <= 25" @click="zoom -= 25"><ZoomOut :size="14" /></button>
+      <button class="zoom-reset" :title="t('preview.resetZoom')" @click="zoom = 100">{{ zoom }}%</button>
+      <button class="icon-button" :title="t('preview.zoomIn')" :disabled="zoom >= 400" @click="zoom += 25"><ZoomIn :size="14" /></button>
+    </div>
+
     <template v-if="kind === 'image'">
-      <img v-show="!error" :src="contentUrl" :alt="entry.name" @error="error = t('preview.imageError')">
+      <div v-show="!error" class="preview-viewport is-media">
+        <div class="preview-media">
+          <img :src="contentUrl" :alt="entry.name" @error="error = t('preview.imageError')">
+        </div>
+      </div>
       <div v-if="error" class="preview-error">{{ error }}</div>
     </template>
 
@@ -223,16 +235,25 @@ function onEditorKeydown(event: KeyboardEvent) {
           @keydown="onEditorKeydown"
         />
         <template v-else-if="render && view === 'render'">
-          <MarkdownText v-if="render === 'markdown'" class="preview-rendered" :content="buffer" :enabled="!loading" :base-href="dirUrl" @dblclick="onContentDblClick" />
-          <iframe v-else-if="dirty" key="draft" class="preview-document" :srcdoc="liveDraft" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" @load="onDocumentLoad" />
-          <iframe v-else key="disk" class="preview-document" :src="documentUrl" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" @load="onDocumentLoad" />
+          <div v-if="render === 'markdown'" class="preview-viewport">
+            <MarkdownText class="preview-rendered" :content="buffer" :enabled="!loading" :base-href="dirUrl" @dblclick="onContentDblClick" />
+          </div>
+          <div v-else class="preview-viewport is-media">
+            <div class="preview-media">
+              <iframe :key="dirty ? 'draft' : 'disk'" class="preview-document" :src="dirty ? undefined : documentUrl" :srcdoc="dirty ? liveDraft : undefined" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" @load="onDocumentLoad" />
+            </div>
+          </div>
         </template>
         <pre v-else-if="highlighted" v-html="highlighted" @dblclick="onContentDblClick" />
         <pre v-else @dblclick="onContentDblClick">{{ loading ? t('preview.loading') : buffer }}</pre>
       </template>
     </template>
 
-    <iframe v-else-if="kind === 'pdf'" class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
+    <div v-else-if="kind === 'pdf'" class="preview-viewport is-media">
+      <div class="preview-media">
+        <iframe class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
+      </div>
+    </div>
 
     <div v-else class="preview-unsupported">
       <FileQuestion :size="20" />

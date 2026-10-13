@@ -123,6 +123,9 @@ export default {
     sourceUser: 'user',
   },
   files: {
+    searchNames: 'Filter file and folder names',
+    clearSearch: 'Clear search',
+    noMatches: 'No matching files or folders',
     workspace: 'Workspace',
     files: 'Files',
     closeFiles: 'Close files',
@@ -170,6 +173,10 @@ export default {
     serveExpires: 'Expires in {time}',
   },
   preview: {
+    zoom: 'Preview zoom',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    resetZoom: 'Reset zoom to 100%',
     fullscreen: 'Fullscreen',
     exitFullscreen: 'Exit fullscreen',
     closePreview: 'Close preview',

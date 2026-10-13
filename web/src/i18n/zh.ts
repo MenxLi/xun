@@ -125,6 +125,9 @@ const zh: typeof en = {
     sourceUser: '手动',
   },
   files: {
+    searchNames: '筛选文件和文件夹名',
+    clearSearch: '清空搜索',
+    noMatches: '没有匹配的文件或文件夹',
     workspace: '工作区',
     files: '文件',
     closeFiles: '关闭文件列表',
@@ -172,6 +175,10 @@ const zh: typeof en = {
     serveExpires: '{time} 后过期',
   },
   preview: {
+    zoom: '预览缩放',
+    zoomIn: '放大',
+    zoomOut: '缩小',
+    resetZoom: '恢复 100%',
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
     closePreview: '关闭预览',
