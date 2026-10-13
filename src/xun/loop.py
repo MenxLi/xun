@@ -1,6 +1,7 @@
 from __future__ import annotations
 import uuid
 from typing import Any
+from contextlib import contextmanager
 
 import json, time
 import json_repair
@@ -18,6 +19,7 @@ ExecutionLoopParams = HookArgs.BeforeExecutionArgs
 COMPLETION_RETRY_BACKOFF = 0.5
 COMPLETION_MAX_RETRIES = 3
 USER_RETRY_GRANT = 3
+SEMAPHORE_ACQUIRE_POLL = 0.5
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     # cancellation is the caller's contract: Agent.execute wraps this loop in run_scope
@@ -60,6 +62,16 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
             raise e
     return result
 
+@contextmanager
+def _cancellable_semaphore(sem, agent):
+    """Acquire with cancel checks: a plain acquire is uninterruptible."""
+    while not sem.acquire(timeout=SEMAPHORE_ACQUIRE_POLL):
+        agent.check_cancel()
+    try:
+        yield
+    finally:
+        sem.release()
+
 def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]:
 
     agent = params.agent
@@ -101,7 +113,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             tool_calls_accumulator = []
             usage = None
 
-            with agent.api_call_semaphore:
+            with _cancellable_semaphore(agent.api_call_semaphore, agent):
                 stream = agent.openai_client.chat.completions.create(
                     stream=True,
                     timeout=900,        # TTFT can be slow

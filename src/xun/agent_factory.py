@@ -100,8 +100,9 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
                         "notice": "the agent is still running; call agent_wait again with this id to keep waiting",
                     }
         except (CancelledError, KeyboardInterrupt) as e:
-            # the parent's run_scope clears its cancel event on exit, so the child
-            # may never observe it through the chain; cancel it directly
+            # hand the signal to the child as its own flag: the chained one
+            # dies when the parent's quick next run starts and would orphan a child
+            # still between checkpoints
             if (child := agent_t.agent) is not None:
                 child.cancel()
             raise e

@@ -58,18 +58,15 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         if self.cancel_event.is_set():
             raise CancelledError("Operation cancelled by user.")
 
-    def _clear_cancel(self) -> None:
-        self.cancel_event.event.clear()
-
     @contextmanager
     def run_scope(self):
         """Wrap a unit of running work: track _running (nested-safe), refuse to
-        start or finish while cancelled, turn SIGINT into a cancel for worker
-        threads, and clear the event on exit.
+        start while cancelled, and turn SIGINT into a cancel for worker threads.
+        run_start/run_end fire only on real idle <-> running transitions.
 
-        On the idle -> running transition (outermost scope only) this fires
-        hooks.run_start; hooks.run_end fires exactly when such a
-        scope exits, for any reason."""
+        The cancel flag is cleared on entry to the outermost scope, never on
+        exit: a cancel outlives its run so chained sub-agents still observe it
+        at their own next checkpoint. Nested scopes clear nothing."""
         from .display_abstract import AgentRunningEndEvent, AgentRunningStartEvent
         from .hooks import HookArgs
 
@@ -77,21 +74,20 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         self._running = True
         scope: Optional[HookArgs.RunArgs] = None
         try:
+            if not prev_running:
+                self.cancel_event.event.clear()
             self.check_cancel()
             if not prev_running:
-                # only fire at real state transitions
                 scope = HookArgs.RunArgs(agent=cast("Agent[Agent.T.Init]", self))
                 self.display_event(AgentRunningStartEvent())
                 self.hooks.run_start.invoke(scope)
             yield
             self.check_cancel()
         except KeyboardInterrupt:
-            # SIGINT hits only this thread; signal worker-thread sub-agents too
-            self.cancel()
+            self.cancel()    # SIGINT hits this thread only, not worker threads
             raise
         finally:
             self._running = prev_running
-            self._clear_cancel()
             if scope is not None:
                 self.hooks.run_end.invoke(scope)
                 self.display_event(AgentRunningEndEvent())
