@@ -17,6 +17,7 @@ from .openai_helper import ChatCompletionMessageWithReasoning
 
 
 MAX_HISTORY_CONTENT_LENGTH = 1000
+MAX_COMPACTED_TOOLCALL_RECORDS = 2000
 
 
 class Conversation:
@@ -188,6 +189,13 @@ class Conversation:
                 if len(old_content) > len(new_content):
                     message.content = Result.Ok(new_content)
                     self._compacted_toolcalls[message.tool_call_id] = old_content
+
+                    # set high enough that recalling a trimmed tool call is nearly impossible
+                    if len(self._compacted_toolcalls) > MAX_COMPACTED_TOOLCALL_RECORDS:
+                        keys_to_remove = list(self._compacted_toolcalls.keys())[:len(self._compacted_toolcalls) // 2]
+                        for key in keys_to_remove:
+                            del self._compacted_toolcalls[key]
+
                     n_compacted += 1
         message_length_after: int = self.estimated_message_length()
         return ToolCallCompactResult(
@@ -257,6 +265,7 @@ class Conversation:
             )
     
     def to_history(self, truncate = False) -> list[MessageRecord]:
+        """For display history event, may change in the future."""
         res = []
         for msg in self.messages:
             param = msg.completion_param()
