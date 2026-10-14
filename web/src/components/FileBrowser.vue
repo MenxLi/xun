@@ -139,7 +139,9 @@ onBeforeUnmount(() => {
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 function resizeWidth(delta: number) {
-  settings.filesWidth = clamp(settings.filesWidth - delta, 220, 640)
+  // keep the chat pane usable; CSS caps .file-browser at 45vw too
+  const max = Math.min(640, Math.max(220, window.innerWidth * 0.45))
+  settings.filesWidth = clamp(settings.filesWidth - delta, 220, max)
 }
 
 function resizePreview(delta: number) {

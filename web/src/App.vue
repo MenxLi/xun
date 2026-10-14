@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, BookOpen, Check, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type, Wifi, WifiOff } from 'lucide-vue-next'
+import { Bot, BookOpen, Check, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type } from 'lucide-vue-next'
 import { api, appUrl, chatUrl, configureSession, docsUrl, formatTokens } from './api'
 import i18n, { resolveLocale, type Language } from './i18n'
 import InputComposer from './components/InputComposer.vue'
@@ -570,7 +570,7 @@ onBeforeUnmount(() => {
           <span v-if="selectedAgentTokens != null" class="token-badge" :title="t('app.tokensTitle')">{{ formatTokens(selectedAgentTokens) }} {{ t('app.tokens') }}</span>
         </div>
         <div class="topbar-actions">
-          <span class="connection" :class="{ connected }"><Wifi v-if="connected" :size="14" /><WifiOff v-else :size="14" />{{ connected ? t('app.connected') : t('app.reconnecting') }}</span>
+          <span class="connection" :class="{ connected }" :title="connected ? t('app.connected') : t('app.reconnecting')"><span class="connection-dot" /><span class="connection-text">{{ connected ? t('app.connected') : t('app.reconnecting') }}</span></span>
           <div class="settings-wrap">
             <button class="icon-button" :title="t('app.displaySettings')" :aria-label="t('app.displaySettings')" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Settings :size="17" /></button>
             <div v-if="settingsOpen" class="settings-menu">

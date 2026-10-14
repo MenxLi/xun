@@ -44,12 +44,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .session-row:hover .session-actions, .session-actions:focus-within, .session-actions.open { opacity: 1; }
 @media (hover: none) { .session-actions { opacity: 1; } }
 .session-error { margin: 6px 0; padding: 4px 14px 4px 12px; border-left: 2px solid var(--danger); color: var(--danger); background: color-mix(in srgb, var(--danger) 7%, transparent); font-size: 10px; line-height: 1.4; }
-.topbar { height: 62px; flex: none; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(12px); z-index: 5; }
+.topbar { height: 62px; flex: none; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(12px); z-index: 5; container: topbar / inline-size; }
 .brand, .agent-controls, .topbar-actions, .connection { display: flex; align-items: center; }
 .brand { gap: 12px; }
-.brand h1 { margin: 0; font: 600 25px/1 'Newsreader', serif; }
-.brand span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
-.agent-controls { min-width: 0; height: 32px; margin: 0 auto 0 28px; padding: 0 3px 0 9px; gap: 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted); }
+.agent-controls { min-width: 0; overflow: hidden; height: 32px; margin: 0 auto 0 28px; padding: 0 3px 0 9px; gap: 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted); }
 .agent-icon { position: relative; width: 15px; height: 15px; flex: none; display: grid; place-items: center; }
 .agent-running-dot { position: absolute; right: -2px; bottom: -2px; width: 6px; height: 6px; border: 1px solid var(--panel); border-radius: 50%; background: #42aee8; box-shadow: 0 0 7px color-mix(in srgb, #42aee8 75%, transparent); animation: agent-running-pulse 1.8s ease-in-out infinite; }
 @keyframes agent-running-pulse { 50% { opacity: .55; transform: scale(.82); } }
@@ -57,9 +55,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .stream-filter { height: 24px; padding: 0 7px; display: flex; align-items: center; gap: 5px; border-left: 1px solid var(--line); color: var(--muted); font-size: 9px; white-space: nowrap; cursor: pointer; }
 .stream-filter input { width: 12px; height: 12px; margin: 0; accent-color: var(--accent); }
 .token-badge { padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: color-mix(in srgb, var(--paper) 70%, transparent); font: 500 9px/1.4 'Fira Code', monospace; white-space: nowrap; }
-.topbar-actions { gap: 12px; }
-.connection { gap: 6px; color: var(--muted); font-size: 11px; }
+.topbar-actions { gap: 12px; flex: none; }
+.connection { gap: 7px; padding: 0 4px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .connection.connected { color: var(--accent); }
+.connection-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--muted); }
+.connection.connected .connection-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.connection:not(.connected) .connection-dot { animation: connection-blink 1.2s ease-in-out infinite; }
+@keyframes connection-blink { 50% { opacity: .3; } }
 .settings-wrap { position: relative; }
 .settings-scrim { position: fixed; inset: 0; z-index: 29; }
 .topbar.settings-open { z-index: 40; }
@@ -311,6 +313,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 body.resizing-x { cursor: col-resize; user-select: none; }
 body.resizing-y { cursor: row-resize; user-select: none; }
 .file-browser.drag-active { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (min-width: 900px) { .file-browser { max-width: 45%; } }
 .file-header { height: 62px; padding: 0 14px 0 16px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .file-header strong { display: block; margin-top: 2px; font-size: 13px; }
 .eyebrow { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .06em; }
@@ -443,8 +446,10 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .prompt-footer .primary-button { min-width: 72px; height: 34px; padding: 0 12px; flex: none; color: var(--paper); font-size: 11px; }
 .primary-button { min-width: 82px; height: 36px; border: 0; border-radius: 5px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
 .primary-button:disabled { opacity: .35; cursor: default; }
-@media (max-width: 899px) { .session-sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100% - 42px)); box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .file-browser { position: fixed; inset: 0 0 0 auto; width: min(330px, calc(100% - 42px)) !important; box-shadow: -18px 0 45px rgba(25, 33, 29, .18); } .resize-handle.horizontal { display: none; } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } .topbar { padding: 0 12px; } .agent-controls { max-width: 360px; margin-left: 12px; margin-right: auto; } .agent-controls select { min-width: 0; max-width: none; } .stream-filter span { display: none; } .token-badge, .connection { display: none; } .topbar-actions { gap: 4px; } }
+@media (max-width: 899px) { .session-sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100% - 42px)); box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .file-browser { position: fixed; inset: 0 0 0 auto; width: min(330px, calc(100% - 42px)) !important; box-shadow: -18px 0 45px rgba(25, 33, 29, .18); } .resize-handle.horizontal { display: none; } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } .topbar { padding: 0 12px; } .agent-controls { max-width: 360px; margin-left: 12px; margin-right: auto; } .agent-controls select { min-width: 0; max-width: none; } .stream-filter span { display: none; } .token-badge { display: none; } .topbar-actions { gap: 4px; } }
 @media (max-width: 720px) { .agent-controls { margin-left: 10px; } }
-@media (max-width: 600px) { .topbar { height: 56px; padding: 0 8px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; } .agent-controls { width: 100%; margin: 0; } .agent-controls select { min-width: 0; max-width: none; flex: 1; } .stream-filter { display: none; } .topbar-actions { gap: 2px; } .connection { display: none; } .settings-menu { position: fixed; top: 64px; right: 10px; left: 10px; width: auto; padding: 10px; } .stream, .prompt-stream { width: calc(100% - 24px); } .stream { padding-top: 22px; } .message.user { max-width: 94%; } .composer-area { padding: 9px 9px 11px; } .composer-hint { display: none; } .command-menu button { grid-template-columns: 100px 1fr; } .command-line { grid-template-columns: 105px 1fr; } .tool-listing { grid-template-columns: 1fr; gap: 6px; } }
+@container topbar (max-width: 720px) { .stream-filter span { display: none; } .token-badge { display: none; } }
+@container topbar (max-width: 560px) { .connection-text { display: none; } }
+@media (max-width: 600px) { .topbar { height: 56px; padding: 0 8px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 6px; } .agent-controls { width: 100%; margin: 0; } .agent-controls select { min-width: 0; max-width: none; flex: 1; } .stream-filter { display: none; } .topbar-actions { gap: 2px; } .connection-text { display: none; } .settings-menu { position: fixed; top: 64px; right: 10px; left: 10px; width: auto; padding: 10px; } .stream, .prompt-stream { width: calc(100% - 24px); } .stream { padding-top: 22px; } .message.user { max-width: 94%; } .composer-area { padding: 9px 9px 11px; } .composer-hint { display: none; } .command-menu button { grid-template-columns: 100px 1fr; } .command-line { grid-template-columns: 105px 1fr; } .tool-listing { grid-template-columns: 1fr; gap: 6px; } }
 @media (max-width: 600px) { .batch-meta, .batch-header time, .turn-header .token-usage, .turn-header time { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } .stream-loading { animation: none; opacity: 1; } }
