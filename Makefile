@@ -1,4 +1,4 @@
-.PHONY: build-web build-docker test test-ext doc doc-dist doc-clean doc-update
+.PHONY: build-web build-docker test test-ext doc doc-build doc-dist doc-clean doc-update
 
 DOC_PATH := src/xun/assets/docs
 
@@ -23,6 +23,9 @@ doc-update:
 		--name "xun-doc" \
 		--port ""
 
+doc-build:
+	cd docs && npm i && npm run docs:build
+
 doc-dist:
 	@if [ ! -f "site/index.html" ]; then \
 		echo "Documentation not generated; skipping distribution."; \
@@ -39,10 +42,7 @@ doc-clean:
 	if [ -d "site" ]; then \
 		rm -rf site; \
 	fi \
-	&& rm -rf docs/ && git checkout -- docs/; \
-	if [ -f "mkdocs.yml" ]; then \
-		rm -f mkdocs.yml; \
-	fi
+	&& rm -rf docs/ && git checkout -- docs/
 
 test:
 	uv run python -m unittest discover -s test -t . -v

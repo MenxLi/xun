@@ -2,8 +2,8 @@
 
 Documentation is generated locally by an agent. The generated site is copied
 into the package assets before release, and `WebDisplayService` serves it at
-`/docs/`. Bootstrap creates the bilingual MkDocs source, configuration, and
-site, so it can take some time. 
+`/docs/`. Bootstrap creates the bilingual VitePress project, configuration,
+and site, so it can take some time. 
 
 ## Prerequisites
 

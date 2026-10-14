@@ -1,5 +1,5 @@
 
-docs用MkDocs构建（material主题 + mkdocs-static-i18n插件），中/英双语，主要分以下几个章节：
+docs用VitePress构建（默认主题 + locales双语，见文末工程约定），英/中双语（英文为默认语言），主要分以下几个章节：
 
 大纲（一、二级标题；仅供参考，标题、内容务必根据实际情况调整）：
 
@@ -36,25 +36,28 @@ docs用MkDocs构建（material主题 + mkdocs-static-i18n插件），中/英双�
 > API 是插件实现的基础，但也可以不止用于插件开发，例如直接基于 API 构建自定义工具或脚本。
 > 插件则主要用于在保持现有程序入口不变的前提下，依托插件加载机制扩展功能。
 
-请勿改动源码和现有git track的文件。
-整体逻辑应清晰明了，过于细节且对读者不重要的内容应该省略。
-章节之间要有明确的层次关系，便于读者快速找到所需信息。
-适当画一些示意图，帮助理解文档结构和各模块之间的关系；形式由你决定（mermaid最好、复杂图像SVG、PNG 等均可，哪种清楚好看用哪种），请确保图示结构、对位正确。
-整体完成后再仔细检查，确保文档内容准确，示意图正确。
-在不太显眼的地方标明文档所对应的版本信息。
+要求（重要）：
+- 请勿改动源码和现有git track的文件。
+- 整体逻辑应清晰明了，尽量压缩文档长度
+    - 细节且对读者不重要的内容应该省略。
+    - 不稳定或实现较为随意的内容应省略或明确标注。
+- 章节之间要有明确的层次关系，便于读者快速找到所需信息。
+- 适当画一些示意图，帮助理解文档结构和各模块之间的关系
+    - 形式由你决定（mermaid最好、复杂图像SVG、PNG 等均可，哪种清楚好看用哪种）。
+    - 请确保图示结构、对位正确。
+- 整体完成后委派子智能体进行检查，确保文档内容准确，示意图正确。
+- 在不太显眼的地方标明文档所对应的版本信息。
 
 ---
 工程约定（重新生成时须遵循，保证结构稳定）：
 
-- `mkdocs.yml` 放在仓库根目录，双语用 mkdocs-static-i18n：中文为默认语言，中文页面放 `docs/zh/` 下，英文译文放 `docs/en/` 下同名文件，两侧目录结构一一对应，不要另起结构。
-- Material 的语言切换器必须由 mkdocs-static-i18n 生成，并启用 `reconfigure_material: true`；不要在 `extra.alternates` 中手写 `/en/`、`/zh/` 等根绝对链接。不要启用与多语言切换器不兼容的 `navigation.instant`。
-- `docs/AGENTS.md` 是本指令文件，不进导航；`docs/zh/changelog.md` 是中文原文，英文版由你输出到 `docs/en/changelog.md`。
-- 除 `mkdocs.yml` 和 `docs/zh/`、`docs/en/` 下的源文件外不要创建其它工程文件；已有的 `docs/AGENTS.md`、`docs/zh/changelog.md` 不要移动或改名。
-
-写完后在仓库根目录执行 `mkdocs build --strict`，输出到 `{repo_root}/site` 目录供我查阅。
-
-构建产物必须能挂载在任意 URL 前缀下（例如 `/alice/docs/`），不能假定站点位于域名根目录：
-
-- 不要设置 `site_url`，Markdown、导航、语言切换器以及主题资源一律使用相对链接。
-- 构建后检查 `site/**/*.html`，不得出现 `href="/en/"`、`href="/zh/"`，也不得出现其它站内 `href`、`src` 或 `action` 以单个 `/` 开头的根绝对 URL；`https://` 等外部 URL 不受此限制。
-- 至少核对中文首页、英文首页和一对同名内页的语言切换链接，切换后必须停留在对应页面，并保留部署前缀；发现根绝对链接时先修正 `mkdocs.yml` 或插件配置，再重新构建，不能直接修改 `site/`。
+- VitePress 站点根为 `docs/`。英文为默认语言：英文页放 `docs/en/`，中文译文放 `docs/zh/` 下同名文件，两侧目录一一对应。
+- `docs/package.json` 由仓库提供（git 跟踪），依赖与 `"docs:build": "vitepress build"` 已配好，勿改动；容器里 Node 来自 nvm，构建前先 `. "$NVM_DIR/nvm.sh"` 再 `npm install`。
+- `docs/.vitepress/config.mts` 关键配置（缺失会导致路径或语言切换错误）：
+  - `base: './'`（可重定位构建，产物全相对路径）、`outDir: '../site'`（产物输出到仓库根 `site/`）、`cleanUrls: false`、`srcExclude: ['AGENTS.md']`；不要设置 sitemap 等依赖绝对 URL 的配置。
+  - `rewrites: { 'en/:page*': ':page*' }`：英文页 URL 位于站点根，中文保留 `/zh/`。页面间相对链接按重写后的 URL 书写并省略 `.md`（en→zh 用 `./zh/guide`，zh→en 用 `../guide`）。
+  - `locales`: `root`（label English，link `/`）与 `zh`（简体中文，link `/zh/`），语言切换交给主题。
+  - mermaid：默认主题不支持，需 `.vitepress/theme/` 自定义主题把 `mermaid` fence 渲染为组件，组件内动态 `import('mermaid')` 后 `mermaid.render`（SSG 安全）。
+- 只在 `docs/` 内创建 VitePress 工程文件与 `docs/en/`、`docs/zh/` 页面；`docs/AGENTS.md`、`docs/package.json`、`docs/zh/changelog.md`（中文原文，英文译文写到 `docs/en/changelog.md`）勿动。生成物（`site/`、`node_modules/` 等）已 gitignore，不入库。
+- 完成后在 `docs/` 执行 `npm run docs:build`，产物在仓库根 `site/`。死链会使构建失败（≈ `mkdocs build --strict`），不要关闭该检查。
+- 产物须能挂在任意 URL 前缀下（如 `/alice/docs/`）：构建后检查 `site/**/*.html`，站内 `href`/`src`/`action` 不得以单个 `/` 开头（外部 URL 不限）；抽查首页与同名内页的语言切换，切换后须停留在对应页并保留前缀。有问题改配置重建，不得直接改 `site/`。

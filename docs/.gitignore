@@ -1,5 +1,6 @@
 *
 !/.gitignore
 !/AGENTS.md
+!/package.json
 !/zh/
 !/zh/changelog.md

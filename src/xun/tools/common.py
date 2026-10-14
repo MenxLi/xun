@@ -187,7 +187,9 @@ class CommandExecutionAllowList:
 @dataclass
 class Policy(StateRuntimeEntry):
     """Confirmed write/command grants. Runtime-only: restarting the agent starts
-    from a clean allowlist rather than reviving old approvals."""
+    from a clean allowlist rather than reviving old approvals.
+    NOTE: This is an unstable feature and may change in future releases, avoid relying on it if possible.
+    """
 
     write_allowlist: WriteAllowList = field(default_factory=WriteAllowList)
     command_allowlist: CommandExecutionAllowList = field(default_factory=CommandExecutionAllowList)
