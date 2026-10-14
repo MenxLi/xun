@@ -1,14 +1,11 @@
 # Xun
 
-A mini LLM agent runtime, with ready-to-use components for building agent systems.
+A mini LLM agent runtime for building agent systems.
+
 Main features include:
-- Lightweight and compact core codebase (less than 5000 lines in `src/xun/*.py`, with comprehensive type hints). 
+- Lightweight and compact core codebase (~5000 lines in `src/xun/*.py`, with comprehensive type hints). 
 - Ready-to-use components like predefined tools, commands, extensions, and CLI/web interfaces. 
 - Extensible architecture for customization. 
-
-<!-- The core codebase is compact: 
-less than 5000 lines in `src/xun/*.py` (direct descendant of `src/xun`), 
-mostly hand written, with comprehensive type hints. -->
 
 <!-- 
 <details>
@@ -245,8 +242,6 @@ More configuration options are available; see the source code of `AgentConfig` a
 
 ## Extensions
 
-**Extension is the best way to customize and extend xun's functionality.**
-
 Drop a Python file under `$XUN_HOME/extensions/` and every agent picks up its effects (tools, hooks, commands, config tweaks) at initialization — no wiring needed. Extensions are trusted code, like a shell rc file.
 
 ```python
@@ -258,6 +253,14 @@ def setup_extension(ctx: ExtensionContext) -> None:
 ```
 
 See [extensions/README.md](extensions/README.md) for the full mechanics.
+
+<details>
+<summary>What's an extension in contrast to the API?</summary>
+
+An extension is a way to customize and extend xun's functionality without changing the entrypoint of the application.  
+Extension is based on the API, leveraging its hooks and interfaces to integrate seamlessly with the agent's lifecycle.
+
+</details>
 
 ## Skills and MCP
 
