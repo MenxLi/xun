@@ -123,7 +123,7 @@ def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
         case CommandInstruction():
             result = agent.execute_command(inst.command, inst.args)
             if result.is_err():
-                agent.error(f"Error executing command: {result.unwrap_err().error}")
+                agent.display_error(f"Error executing command: {result.unwrap_err().error}")
             if inst.command == "retry":
                 agent.execute()
 
@@ -131,9 +131,9 @@ def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
             try:
                 agent.instruct(inst.content, images=inst.images).execute()
             except ValueError as e:
-                agent.error(f"Error executing instruction: {e}")
+                agent.display_error(f"Error executing instruction: {e}")
         case _:
-            agent.error(f"Invalid instruction: {inst}")
+            agent.display_error(f"Invalid instruction: {inst}")
 
 def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
     if isinstance(agent.display, Display):
@@ -155,7 +155,7 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         except (KeyboardInterrupt, CancelledError) as e:
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
-            agent.error(e.reason if isinstance(e, CancelledError) else "Execution interrupted by user.")
+            agent.display_error(e.reason if isinstance(e, CancelledError) else "Execution interrupted by user.")
         inst = get_instruction(agent.display, agent=agent)
 
 

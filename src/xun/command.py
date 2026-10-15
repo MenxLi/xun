@@ -74,9 +74,9 @@ class Command:
 
     def show_help(self, agent: "Agent[Agent.T.Init]") -> None:
         if self.description_long:
-            agent.info(self.description_long)
+            agent.display_info(self.description_long)
         else:
-            agent.info(self.description)
+            agent.display_info(self.description)
 
     def invoke(self, agent: "Agent[Agent.T.Init]", args: list[str] = []) -> None:
         if args in (["-h"], ["--help"]):
@@ -87,7 +87,7 @@ class Command:
         except (KeyboardInterrupt, CancelledError):
             raise
         except Exception as e:
-            agent.error(f"Error executing command '{self.name}': {e}")
+            agent.display_error(f"Error executing command '{self.name}': {e}")
 
     def _dispatch(self, agent: "Agent[Agent.T.Init]", registry: "CommandRegistry", args: list[str]) -> None:
         if not args:
@@ -159,15 +159,15 @@ def default_commands() -> list[Command]:
                 token /= 1000
 
             if token_str_unit:
-                agent.info(f"Tokens used in conversation: {token:.2f}{token_str_unit}")
+                agent.display_info(f"Tokens used in conversation: {token:.2f}{token_str_unit}")
             else:
-                agent.info(f"Tokens used in conversation: {token}")
+                agent.display_info(f"Tokens used in conversation: {token}")
         else:
-            agent.info("Tokens used in conversation: Unknown (not yet calculated)")
+            agent.display_info("Tokens used in conversation: Unknown (not yet calculated)")
 
     def _clear_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         agent.conversation.clear()
-        agent.info("History cleared.")
+        agent.display_info("History cleared.")
         if len(args) > 0 and args[0] == "all":
             # remove everything from the tempdir as well
             if agent.workspace.tempdir is not None:
@@ -178,9 +178,9 @@ def default_commands() -> list[Command]:
                         elif item.is_dir():
                             import shutil
                             shutil.rmtree(item)
-                    agent.info("Temporary files cleared.")
+                    agent.display_info("Temporary files cleared.")
                 else:
-                    agent.info("No temporary files to clear.")
+                    agent.display_info("No temporary files to clear.")
                     
 
     def _revise_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
@@ -195,14 +195,14 @@ def default_commands() -> list[Command]:
         records = agent.conversation.pop_from_last_user_message()
         assert records and isinstance(records[0], UserMessage)
         if not args:
-            agent.info("Revised to last user message.")
+            agent.display_info("Revised to last user message.")
             return
         agent.instruct(" ".join(args))
-        agent.info("Revised last user message. Use /continue to proceed.")
+        agent.display_info("Revised last user message. Use /continue to proceed.")
 
     def _retry_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.conversation.pop_from_last_user_message(inclusive=False)
-        agent.info("Restarted from last user message.")
+        agent.display_info("Restarted from last user message.")
 
     def _config_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         """Show or edit the agent's configuration.
@@ -210,7 +210,7 @@ def default_commands() -> list[Command]:
         To edit a configuration value, provide a single argument in the format 'key.sub=value'.
         """
         if not args:
-            agent.info(agent.config.to_json_str())
+            agent.display_info(agent.config.to_json_str())
             return
         
         if args:
@@ -221,7 +221,7 @@ def default_commands() -> list[Command]:
             for k in key_sp[:-1]:
                 var = getattr(var, k)
             setattr(var, key_sp[-1], value)
-            agent.info(f"Config updated: {key} = {getattr(var, key_sp[-1])!r}")
+            agent.display_info(f"Config updated: {key} = {getattr(var, key_sp[-1])!r}")
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
@@ -241,9 +241,9 @@ def default_commands() -> list[Command]:
             if args[0] == 'toolcall':
                 reclaimed = agent.conversation.compact_toolcall()
                 if reclaimed.reclaimed_count:
-                    agent.info(f"Compacted {reclaimed.reclaimed_count} tool call result(s), reclaimed {reclaimed.reclaimed_fraction:.1%} of estimated message length.")
+                    agent.display_info(f"Compacted {reclaimed.reclaimed_count} tool call result(s), reclaimed {reclaimed.reclaimed_fraction:.1%} of estimated message length.")
                 else:
-                    agent.info("No tool call results to compact.")
+                    agent.display_info("No tool call results to compact.")
             else:
                 raise ValueError(f"Unknown argument for compact: {args[0]}")
         else:
@@ -251,7 +251,7 @@ def default_commands() -> list[Command]:
     
     def _yolo_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.config.auto_confirm = not agent.config.auto_confirm
-        agent.info(f"Auto-confirm is now {'enabled' if agent.config.auto_confirm else 'disabled'}.")
+        agent.display_info(f"Auto-confirm is now {'enabled' if agent.config.auto_confirm else 'disabled'}.")
 
     def _history_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowHistoryEvent(history=agent.conversation.to_history()))
@@ -285,7 +285,7 @@ def default_commands_with_fs() -> list[Command]:
         aim_dir = store.next_history_store()
         aim_dir.mkdir()
         agent.conversation.dump(aim_dir / "conversation.json")
-        agent.info(f"Dumped to {aim_dir}")
+        agent.display_info(f"Dumped to {aim_dir}")
 
     def _load_handler(agent: "Agent[Agent.T.Init]", idx: list[str]) -> None:
         """Load conversation history from save storage (experimental).
@@ -296,30 +296,30 @@ def default_commands_with_fs() -> list[Command]:
         """
         store = Store()
         if not idx:
-            agent.error("Please provide an index or 'latest' to load history.")
+            agent.display_error("Please provide an index or 'latest' to load history.")
             return
         target = idx[0]
         if target.isdigit():
             aim_dir = store.get_history_store(target)
             if not aim_dir:
-                agent.error(f"History {target} not found.")
+                agent.display_error(f"History {target} not found.")
                 return
         elif target == "latest":
             latest_dir = store.latest_history_store()
             if latest_dir is None:
-                agent.info("No history found.")
+                agent.display_info("No history found.")
                 return
             aim_dir = latest_dir
         else:
-            agent.error(f"Invalid index '{target}'. Use a number or 'latest'.")
+            agent.display_error(f"Invalid index '{target}'. Use a number or 'latest'.")
             return
         conv_file = aim_dir / "conversation.json"
         if not conv_file.exists():
-            agent.error(f"No conversation history found in {conv_file}.")
+            agent.display_error(f"No conversation history found in {conv_file}.")
             return
         agent.conversation.load(conv_file)
         agent.sync_project_instructions()
-        agent.info(f"Loaded from {aim_dir}")
+        agent.display_info(f"Loaded from {aim_dir}")
     
     def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
         """Render conversation history as HTML and save to a file.
@@ -327,7 +327,7 @@ def default_commands_with_fs() -> list[Command]:
             render <file_path>
         """
         if not arguments:
-            agent.error("Please provide a file path to save the rendered HTML.")
+            agent.display_error("Please provide a file path to save the rendered HTML.")
             return
         assert len(arguments) == 1, "Please provide exactly one file path to save the rendered HTML."
         aim_path_raw = arguments[0]

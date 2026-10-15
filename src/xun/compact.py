@@ -89,7 +89,7 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) ->
     """
     from .agent import Agent
 
-    agent.info("Condensing conversation history...")
+    agent.display_info("Condensing conversation history...")
 
     def summarize(messages: list[AbstractMessage]) -> Optional[str]:
         compactor = Agent.inherit(
@@ -110,20 +110,20 @@ def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) ->
             result = ready.instruct(CONDENSE_PROMPT, _emit_event=False).execute(max_iterations=1)
         if result.is_err():
             error = result.unwrap_err()
-            agent.error(f"Failed to condense conversation history: {error.error}")
+            agent.display_error(f"Failed to condense conversation history: {error.error}")
             return None
         summary = result.unwrap()
         if summary:
-            agent.info(f"Conversation history condensed. (Summary chars: {len(summary)})")
+            agent.display_info(f"Conversation history condensed. (Summary chars: {len(summary)})")
             return summary
         else:
             # somehow may be ""...
-            agent.error("Conversation history condensed but produced an empty summary.")
+            agent.display_error("Conversation history condensed but produced an empty summary.")
             return None
 
     r = agent.conversation.compact(summarize, keep_recent=keep_recent)
     if r.status is SummaryCompactResult.Status.NOTHING_TO_CONDENSE:
-        agent.info(r.message)
+        agent.display_info(r.message)
     return r
 
 class CompactorAbstract(ABC):
@@ -140,7 +140,7 @@ class CompactorAbstract(ABC):
             raise
         except Exception as exc:
             # HookRegistry swallows hook exceptions, so log here to keep failures visible
-            agent.error(f"Compaction hook failed: {exc}")
+            agent.display_error(f"Compaction hook failed: {exc}")
 
     @abstractmethod
     def auto_compact(self, agent: "Agent[Agent.T.Init]") -> None:
@@ -180,7 +180,7 @@ class AutoCompactor(CompactorAbstract):
         # once enough cheap rounds pile up, or when the reclaim did not sufficiently reduce the estimated token count.
         reclaimed = conv.compact_toolcall(keep_max = toolcall_keep_max)
         estimated_token_after_reclaim = int(conv.total_tokens * (1 - reclaimed.reclaimed_fraction))
-        agent.info(
+        agent.display_info(
             f"Last call used {conv.total_tokens} tokens, over the auto-compact threshold "
             f"({ac.token_threshold}); compacted {reclaimed.reclaimed_count} tool calls, estimated tokens after reclaim: {estimated_token_after_reclaim:.0f}"
         )
@@ -191,7 +191,7 @@ class AutoCompactor(CompactorAbstract):
         ):
             return
 
-        agent.info("Escalating to full conversation compaction...")
+        agent.display_info("Escalating to full conversation compaction...")
         try:
             r = compact_conversation(agent, keep_recent = summary_keep_max)
             if not r.compacted:
@@ -199,12 +199,12 @@ class AutoCompactor(CompactorAbstract):
             if (et:=int(estimated_token_after_reclaim * (1 - r.reclaimed_fraction))) <= ac.token_threshold * ESCALATION_RATIO:
                 return
             if remaining == 0:
-                agent.error(f"Conversation still ~{et} tokens after compaction; no further progress possible.")
+                agent.display_error(f"Conversation still ~{et} tokens after compaction; no further progress possible.")
             else:
-                agent.warning(f"Estimated tokens after full conversation compaction: {et}. Will auto-compact again.")
+                agent.display_warning(f"Estimated tokens after full conversation compaction: {et}. Will auto-compact again.")
                 conv.total_tokens = et      # must update before recursive auto-compaction
                 self._auto_compact(agent, toolcall_keep_max//2, summary_keep_max//2, remaining - 1)
         except CancelledError:
             raise
         except Exception as exc:
-            agent.error(f"Auto-compaction failed: {exc}")
+            agent.display_error(f"Auto-compaction failed: {exc}")

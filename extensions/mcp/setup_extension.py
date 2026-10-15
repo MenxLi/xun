@@ -123,7 +123,7 @@ def _make_tool(server: str, spec: dict, cfg: dict) -> Function:
     def _impl(ctx: ToolCallContext, **kwargs: Any) -> Any:
         args, dropped = _prune(kwargs, schema)
         if dropped:
-            ctx.agent.info(f"[MCP {tool}] dropped undeclared arguments: {dropped}")
+            ctx.agent.display_info(f"[MCP {tool}] dropped undeclared arguments: {dropped}")
         MANAGER.ensure(server, _transport_kwargs(cfg))
         return _to_result(MANAGER.call(server, tool, args, _timeout(cfg)), ctx, name)
 
@@ -222,7 +222,7 @@ def setup_extension(ctx: ExtensionContext) -> None:
     def command(agent: Any, args: list[str]) -> None:
         configured = _servers(ctx)
         if args == ["status"]:
-            agent.info("\n".join(f"{name}: {MANAGER.status(name)}"
+            agent.display_info("\n".join(f"{name}: {MANAGER.status(name)}"
                                  for name in sorted(configured)))
             return
         if len(args) == 2 and args[0] in {"status", "restart"}:
@@ -230,12 +230,12 @@ def setup_extension(ctx: ExtensionContext) -> None:
             if name not in configured:
                 raise ValueError(f"No configured MCP server '{name}'")
             if args[0] == "status":
-                agent.info(f"{name}: {MANAGER.status(name)}")
+                agent.display_info(f"{name}: {MANAGER.status(name)}")
                 return
             specs = MANAGER.restart(name, _transport_kwargs(configured[name]))
             added, replaced, removed = _reconcile(
                 agent.toolbox, _prefix(name), _wanted(name, specs, configured[name]))
-            agent.info(f"{name}: restarted (added {added}, replaced {replaced}, "
+            agent.display_info(f"{name}: restarted (added {added}, replaced {replaced}, "
                        f"removed {removed})")
             return
         raise ValueError("Usage: /mcp status [server] | /mcp restart <server>")

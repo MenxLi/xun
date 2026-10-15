@@ -40,7 +40,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         if (r := resolve_result(params.takeover_result, params.schema)).is_ok():
             return r.unwrap()
         else:
-            agent.error(f"Failed to resolve takeover result: {r.unwrap_err()}")
+            agent.display_error(f"Failed to resolve takeover result: {r.unwrap_err()}")
             raise RuntimeError(f"Failed to resolve takeover result: {r.unwrap_err()}")
 
     n_resolve_fail = 0
@@ -71,10 +71,10 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
                 n_resolve_fail += 1
                 continue
 
-            agent.error(f"Failed to resolve result: {result.unwrap_err()}")
+            agent.display_error(f"Failed to resolve result: {result.unwrap_err()}")
             raise RuntimeError(f"Failed to resolve result: {result.unwrap_err()}")
 
-    agent.error(
+    agent.display_error(
         "Maximum tool call iterations exceeded." + 
         (f" (n_resolve_fail={n_resolve_fail})" if n_resolve_fail > 0 else "")
         )
@@ -220,13 +220,13 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
 
         except Exception as e:
             if n_completion_max_retries > 0:
-                agent.warning(f"Error during chat completion: {e}, will retry in {completion_retry_backoff}s")
+                agent.display_warning(f"Error during chat completion: {e}, will retry in {completion_retry_backoff}s")
                 time.sleep(completion_retry_backoff)
                 n_completion_max_retries -= 1
                 completion_retry_backoff *= 2
                 continue
             else:
-                agent.error(message=f"Error during chat completion: {e}.")
+                agent.display_error(message=f"Error during chat completion: {e}.")
                 try:
                     approved = agent.get_confirm("Retry?", skip_auto_confirm=True).choice
                 except NotImplementedError:
@@ -287,11 +287,11 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 if tool_res.is_ok():
                     agent.display_event(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
                 else:
-                    agent.warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
+                    agent.display_warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
             except CancelledError:
                 raise
             except Exception as e:
-                agent.error(f"Tool pipeline {tool_name} failed: {e}")
+                agent.display_error(f"Tool pipeline {tool_name} failed: {e}")
                 tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
 
             tool_results.append((tool_id, tool_res))

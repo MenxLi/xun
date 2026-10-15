@@ -26,7 +26,8 @@ class DisplayAbstract(DisplayEventStoreMixin, ABC):
     """
     Display interface, consumed by the framework (Agent / AgentDisplayMixin) only.
     Callers must never invoke these methods directly; always go through the agent's
-    display helpers (display_event / info / warning / error / get_choice / get_confirm).
+    display helpers (display_event / display_info / display_warning / display_error /
+    get_choice / get_confirm).
     """
     _agents: dict[str, "Agent[Agent.T.Any]"]
 
@@ -80,20 +81,25 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
         self.display._record_event(event)
         self.display.on_event(event)
 
-    def info(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
+    def display_info(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
         args = HookArgs.AgentInfoArgs(agent=cast("Agent[T.Init]", self), message=message)
         self.hooks.before_display_info.invoke(args)
         self.display_event(InfoEvent(message=args.message))
 
-    def warning(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
+    def display_warning(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
         args = HookArgs.AgentWarningArgs(agent=cast("Agent[T.Init]", self), message=message)
         self.hooks.before_display_warning.invoke(args)
         self.display_event(WarningEvent(message=args.message))
 
-    def error(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
+    def display_error(self: "AgentDisplayMixin[T.Init]", message: str) -> None:
         args = HookArgs.AgentErrorArgs(agent=cast("Agent[T.Init]", self), message=message)
         self.hooks.before_display_error.invoke(args)
         self.display_event(ErrorEvent(message=args.message))
+
+    # TODO: remove in v1.5
+    info = display_info
+    warning = display_warning
+    error = display_error
 
     def get_choice(
         self: "AgentDisplayMixin[T.Init]",
@@ -113,7 +119,7 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
                 choice = default
             elif choices:
                 choice = choices[0]
-                self.warning(f"No default for prompt {prompt!r}; auto-selected {choice!r}.")
+                self.display_warning(f"No default for prompt {prompt!r}; auto-selected {choice!r}.")
             else:
                 raise ValueError(f"No choices available for prompt {prompt!r}")
             self.display_event(ConfirmEvent(prompt=prompt, choices=choices, choice=choice, source="auto", message=message))

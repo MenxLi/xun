@@ -233,7 +233,7 @@ class WebDisplay(DisplayAbstract):
                 self._report_uninitialized(agent)
                 return
             if message.images and not self._supports_vision(agent):
-                agent.error("The configured model does not support image input")
+                agent.display_error("The configured model does not support image input")
                 return
             images = [image.value for image in message.images]
             self._enqueue(message.agent_id, self._execute_message, agent, content, images)
@@ -268,18 +268,18 @@ class WebDisplay(DisplayAbstract):
                 result = agent.instruct(content, images=images or None).execute()
                 if isinstance(result, Result) and result.is_err():
                     error = result.unwrap_err()
-                    agent.error(f"Error executing instruction: {error.error}")
+                    agent.display_error(f"Error executing instruction: {error.error}")
 
             self._track(agent, run)
         except Exception as exc:
-            agent.error(f"Error executing instruction: {exc}")
+            agent.display_error(f"Error executing instruction: {exc}")
 
     def _execute_command(self, agent: "Agent[Agent.T.Init]", name: str, arguments: Optional[str]) -> None:
         def run() -> None:
             result = agent.execute_command(name, arguments)
             if isinstance(result, Result) and result.is_err():
                 error = result.unwrap_err()
-                agent.error(f"Error executing command: {error.error}")
+                agent.display_error(f"Error executing command: {error.error}")
 
         self._track(agent, run)
 

@@ -235,7 +235,7 @@ class Agent(
                     agent=self, schema=schema, max_iterations=max_iterations, context_value=context
                 ))
         except CancelledError as e:
-            self.error(e.reason)
+            self.display_error(e.reason)
             raise
         finally:
             self.sync_project_instructions()

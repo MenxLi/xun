@@ -209,21 +209,21 @@ def default_tool_commands() -> list[Command]:
     def _add_cmd_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Add a command to the allowlist."""
         if len(args) != 1:
-            agent.error("Usage: policy cmd_allowlist_add <command>")
+            agent.display_error("Usage: policy cmd_allowlist_add <command>")
             return
         _policy(agent).command_allowlist.add(args[0])
 
     def _remove_cmd_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Remove a command from the allowlist."""
         if len(args) != 1:
-            agent.error("Usage: policy cmd_allowlist_remove <command>")
+            agent.display_error("Usage: policy cmd_allowlist_remove <command>")
             return
         _policy(agent).command_allowlist.remove(args[0])
 
     def _add_path_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Add a path (file or directory) to the write allowlist. Directory entries match everything under them."""
         if len(args) != 1:
-            agent.error("Usage: policy path_allowlist_add <path>")
+            agent.display_error("Usage: policy path_allowlist_add <path>")
             return
         resolved = Path(args[0]).resolve()
         _policy(agent).write_allowlist.add(resolved, is_dir=resolved.is_dir())
@@ -231,7 +231,7 @@ def default_tool_commands() -> list[Command]:
     def _remove_path_allowlist(agent: Agent[Agent.T.Init], args: list[str]) -> None:
         """Remove a path from the write allowlist."""
         if len(args) != 1:
-            agent.error("Usage: policy path_allowlist_remove <path>")
+            agent.display_error("Usage: policy path_allowlist_remove <path>")
             return
         _policy(agent).write_allowlist.remove(Path(args[0]).resolve())
 
@@ -242,14 +242,14 @@ def default_tool_commands() -> list[Command]:
         for p, is_dir in sorted(_policy(agent).write_allowlist.entries.items()):
             shown = p.relative_to(agent_workdir) if p.is_relative_to(agent_workdir) else p
             lines.append(f"  {shown}{'/' if is_dir else ''}")
-        agent.info("\n".join(lines))
+        agent.display_info("\n".join(lines))
 
     def _list_command_allowlist(agent: Agent[Agent.T.Init]):
         """List the commands in the command allowlist."""
         lines = ["Command Allowlist:"]
         for cmd in sorted(_policy(agent).command_allowlist.allowlist):
             lines.append(f"  {cmd}")
-        agent.info("\n".join(lines))
+        agent.display_info("\n".join(lines))
 
     registry = CommandRegistry().register(
         Command(name="cmd_allowlist_add", handler=_add_cmd_allowlist),

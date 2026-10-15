@@ -42,7 +42,7 @@ def setup_extension(ctx: ExtensionContext) -> None:
         available, issues = ensure_fresh(agent)
         if not args:
             if not available:
-                agent.info(_discovery_hint(agent))
+                agent.display_info(_discovery_hint(agent))
             if available or issues:
                 records = [type("Info", (), {"name": s.name, "description": s.description, "status": "loaded" if s.name in session(agent).active else "ready", "reason": None, "source": s.source}) for s in available]
                 records += [type("Info", (), {"name": name, "description": "", "status": "failed", "reason": reason, "source": None}) for name, reason in issues]
@@ -51,11 +51,11 @@ def setup_extension(ctx: ExtensionContext) -> None:
         if len(args) != 2 or args[0] not in {"activate", "info"}:
             raise ValueError("Usage: skills [info <name> | activate <name>]")
         if args[0] == "activate":
-            agent.info(activate_skill(ToolCallContext(agent, "activate_skill", None), args[1]))
+            agent.display_info(activate_skill(ToolCallContext(agent, "activate_skill", None), args[1]))
             return
         skill = require(agent, args[1])
         files = "\n".join(f"  {file}" for file in skill.files()) or "  (none)"
-        agent.info(
+        agent.display_info(
             f"Name: {skill.name}\nDescription: {skill.description}\nSource: {skill.source}\n"
             f"Directory: {skill.directory}\nActive: {'yes' if skill.name in session(agent).active else 'no'}\n"
             f"Bundled files:\n{files}"

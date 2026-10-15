@@ -76,18 +76,18 @@ def setup_extension(ctx: ExtensionContext) -> None:
         for arg in args:
             key, sep, value = arg.partition("=")
             if not sep or not value:
-                agent.error(f"Expected k=v, got {arg!r}. {USAGE}")
+                agent.display_error(f"Expected k=v, got {arg!r}. {USAGE}")
                 return
             opts[key.lower()] = value
         if unknown := set(opts) - {"days", "until", "user", "top"}:
-            agent.error(f"Unknown option(s): {', '.join(sorted(unknown))}. {USAGE}")
+            agent.display_error(f"Unknown option(s): {', '.join(sorted(unknown))}. {USAGE}")
             return
         try:
             days = int(opts["days"]) if "days" in opts else None
             top = int(opts["top"]) if "top" in opts else 15
             until = parse_date(opts["until"]) if "until" in opts else None
         except ValueError as ex:
-            agent.error(f"Bad option value: {ex}")
+            agent.display_error(f"Bad option value: {ex}")
             return
         since, end = time_window(days, until)
         user = opts.get("user")
