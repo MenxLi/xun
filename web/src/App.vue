@@ -14,6 +14,7 @@ import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescript
 import { useSettingsStore, type Theme } from './stores/settings'
 import { useInputHistoryStore } from './stores/inputHistory'
 import { useSessionBuffersStore } from './stores/sessionBuffers'
+import { setTabActivity } from './tabStatus'
 
 const settings = useSettingsStore()
 const inputHistory = useInputHistoryStore()
@@ -96,6 +97,8 @@ const streamEvents = computed(() => visibleEvents.value.filter(event =>
   event.name !== 'AgentRunningStartEvent'
   && event.name !== 'AgentRunningEndEvent',
 ))
+const anyRunning = computed(() => runningAgents.value.size > 0)
+const anyWaiting = computed(() => pendingPrompts.value.length > 0)
 const streamSize = computed(() => streamEvents.value.length + visiblePrompts.value.length)
 const streamViewKey = computed(() => `${currentSessionPath.value}:${selectedOnly.value ? selectedAgentId.value : '*'}`)
 const selectedAgentTokens = computed(() => {
@@ -115,6 +118,7 @@ watch(() => settings.language, language => {
   i18n.global.locale.value = resolveLocale(language)
 }, { immediate: true })
 watch([selectedAgentId, selectedOnly], () => stream.value?.anchor())
+watch([anyRunning, anyWaiting], ([running, waiting]) => setTabActivity({ running, waiting }), { immediate: true })
 watch([selectedAgentId, currentSessionPath], async ([agentId, sessionPath], [previousAgentId, previousSessionPath]) => {
   const requestId = ++agentDataRequest
   commands.value = []

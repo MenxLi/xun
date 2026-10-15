@@ -363,6 +363,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
           :class="{ warning: item.data.name === 'WarningEvent', error: item.data.name === 'ErrorEvent' }"
           role="note"
           :aria-label="label(item.data)"
+          :title="t('stream.fromAgent', { agent: item.data.agent.name })"
         >
           <Info v-if="item.data.name === 'InfoEvent'" :size="13" />
           <TriangleAlert v-else-if="item.data.name === 'WarningEvent'" :size="13" />

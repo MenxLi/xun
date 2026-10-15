@@ -96,6 +96,7 @@ const zh: typeof en = {
     conversationHistory: '对话历史',
     copyMessage: '复制消息',
     copyCode: '复制代码',
+    fromAgent: '来自：{agent}',
     tokensTitle: '本次会话累计使用的 token 数',
     attachedImage: '附加图片',
     tool: '工具',

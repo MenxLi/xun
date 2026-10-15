@@ -94,6 +94,7 @@ export default {
     conversationHistory: 'Conversation history',
     copyMessage: 'Copy message',
     copyCode: 'Copy code',
+    fromAgent: 'From: {agent}',
     tokensTitle: 'Total tokens used in this conversation',
     attachedImage: 'Attached image',
     tool: 'Tool',
