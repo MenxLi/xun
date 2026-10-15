@@ -116,6 +116,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .token-usage { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; letter-spacing: 0; text-transform: none; opacity: .8; }
 .message.user { width: fit-content; max-width: 84%; margin-left: auto; padding: 11px 14px; border-radius: 7px 7px 2px 7px; background: var(--accent-soft); }
 .message.user .message-label { color: var(--accent-dark); }
+.message.intermediate { opacity: .8; transition: opacity .15s ease; }
+.message.intermediate:hover { opacity: 1; }
 .message-images { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 220px)); gap: 8px; }
 .message-images a { min-width: 0; display: block; border-radius: 5px; overflow: hidden; background: var(--input); }
 .message-images img { width: 100%; max-height: 260px; display: block; object-fit: contain; }

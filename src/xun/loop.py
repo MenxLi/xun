@@ -250,6 +250,7 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             content=message.content,
             reasoning=message.reasoning,
             total_tokens=total_tokens,
+            conclusive=not message.tool_calls,
             ))
     tool_called = False
 

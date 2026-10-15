@@ -52,7 +52,7 @@ export type DisplayEvent =
   | EventEnvelope<'AgentRunningStartEvent', Record<string, never>>
   | EventEnvelope<'AgentRunningEndEvent', Record<string, never>>
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
-  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number }>
+  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number; conclusive: boolean }>
   | ToolCallDisplayEvent
   | ToolResultDisplayEvent
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>

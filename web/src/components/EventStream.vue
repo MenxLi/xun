@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Info, Link, Puzzle, Terminal, TriangleAlert, Unlink, Wrench } from 'lucide-vue-next'
+import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Ellipsis, Info, Link, Puzzle, Terminal, TriangleAlert, Unlink, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
@@ -218,6 +218,10 @@ function isUser(event: DisplayEvent): boolean {
   return event.name === 'UserMessageEvent' || (event.name === 'InfoEvent' && event.payload.message.startsWith('[user] '))
 }
 
+function isIntermediate(event: DisplayEvent): boolean {
+  return event.name === 'ModelMessageEvent' && !event.payload.conclusive
+}
+
 function displayText(event: DisplayEvent): string {
   const value = text(event)
   return event.name === 'InfoEvent' && isUser(event) ? value.slice(7) : value
@@ -383,6 +387,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
 
         <article v-else class="message" :class="{
           user: isUser(item.data),
+          intermediate: isIntermediate(item.data),
         }">
           <div class="message-label">
             {{ isUser(item.data) ? t('stream.you') : label(item.data) }}
@@ -390,7 +395,8 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
               <span class="message-recipient">{{ t('stream.to') }}</span> {{ item.data.agent.name }}
             </template>
             <template v-if="item.data.name === 'ModelMessageEvent'">
-              <span class="message-recipient">·</span>
+              <Ellipsis v-if="isIntermediate(item.data)" :size="11" />
+              <span v-else class="message-recipient">·</span>
               <span class="token-usage" :title="t('stream.tokensTitle')">{{ formatTokens(item.data.payload.total_tokens) }} {{ t('app.tokens') }}</span>
             </template>
             <span class="message-meta">
