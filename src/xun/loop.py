@@ -7,7 +7,7 @@ import json, time
 import json_repair
 from pydantic import BaseModel
 
-from .display_abstract import ErrorEvent, ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
+from .display_abstract import ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
 from .error_catch import ErrorInfo, Result, except_safe
 from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
 from .types import CancelledError, ToolResultType
@@ -40,11 +40,10 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         if (r := resolve_result(params.takeover_result, params.schema)).is_ok():
             return r.unwrap()
         else:
-            agent.display_event(ErrorEvent(message=f"Failed to resolve takeover result: {r.unwrap_err()}"))
+            agent.error(f"Failed to resolve takeover result: {r.unwrap_err()}")
             raise RuntimeError(f"Failed to resolve takeover result: {r.unwrap_err()}")
 
     n_resolve_fail = 0
-    result = ""
     if params.schema is not None:
         # prompt-injected schema
         agent.conversation.set_response_schema(params.schema)
@@ -56,12 +55,12 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
             model_call_id=model_call_id,
             remaining_iterations=params.max_iterations - iteration
             ))
-        should_continue, result = _execute_step(params, model_call_id)
+        should_continue, result_str = _execute_step(params, model_call_id)
 
         if should_continue:
             continue
 
-        result = resolve_result(result, params.schema)
+        result = resolve_result(result_str, params.schema)
         if result.is_ok():
             return result.unwrap()
         else:
@@ -72,7 +71,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
                 n_resolve_fail += 1
                 continue
 
-            agent.display_event(ErrorEvent(message=f"Failed to resolve result: {result.unwrap_err()}"))
+            agent.error(f"Failed to resolve result: {result.unwrap_err()}")
             raise RuntimeError(f"Failed to resolve result: {result.unwrap_err()}")
 
     agent.error(
