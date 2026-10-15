@@ -8,7 +8,7 @@ import json_repair
 from pydantic import BaseModel
 
 from .display_abstract import ErrorEvent, ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
-from .error_catch import ErrorInfo, Result
+from .error_catch import ErrorInfo, Result, except_safe
 from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
 from .types import CancelledError, ToolResultType
 from .hooks import HookArgs
@@ -20,6 +20,14 @@ COMPLETION_RETRY_BACKOFF = 0.5
 COMPLETION_MAX_RETRIES = 3
 USER_RETRY_GRANT = 3
 SEMAPHORE_ACQUIRE_POLL = 0.5
+MAX_RESOLVE_RETRIES = 2
+
+@except_safe
+def resolve_result(result: str, schema: type[BaseModel] | None) -> BaseModel | str:
+    if schema is None:
+        return result
+    res_object = json_repair.loads(result)
+    return schema.model_validate(res_object)
 
 def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     # cancellation is the caller's contract: Agent.execute wraps this loop in run_scope
@@ -29,38 +37,50 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
 
     if params.takeover_result is not None:
         # skip the loop entirely, before the response schema is attached to the conversation
-        result = params.takeover_result
-    else:
-        result = ""
-        finished = False
-        if params.schema is not None:
-            # prompt-injected schema
-            agent.conversation.set_response_schema(params.schema)
-        for iteration in range(params.max_iterations):
-            agent.check_cancel()
-            agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
-            model_call_id = str(uuid.uuid4())
-            agent.display_event(ModelWorkingEvent(
-                model_call_id=model_call_id,
-                remaining_iterations=params.max_iterations - iteration
-                ))
-            should_continue, result = _execute_step(params, model_call_id)
-            if not should_continue:
-                finished = True
-                break
+        if (r := resolve_result(params.takeover_result, params.schema)).is_ok():
+            return r.unwrap()
+        else:
+            agent.display_event(ErrorEvent(message=f"Failed to resolve takeover result: {r.unwrap_err()}"))
+            raise RuntimeError(f"Failed to resolve takeover result: {r.unwrap_err()}")
 
-        if not finished:
-            agent.display_event(ErrorEvent(message="Maximum tool call iterations exceeded."))
-            raise RuntimeError("Maximum tool call iterations exceeded.")
-
+    n_resolve_fail = 0
+    result = ""
     if params.schema is not None:
-        try:
-            res_object = json_repair.loads(result)
-            return params.schema.model_validate(res_object)
-        except Exception as e:
-            agent.display_event(ErrorEvent(message=f"Failed to parse result into {params.schema}: {e}"))
-            raise e
-    return result
+        # prompt-injected schema
+        agent.conversation.set_response_schema(params.schema)
+    for iteration in range(params.max_iterations):
+        agent.check_cancel()
+        agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
+        model_call_id = str(uuid.uuid4())
+        agent.display_event(ModelWorkingEvent(
+            model_call_id=model_call_id,
+            remaining_iterations=params.max_iterations - iteration
+            ))
+        should_continue, result = _execute_step(params, model_call_id)
+
+        if should_continue:
+            continue
+
+        result = resolve_result(result, params.schema)
+        if result.is_ok():
+            return result.unwrap()
+        else:
+            if n_resolve_fail < MAX_RESOLVE_RETRIES:
+                agent.instruct(f"Failed to resolve result: {result.value_str()}", _emit_event=False)
+                if params.schema:
+                    agent.conversation.set_response_schema(params.schema)
+                n_resolve_fail += 1
+                continue
+
+            agent.display_event(ErrorEvent(message=f"Failed to resolve result: {result.unwrap_err()}"))
+            raise RuntimeError(f"Failed to resolve result: {result.unwrap_err()}")
+
+    agent.error(
+        "Maximum tool call iterations exceeded." + 
+        (f" (n_resolve_fail={n_resolve_fail})" if n_resolve_fail > 0 else "")
+        )
+    raise RuntimeError("Maximum tool call iterations exceeded.")
+
 
 @contextmanager
 def _cancellable_semaphore(sem, agent):
