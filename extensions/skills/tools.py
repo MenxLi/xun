@@ -4,6 +4,7 @@ import json
 import shlex
 import shutil
 import sys
+import time
 
 from xun import ToolCallContext, tool_attr
 from xun.tools.cmd import CmdExecResult, run_command, truncate_output
@@ -84,5 +85,11 @@ def run_skill_script(
             raise RuntimeError(f"Execution of `{script}` was denied.")
         if answer.choice == "Allow for this session" and answer.source == "user":
             grants.add(str(target))
+    start = time.monotonic()
     result = run_command([executable, str(target), *(args or [])], timeout, ctx.agent.workspace.workdir, None, ctx.agent.cancel_event.is_set)
-    return CmdExecResult(args=command, stdout=truncate_output(result.stdout.strip(), max_output_size), stderr=truncate_output(result.stderr.strip(), max_output_size), returncode=result.returncode)
+    return CmdExecResult(
+        stdout=truncate_output(result.stdout.strip(), max_output_size), 
+        stderr=truncate_output(result.stderr.strip(), max_output_size), 
+        returncode=result.returncode, 
+        duration=f"{time.monotonic() - start:.2f}s"
+        )
