@@ -28,7 +28,7 @@ from .loop import execution_loop, ExecutionLoopParams
 from .extension import default_loader, ExtensionLoader
 
 DEFAULT_MAX_ITERATIONS = 512 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
-DEFAULT_API_CALL_LIMIT = 3
+DEFAULT_API_CALL_CONCURRENCY = 8
 AGENTS_SECTION = "agents-md"
 
 _AUTO_CONFIRM_WARNED = False
@@ -68,7 +68,7 @@ class Agent(
 
     # below auto inherit
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
-    api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_LIMIT))
+    api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_CONCURRENCY))
     extension_loader: ExtensionLoader = default_loader
     """Shared by reference, all agents replay the same scanned modules."""
 
