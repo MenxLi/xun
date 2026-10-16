@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, BookOpen, Check, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type } from 'lucide-vue-next'
+import { Bot, BookOpen, Check, Github, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type } from 'lucide-vue-next'
 import { api, appUrl, chatUrl, configureSession, docsUrl, formatTokens } from './api'
 import i18n, { resolveLocale, type Language } from './i18n'
 import InputComposer from './components/InputComposer.vue'
@@ -21,6 +21,7 @@ const inputHistory = useInputHistoryStore()
 const sessionBuffers = useSessionBuffersStore()
 const { t } = useI18n()
 const version = __XUN_VERSION__
+const sourceCodeUrl = 'https://github.com/MenxLi/xun'
 const sessionStorageKey = chatUrl('/').split('?')[0]
 
 const events = ref<DisplayEvent[]>([])
@@ -592,7 +593,10 @@ onBeforeUnmount(() => {
               </div>
               <label class="setting-toggle"><span>{{ t('app.renderMarkdown') }}</span><input v-model="settings.markdown" type="checkbox"></label>
               <div class="settings-footer">
-                <a class="icon-button" :href="docsUrl()" target="_blank" rel="noopener" :title="t('app.docsTitle')" :aria-label="t('app.docsTitle')"><BookOpen :size="15" /></a>
+                <div class="settings-links">
+                  <a class="icon-button" :href="sourceCodeUrl" target="_blank" rel="noopener" :title="t('app.sourceCodeTitle')" :aria-label="t('app.sourceCodeTitle')"><Github :size="15" /></a>
+                  <a class="icon-button" :href="docsUrl()" target="_blank" rel="noopener" :title="t('app.docsTitle')" :aria-label="t('app.docsTitle')"><BookOpen :size="15" /></a>
+                </div>
                 <span class="settings-version">v{{ version }}</span>
               </div>
             </div>

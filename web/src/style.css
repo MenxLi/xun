@@ -75,6 +75,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .setting-toggle { height: 38px; margin-top: 7px; padding: 0 5px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); color: var(--ink); font-size: 11px; cursor: pointer; }
 .setting-toggle input { accent-color: var(--accent); }
 .settings-footer { margin-top: 2px; padding: 2px 2px 0; display: flex; align-items: center; justify-content: space-between; }
+.settings-links { display: flex; align-items: center; gap: 4px; }
 .settings-version { padding: 0 3px; color: var(--muted); font: 400 9px/1 'Fira Code', monospace; opacity: .7; user-select: text; }
 .settings-footer .icon-button { width: 22px; height: 22px; }
 .icon-button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 5px; display: inline-grid; place-items: center; color: var(--muted); background: transparent; cursor: pointer; text-decoration: none; }

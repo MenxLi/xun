@@ -31,6 +31,7 @@ export default {
     languageZh: '简体中文',
     renderMarkdown: 'Render Markdown',
     docsTitle: 'Documentation',
+    sourceCodeTitle: 'Source code',
     messageAgent: 'Message {name}',
   },
   sessions: {

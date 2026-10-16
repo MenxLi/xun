@@ -33,6 +33,7 @@ const zh: typeof en = {
     languageZh: '简体中文',
     renderMarkdown: '渲染 Markdown',
     docsTitle: '查看文档',
+    sourceCodeTitle: '查看源码',
     messageAgent: '向 {name} 发送消息',
   },
   sessions: {
