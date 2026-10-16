@@ -191,7 +191,6 @@ class AutoCompactor(CompactorAbstract):
         ):
             return
 
-        agent.display_info("Escalating to full conversation compaction...")
         try:
             r = compact_conversation(agent, keep_recent = summary_keep_max)
             if not r.compacted:

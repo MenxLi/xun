@@ -40,7 +40,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         if (r := resolve_result(params.takeover_result, params.schema)).is_ok():
             return r.unwrap()
         else:
-            agent.display_error(f"Failed to resolve takeover result: {r.unwrap_err()}")
+            # failures surface once: entrypoints report the Result error from execute()
             raise RuntimeError(f"Failed to resolve takeover result: {r.unwrap_err()}")
 
     n_resolve_fail = 0
@@ -71,14 +71,12 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
                 n_resolve_fail += 1
                 continue
 
-            agent.display_error(f"Failed to resolve result: {result.unwrap_err()}")
             raise RuntimeError(f"Failed to resolve result: {result.unwrap_err()}")
 
-    agent.display_error(
-        "Maximum tool call iterations exceeded." + 
-        (f" (n_resolve_fail={n_resolve_fail})" if n_resolve_fail > 0 else "")
-        )
-    raise RuntimeError("Maximum tool call iterations exceeded.")
+    raise RuntimeError(
+        "Maximum tool call iterations exceeded."
+        + (f" (n_resolve_fail={n_resolve_fail})" if n_resolve_fail > 0 else "")
+    )
 
 
 @contextmanager
@@ -226,9 +224,8 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
                 completion_retry_backoff *= 2
                 continue
             else:
-                agent.display_error(message=f"Error during chat completion: {e}.")
                 try:
-                    approved = agent.get_confirm("Retry?", skip_auto_confirm=True).choice
+                    approved = agent.get_confirm("Retry?", message=f"Error during chat completion: {e}", skip_auto_confirm=True).choice
                 except NotImplementedError:
                     approved = False    # headless display has no human to ask
                 if not approved:

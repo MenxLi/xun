@@ -15,7 +15,7 @@ from .toolbox import ToolBox
 from .agent import Agent
 from .prompt import get_system_prompt
 from .command import Command
-from .types import CancelledError
+from .types import CancelledError, Result
 from .workspace import Workspace
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
@@ -118,6 +118,10 @@ def setup_agent(
     return agent.initialize()
 
 
+def _report_execution(agent: "Agent[Agent.T.Init]", result: "Result") -> None:
+    if result.is_err():
+        agent.display_error(f"Error executing instruction: {result.unwrap_err().error}")
+
 def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
     match inst:
         case CommandInstruction():
@@ -125,11 +129,11 @@ def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
             if result.is_err():
                 agent.display_error(f"Error executing command: {result.unwrap_err().error}")
             if inst.command == "retry":
-                agent.execute()
+                _report_execution(agent, agent.execute())
 
         case MessageInstruction():
             try:
-                agent.instruct(inst.content, images=inst.images).execute()
+                _report_execution(agent, agent.instruct(inst.content, images=inst.images).execute())
             except ValueError as e:
                 agent.display_error(f"Error executing instruction: {e}")
         case _:
@@ -155,7 +159,9 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         except (KeyboardInterrupt, CancelledError) as e:
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
-            agent.display_error(e.reason if isinstance(e, CancelledError) else "Execution interrupted by user.")
+            # CancelledError reason is already reported by Agent.execute
+            if isinstance(e, KeyboardInterrupt):
+                agent.display_error("Execution interrupted by user.")
         inst = get_instruction(agent.display, agent=agent)
 
 

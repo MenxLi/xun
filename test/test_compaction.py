@@ -169,8 +169,8 @@ class AutoCompactionTest(unittest.TestCase):
         with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             AutoCompactor().auto_compact(agent)
         self.assertEqual(compact_conversation.call_count, 3)
-        agent.error.assert_called_once()
-        self.assertIn("no further progress possible", agent.error.call_args.args[0])
+        agent.display_error.assert_called_once()
+        self.assertIn("no further progress possible", agent.display_error.call_args.args[0])
 
     def test_escalates_after_enough_cheap_rounds(self) -> None:
         agent = self._agent(100_000, 105_000)
@@ -202,7 +202,7 @@ class AutoCompactionTest(unittest.TestCase):
         with patch("xun.compact.compact_conversation", failed):
             AutoCompactor().auto_compact(agent)
 
-        agent.error.assert_called_once_with("Auto-compaction failed: summary failed")
+        agent.display_error.assert_called_once_with("Auto-compaction failed: summary failed")
 
 
 class CompactorInstallTest(unittest.TestCase):
@@ -267,7 +267,7 @@ class CompactorInstallTest(unittest.TestCase):
         compactor.install(hooks)
         with patch.object(compactor, "auto_compact", side_effect=RuntimeError("boom")):
             hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
-        agent.error.assert_called_once_with("Compaction hook failed: boom")
+        agent.display_error.assert_called_once_with("Compaction hook failed: boom")
 
 
 class SummarizerConfigTest(unittest.TestCase):
