@@ -188,8 +188,10 @@ class Display(DisplayAbstract):
 
     def _show_tool_result(self, event: DisplayEvent[ToolResultEvent]) -> None:
         ev = event.payload
-        if isinstance(ev.result, dict) and "error" in ev.result:
-            self._print(f"[bold red]tool error[/bold red] / {ev.result['error']}")
+        if ev.is_error:
+            result = ev.result
+            message = result.get("error", result) if isinstance(result, dict) else result
+            self._print(f"[bold red]tool error[/bold red] / {rich.markup.escape(str(message))}")
 
     def _show_info(self, event: DisplayEvent[InfoEvent]) -> None:
         self._print(f"[dim]info /[/dim] {event.payload.message}")

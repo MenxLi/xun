@@ -40,6 +40,7 @@ class ToolCallEvent(BaseModel):
 class ToolResultEvent(BaseModel):
     tool_call_id: str
     result: JsonType
+    is_error: bool = False
 
 class ShowHistoryEvent(BaseModel):
     history: list[Conversation.MessageRecord]

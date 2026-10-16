@@ -316,6 +316,19 @@ class RenderHistoryAsHtmlTest(unittest.TestCase):
         self.assertIn('"architecture": "x86_64"', html)
         self.assertNotIn(r'\"os\"', html)
 
+    def test_error_tool_result_is_marked(self) -> None:
+        events = [
+            _ev(UserMessageEvent(content="go", images=[])),
+            _ev(ToolCallEvent(tool_call_id="c1", tool_name="bad", args={})),
+            _ev(ToolResultEvent(tool_call_id="c1", result={"error": "boom", "details": ""}, is_error=True)),
+            _ev(ToolCallEvent(tool_call_id="c2", tool_name="good", args={})),
+            _ev(ToolResultEvent(tool_call_id="c2", result="ok")),
+        ]
+
+        html = _render(events)
+
+        self.assertIn('title="1 failed tool calls"', html)
+
     def test_user_images_and_assistant_message_render(self) -> None:
         events = [
             _ev(UserMessageEvent.from_inputs("请分析图片", images=["https://example.com/chart.png"])),

@@ -267,30 +267,40 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             arguments = tool_call.function.arguments
 
             tool_res: ToolResultType
+            arguments_json: Any
+            repair_err: Exception | None = None
             try:
-                # fix potential JSON issues in the tool arguments
-                arguments_json: Any = json_repair.loads(arguments)
-                if not arguments_json: # None, "", [], {}
-                    arguments_json = {}
+                arguments_json = json_repair.loads(arguments) or {} # None, "", [], {}
                 # keep the assistant history consistent with the repaired
                 tool_call.function.arguments = json.dumps(arguments_json, ensure_ascii=False)
-
-                agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
-                tool_res = agent.toolbox.call_tool(
-                    agent=agent,
-                    tool_name = tool_name,
-                    arguments = arguments_json,
-                    context = params.context_value
-                    )
-                if tool_res.is_ok():
-                    agent.display_event(ToolResultEvent(tool_call_id=tool_id, result=tool_res.value_json()))
-                else:
-                    agent.display_warning(f"Tool {tool_name} failed: {tool_res.unwrap_err().error}")
             except CancelledError:
                 raise
             except Exception as e:
-                agent.display_error(f"Tool pipeline {tool_name} failed: {e}")
-                tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
+                arguments_json = {}
+                repair_err = e
+
+            # every tool_call in the assistant history gets a paired call/result event
+            agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
+            if repair_err is not None:
+                tool_res = Result.Err(ErrorInfo(error="Failed to repair tool arguments", details=str(repair_err)))
+            else:
+                try:
+                    tool_res = agent.toolbox.call_tool(
+                        agent=agent,
+                        tool_name = tool_name,
+                        arguments = arguments_json,
+                        context = params.context_value
+                        )
+                except CancelledError:
+                    raise
+                except Exception as e:
+                    tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
+
+            agent.display_event(ToolResultEvent(
+                tool_call_id=tool_id,
+                result=tool_res.value_json(),
+                is_error=tool_res.is_err(),
+            ))
 
             tool_results.append((tool_id, tool_res))
             tool_called = True

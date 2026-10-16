@@ -39,6 +39,7 @@ export type ToolCallDisplayEvent = EventEnvelope<'ToolCallEvent', {
 export type ToolResultDisplayEvent = EventEnvelope<'ToolResultEvent', {
   tool_call_id: string
   result: unknown
+  is_error: boolean
 }>
 
 export interface ImageDescriptor {

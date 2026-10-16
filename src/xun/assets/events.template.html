@@ -131,6 +131,8 @@
 		.tool-row > summary:hover .tool-name { text-decoration: underline; text-underline-offset: 3px; }
 		.tool-row time { margin-left: auto; padding-left: 12px; font-size: 9px; opacity: .7; }
 		.tool-state { margin-left: 9px; display: inline-flex; align-items: center; gap: 3px; color: var(--warm); font-size: 9px; text-transform: uppercase; }
+		.tool-error { margin-left: 8px; display: inline-flex; align-items: center; color: var(--warm); opacity: .85; }
+		.tool-errors { display: inline-flex; align-items: center; gap: 3px; }
 		.tool-detail { margin: 0 0 8px 17px; }
 		.tool-detail > span { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
 		.tool-detail pre { margin: 0; }
@@ -195,7 +197,7 @@
 		<summary>
 			<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
 			<span class="tool-name">{{ step.tools[0].name }}</span>
-			{% if step.tools[0].result is none %}<span class="tool-state">no result</span>{% endif %}
+			{% if step.tools[0].is_error %}<span class="tool-error" title="failed">{{ warn_icon(12) }}</span>{% elif step.tools[0].result is none %}<span class="tool-state">no result</span>{% endif %}
 			<time>{{ step.tools[0].time }}</time>
 		</summary>
 		<div class="tool-detail">
@@ -210,6 +212,8 @@
 		<summary>
 			<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
 			<span>{{ step.tools | length }} tool calls</span>
+			{% set tool_errors = step.tools | selectattr("is_error") | list | length %}
+			{% if tool_errors %}<span class="tool-errors" title="{{ tool_errors }} failed">{{ warn_icon(11) }}{{ tool_errors }}</span>{% endif %}
 		</summary>
 		<div class="activity-list">
 			{% for tool in step.tools %}
@@ -217,7 +221,7 @@
 				<summary>
 					<svg class="chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
 					<span class="tool-name">{{ tool.name }}</span>
-					{% if tool.result is none %}<span class="tool-state">no result</span>{% endif %}
+					{% if tool.is_error %}<span class="tool-error" title="failed">{{ warn_icon(12) }}</span>{% elif tool.result is none %}<span class="tool-state">no result</span>{% endif %}
 					<time>{{ tool.time }}</time>
 				</summary>
 				<div class="tool-detail">
@@ -248,6 +252,7 @@
 	</details>
 	{% endif %}
 	{% endmacro %}
+	{% macro warn_icon(size) %}<svg viewBox="0 0 24 24" width="{{ size }}" height="{{ size }}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{% endmacro %}
 	<button class="theme-toggle" type="button" aria-label="Toggle light or dark theme" onclick="const root=document.documentElement;const next=root.dataset.theme==='dark'?'light':'dark';root.dataset.theme=next;try{localStorage.setItem('xun-conversation-theme',next)}catch(error){}">
 		<span class="icon-sun">☀️</span><span class="icon-moon">🌙</span>
 	</button>
@@ -356,6 +361,7 @@
 					{% else %}<span class="batch-title">AGENT ACTIVITY</span><span>· {{ block.agents | length }} agents</span>{% endif %}
 					{% if block.details %}<span>· {{ block.details }} details</span>{% endif %}
 					{% if block.approvals %}<span class="turn-approvals" title="Auto-confirmed">· {{ block.approvals }} auto-confirmed</span>{% endif %}
+					{% if block.errors %}<span class="tool-errors" title="{{ block.errors }} failed tool calls">{{ warn_icon(11) }}{{ block.errors }}</span>{% endif %}
 					{% if block.single and block.agents[0].tokens %}<span>· {{ block.agents[0].tokens }} tokens</span>{% endif %}
 					<time>{{ block.time }}</time>
 				</span>
@@ -375,6 +381,7 @@
 						<span class="turn-agent">{{ agent.name }}</span>
 						{% if agent.details %}<span>· {{ agent.details }} details</span>{% endif %}
 						{% if agent.approvals %}<span class="turn-approvals" title="Auto-confirmed">· {{ agent.approvals }} auto-confirmed</span>{% endif %}
+						{% if agent.errors %}<span class="tool-errors" title="{{ agent.errors }} failed tool calls">{{ warn_icon(11) }}{{ agent.errors }}</span>{% endif %}
 						{% if agent.tokens %}<span class="token-usage" title="Total tokens used by the conversation">· {{ agent.tokens }} tokens</span>{% endif %}
 						<time>{{ agent.time }}</time>
 					</summary>

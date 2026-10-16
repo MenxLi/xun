@@ -104,6 +104,8 @@ const zh: typeof en = {
     input: '输入',
     output: '输出',
     completed: '已完成',
+    failed: '失败',
+    toolErrors: '{n} 个工具调用失败',
     agentActivity: '活动',
     agentBound: '{agent} 加入',
     agentUnbound: '{agent} 离开',

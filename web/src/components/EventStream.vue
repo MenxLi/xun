@@ -20,7 +20,7 @@ type TurnStep =
   | { kind: 'confirm'; key: string; event: ConfirmDisplayEvent }
 
 type ActivityPreview = { key: string; agentId: string; agent: string; text: string }
-type AgentActivity = { key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number | null; autoApprovals: number; last: DisplayEvent; lastTool: string | null; working: boolean }
+type AgentActivity = { key: string; agent: AgentInfo; steps: TurnStep[]; tokens: number | null; autoApprovals: number; toolErrors: number; last: DisplayEvent; lastTool: string | null; working: boolean }
 type BatchItem = { kind: 'batch'; key: string; agents: AgentActivity[]; previews: ActivityPreview[]; last: DisplayEvent }
 type ToolOwner = { activity: AgentActivity; batch: BatchItem; name: string; preview: ActivityPreview | null }
 
@@ -57,7 +57,7 @@ const items = computed<StreamItem[]>(() => {
     batch.last = data
     let activity = batch.agents.find(item => item.agent.identifier === data.agent.identifier)
     if (!activity) {
-      activity = { key: `${batch.key}-${data.agent.identifier}`, agent: data.agent, steps: [], tokens: null, autoApprovals: 0, last: data, lastTool: null, working: false }
+      activity = { key: `${batch.key}-${data.agent.identifier}`, agent: data.agent, steps: [], tokens: null, autoApprovals: 0, toolErrors: 0, last: data, lastTool: null, working: false }
       batch.agents.push(activity)
     }
     activity.lastTool = null
@@ -77,6 +77,7 @@ const items = computed<StreamItem[]>(() => {
       if (!tool) return
       tool.result = data
       const owner = toolOwners.get(data.payload.tool_call_id)
+      if (owner && data.payload.is_error) owner.activity.toolErrors += 1
       if (owner) {
         owner.activity.last = data
         owner.activity.lastTool = owner.name
@@ -84,7 +85,7 @@ const items = computed<StreamItem[]>(() => {
         if (owner.preview) {
           const previewIndex = owner.batch.previews.indexOf(owner.preview)
           if (previewIndex >= 0) owner.batch.previews.splice(previewIndex, 1)
-          owner.preview.text = `${owner.name} · ${t('stream.completed')}`
+          owner.preview.text = `${owner.name} · ${t(data.payload.is_error ? 'stream.failed' : 'stream.completed')}`
           pushPreview(owner.batch, owner.preview)
         }
       }
@@ -153,6 +154,10 @@ function detailCount(activity: AgentActivity): number {
 
 function batchDetailCount(batch: BatchItem): number {
   return batch.agents.reduce((total, agent) => total + detailCount(agent), 0)
+}
+
+function batchErrorCount(batch: BatchItem): number {
+  return batch.agents.reduce((total, agent) => total + agent.toolErrors, 0)
 }
 
 const previewBatchKey = computed(() => {
@@ -263,6 +268,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
             <span v-if="item.agents.length > 1" class="batch-meta">· {{ t('stream.agents', { n: item.agents.length }) }}</span>
             <span v-if="batchDetailCount(item)" class="batch-meta">· {{ t('stream.details', { n: batchDetailCount(item) }) }}</span>
             <span v-if="item.agents.length === 1 && item.agents[0].autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ item.agents[0].autoApprovals }}</span>
+            <span v-if="batchErrorCount(item)" class="batch-errors" :title="t('stream.toolErrors', { n: batchErrorCount(item) })">· <TriangleAlert :size="11" /> {{ batchErrorCount(item) }}</span>
             <span v-if="item.agents.length === 1 && item.agents[0].tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(item.agents[0].tokens!) }} {{ t('app.tokens') }}</span>
             <time :title="fullEventTime(item.last)">{{ eventTime(item.last) }}</time>
           </span>
@@ -276,6 +282,7 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
               <span v-if="agent.working" class="tool-state"><Clock3 :size="12" />{{ t('stream.running') }}</span>
               <span v-if="detailCount(agent)">· {{ t('stream.details', { n: detailCount(agent) }) }}</span>
               <span v-if="agent.autoApprovals" class="turn-approvals" :title="t('confirm.autoConfirmed')">· <Check :size="11" /> {{ agent.autoApprovals }}</span>
+              <span v-if="agent.toolErrors" class="batch-errors" :title="t('stream.toolErrors', { n: agent.toolErrors })">· <TriangleAlert :size="11" /> {{ agent.toolErrors }}</span>
               <span v-if="agent.tokens !== null" class="token-usage" :title="t('stream.tokensTitle')">· {{ formatTokens(agent.tokens) }} {{ t('app.tokens') }}</span>
               <time :title="fullEventTime(agent.last)">{{ eventTime(agent.last) }}</time>
             </summary>

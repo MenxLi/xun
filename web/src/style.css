@@ -234,6 +234,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .activity-group[open] > summary .chevron, .tool-row[open] > summary .chevron, .reasoning[open] > summary .chevron { transform: rotate(90deg); }
 .chevron { margin-right: 3px; transition: transform .12s ease; }
 .tool-state { margin-left: 9px; display: inline-flex; align-items: center; gap: 3px; color: var(--warm); font-size: 9px; text-transform: uppercase; }
+.tool-error { margin-left: 8px; display: inline-flex; align-items: center; color: var(--warm); opacity: .85; }
+.tool-errors, .batch-errors { display: inline-flex; align-items: center; gap: 3px; }
+.tool-errors { margin-left: 6px; }
+/* the group's negative top margin tucks it under sibling steps, not under the turn header */
+.turn-steps > .activity-group:first-child { margin-top: 0; }
 .activity-list { margin: 5px 0 3px 7px; padding-left: 12px; border-left: 1px solid var(--line); }
 .tool-row { color: var(--muted); font: 10px/1.5 'Fira Code', monospace; }
 .tool-row > summary { width: 100%; min-height: 28px; }

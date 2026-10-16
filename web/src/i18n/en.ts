@@ -102,6 +102,8 @@ export default {
     input: 'Input',
     output: 'Output',
     completed: 'Completed',
+    failed: 'Failed',
+    toolErrors: '{n} failed tool call | {n} failed tool calls',
     agentActivity: 'Activity',
     agentBound: '{agent} joined',
     agentUnbound: '{agent} left',

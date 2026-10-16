@@ -59,6 +59,7 @@ class RenderToolRow:
     args: Any
     result: Any = None
     time: str = ""
+    is_error: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,8 +91,8 @@ class _TurnAccum:
         else:
             self.steps.append(RenderStep(kind="tools", tools=(row,)))
 
-    def set_tool_result(self, row: RenderToolRow, result: Any) -> None:
-        updated = replace(row, result=result)
+    def set_tool_result(self, row: RenderToolRow, result: Any, is_error: bool = False) -> None:
+        updated = replace(row, result=result, is_error=is_error)
         self.tool_calls[next(i for i, r in enumerate(self.tool_calls) if r is row)] = updated
         for i, step in enumerate(self.steps):
             if step.kind == "tools" and any(r is row for r in step.tools):
@@ -111,6 +112,10 @@ class TurnBlock:
     @property
     def details(self) -> int:
         return sum(len(step.tools) if step.kind == "tools" else 1 for step in self.steps)
+
+    @property
+    def errors(self) -> int:
+        return sum(row.is_error for step in self.steps if step.kind == "tools" for row in step.tools)
 
 
 @dataclass(frozen=True)
@@ -144,6 +149,10 @@ class Block:
     @property
     def approvals(self) -> int:
         return sum(agent.approvals for agent in self.agents)
+
+    @property
+    def errors(self) -> int:
+        return sum(agent.errors for agent in self.agents)
 
 
 def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
@@ -202,7 +211,7 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
             case ToolResultEvent() as p:
                 target = tool_rows.get(p.tool_call_id)
                 if target is not None:
-                    target[0].set_tool_result(target[1], _maybe_json(p.result))
+                    target[0].set_tool_result(target[1], _maybe_json(p.result), p.is_error)
             case ToolCallEvent() as p:
                 activity = open_activity(event)
                 row = RenderToolRow(name=p.tool_name, args=_maybe_json(p.args), time=stamp)

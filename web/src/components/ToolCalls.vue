@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Clock3 } from 'lucide-vue-next'
+import { ChevronRight, Clock3, TriangleAlert } from 'lucide-vue-next'
 import { eventTime, fullEventTime } from '../api'
 import type { ToolItem } from '../types'
 
@@ -9,6 +9,11 @@ const props = defineProps<{ tools: ToolItem[] }>()
 const { t } = useI18n()
 
 const running = computed(() => props.tools.some(tool => !tool.result))
+const errors = computed(() => props.tools.filter(failed).length)
+
+function failed(tool: ToolItem): boolean {
+  return !!tool.result?.payload.is_error
+}
 </script>
 
 <template>
@@ -19,6 +24,9 @@ const running = computed(() => props.tools.some(tool => !tool.result))
       <span v-if="!tools[0].result" class="tool-state">
         <Clock3 :size="12" />
         {{ t('stream.running') }}
+      </span>
+      <span v-else-if="failed(tools[0])" class="tool-error" :title="t('stream.failed')">
+        <TriangleAlert :size="12" />
       </span>
       <time :title="fullEventTime(tools[0].call)">{{ eventTime(tools[0].call) }}</time>
     </summary>
@@ -32,6 +40,10 @@ const running = computed(() => props.tools.some(tool => !tool.result))
     <summary>
       <ChevronRight :size="13" class="chevron" />
       <span>{{ t('stream.toolCalls', { n: tools.length }) }}</span>
+      <span v-if="errors" class="tool-errors" :title="t('stream.toolErrors', { n: errors })">
+        <TriangleAlert :size="12" />
+        {{ errors }}
+      </span>
       <span v-if="running" class="tool-state">
         <Clock3 :size="12" />
         {{ t('stream.running') }}
@@ -45,6 +57,9 @@ const running = computed(() => props.tools.some(tool => !tool.result))
           <span v-if="!tool.result" class="tool-state">
             <Clock3 :size="12" />
             {{ t('stream.running') }}
+          </span>
+          <span v-else-if="failed(tool)" class="tool-error" :title="t('stream.failed')">
+            <TriangleAlert :size="12" />
           </span>
           <time :title="fullEventTime(tool.call)">{{ eventTime(tool.call) }}</time>
         </summary>
