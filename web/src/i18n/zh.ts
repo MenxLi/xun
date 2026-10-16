@@ -117,6 +117,8 @@ const zh: typeof en = {
     loading: '正在加载会话……',
     loadEarlier: '加载更早的消息',
     hiddenCount: '已隐藏 {n} 条',
+    expandMessage: '展开全文',
+    collapseMessage: '收起',
   },
   confirm: {
     autoConfirmed: '已自动确认',

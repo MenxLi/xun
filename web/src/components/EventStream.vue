@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUp, Check, ChevronRight, CircleAlert, Clock3, Copy, Ellipsis, Info, Link, Puzzle, Terminal, TriangleAlert, Unlink, Wrench } from 'lucide-vue-next'
 import MarkdownText from './MarkdownText.vue'
+import CollapsibleMessage from './CollapsibleMessage.vue'
 import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
 import ConfirmPill from './ConfirmPill.vue'
@@ -11,7 +12,7 @@ import { eventTime, formatTokens, fullEventTime } from '../api'
 import { copyText } from '../clipboard'
 import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolCallDisplayEvent, ToolItem } from '../types'
 
-const props = defineProps<{ events: DisplayEvent[]; markdown: boolean; runningAgents: Set<string> }>()
+const props = defineProps<{ events: DisplayEvent[]; markdown: boolean; runningAgents: Set<string>; selectedAgentId: string }>()
 const { t } = useI18n()
 
 type TurnStep =
@@ -425,7 +426,10 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
             <summary><ChevronRight :size="11" class="chevron" />{{ t('stream.reasoning') }}</summary>
             <MarkdownText :content="item.data.payload.reasoning" :enabled="markdown" />
           </details>
-          <MarkdownText v-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" :plain="isPlainTextEvent(item.data)" />
+          <CollapsibleMessage v-if="item.data.name === 'ModelMessageEvent' && displayText(item.data)" :collapsible="!!selectedAgentId && item.data.agent.identifier !== selectedAgentId">
+            <MarkdownText :content="displayText(item.data)" :enabled="markdown" />
+          </CollapsibleMessage>
+          <MarkdownText v-else-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" :plain="isPlainTextEvent(item.data)" />
           <div v-if="item.data.name === 'UserMessageEvent' && item.data.payload.images.length" class="message-images">
             <a v-for="image in item.data.payload.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
               <img :src="image.value" :alt="t('stream.attachedImage')">

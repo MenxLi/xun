@@ -115,6 +115,8 @@ export default {
     loading: 'Loading conversation…',
     loadEarlier: 'Load earlier messages',
     hiddenCount: '{n} hidden',
+    expandMessage: 'Show full message',
+    collapseMessage: 'Collapse message',
   },
   confirm: {
     autoConfirmed: 'Auto-confirmed',

@@ -610,7 +610,7 @@ onBeforeUnmount(() => {
 
       <div class="stream-wrap">
       <StickyScroll :key="currentSessionPath" ref="stream" :size="streamSize">
-        <EventStream v-if="streamEvents.length" :key="streamViewKey" :events="streamEvents" :markdown="settings.markdown" :running-agents="runningAgents" />
+        <EventStream v-if="streamEvents.length" :key="streamViewKey" :events="streamEvents" :markdown="settings.markdown" :running-agents="runningAgents" :selected-agent-id="selectedAgentId" />
         <div v-if="visiblePrompts.length" class="prompt-stream">
           <PromptCard
             v-for="prompt in visiblePrompts"
