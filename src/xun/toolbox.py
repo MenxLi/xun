@@ -11,7 +11,7 @@ from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
 from .toolcall import Function, ToolCallContext
 from .agent_factory import AgentGetterProtocol, AgentGetterParam, agent_run_factory
-from .config import get_internal_env_bool
+from .config import DEFAULTS
 import rich
 
 class ToolBox:
@@ -78,7 +78,7 @@ class ToolBox:
                 msg = f"Kept existing override for '{f.name}', skipped incoming"
             else:
                 raise ValueError(f"Conflict tool name: {f.name}")
-            if get_internal_env_bool('INFO_TOOL_OVERRIDE'):
+            if DEFAULTS.info_tool_override:
                 rich.print(f"[blue]Info: {msg}[/blue]")
         return self
     
@@ -94,7 +94,7 @@ class ToolBox:
     def with_subagent_provider(
         self, 
         agent_getter: "AgentGetterProtocol | None" = None, 
-        max_depth: int = 2,
+        max_depth: int = DEFAULTS.subagent_max_depth
         ) -> Self:
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
