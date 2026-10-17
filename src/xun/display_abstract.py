@@ -7,6 +7,7 @@ rendering live in `display_store`. Both are re-exported here so existing
 
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING, Protocol, Generic, cast
+from threading import Lock
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from .workspace import Workspace
@@ -30,6 +31,7 @@ class DisplayAbstract(DisplayEventStoreMixin, ABC):
     get_choice / get_confirm).
     """
     _agents: dict[str, "Agent[Agent.T.Any]"]
+    _AGENTS_INIT_LOCK = Lock()
 
     def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
         self.agents[agent.identifier] = agent
@@ -42,7 +44,9 @@ class DisplayAbstract(DisplayEventStoreMixin, ABC):
     def agents(self) -> dict[str, "Agent[Agent.T.Any]"]:
         """Return the dictionary of {identifier: Agent} for all agents bound to this display."""
         if not hasattr(self, "_agents"):
-            self._agents = {}
+            with self._AGENTS_INIT_LOCK:
+                if not hasattr(self, "_agents"):
+                    self._agents = {}
         return self._agents
 
     @abstractmethod
