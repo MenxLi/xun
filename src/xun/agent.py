@@ -17,7 +17,7 @@ from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
 from .slot_semaphore import SlotSemaphore
 from .conversation import Conversation
-from .config import AgentConfig, load_config, get_internal_env
+from .config import AgentConfig, load_config, get_internal_env, DEFAULTS
 from .error_catch import except_safe
 from .toolbox import ToolBox
 from .workspace import Workspace
@@ -27,10 +27,7 @@ from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
 from .extension import default_loader, ExtensionLoader
 
-DEFAULT_MAX_ITERATIONS = 512 if not (it_str:=get_internal_env("DEFAULT_MAX_ITER")) else int(it_str)
-DEFAULT_API_CALL_CONCURRENCY = 8
 AGENTS_SECTION = "agents-md"
-
 _AUTO_CONFIRM_WARNED = False
 
 def _warn_auto_confirm_once(agent: "Agent") -> None:
@@ -68,7 +65,7 @@ class Agent(
 
     # below auto inherit
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
-    api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULT_API_CALL_CONCURRENCY))
+    api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULTS.max_api_call_concurrency))
     extension_loader: ExtensionLoader = default_loader
     """Shared by reference, all agents replay the same scanned modules."""
 
@@ -209,20 +206,20 @@ class Agent(
     @except_safe
     def execute[T: BaseModel](
         self: Agent[Agent.T.Init], schema: type[T],  # explicit Agent.T: method typevar T shadows the module alias
-        max_iterations: int = DEFAULT_MAX_ITERATIONS, 
+        max_iterations: int = DEFAULTS.max_execution_iterations, 
         context: Any = None
     ) -> T: ...
     @overload
     @except_safe
     def execute(
         self: Agent[T.Init], schema: None = None, 
-        max_iterations: int = DEFAULT_MAX_ITERATIONS, 
+        max_iterations: int = DEFAULTS.max_execution_iterations, 
         context: Any = None
     ) -> str: ...
     @except_safe
     def execute(
         self: Agent[T.Init], schema: Optional[type[BaseModel]] = None,
-        max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        max_iterations: int = DEFAULTS.max_execution_iterations,
         context: Any = None
         ):
         if not Agent.is_initialized(self):

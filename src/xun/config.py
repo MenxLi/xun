@@ -5,6 +5,7 @@ import functools
 from pathlib import Path
 from dotenv import load_dotenv
 import openai
+from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
 from typing import Self, Literal
 from string import Template
@@ -39,6 +40,13 @@ def get_internal_env_bool(key: str) -> bool | None:
     if v is None:
         return None
     return v.lower() in ("1", "true", "yes")
+
+@dataclass(frozen=True)
+class DefaultParams:
+    max_api_call_concurrency: int = 8 if not (s:=get_internal_env("DEFAULT_MAX_API_CALL_CONCURRENCY")) else int(s)
+    max_execution_iterations: int = 512 if not (s:=get_internal_env("DEFAULT_MAX_EXECUTION_ITERATIONS")) else int(s)
+
+DEFAULTS = DefaultParams()
 
 class ConfigModel(BaseModel):
     """Satisfies `ToJson`/`FromJson` structurally (pydantic models cannot subclass a Protocol)."""
