@@ -303,9 +303,6 @@ class EventStore(Protocol):
     def agent_ids(self) -> list[str]:
         ...
 
-    def close(self) -> None:
-        ...
-
 
 class MemoryEventStore:
     """In-process ring buffer implementing `EventStore`; the default backend."""
@@ -357,9 +354,6 @@ class MemoryEventStore:
         with self._lock:
             return list({event.agent.identifier for event in self._ring})
 
-    def close(self) -> None:
-        pass  # nothing held outside the process
-
 
 class DisplayEventStoreMixin:
     """Event store facade and standalone-HTML rendering. """
@@ -368,30 +362,27 @@ class DisplayEventStoreMixin:
     """Zero on purpose: payloads can be large (tool results, base64 images),
     consumers need to set their own capacity via `with_buffer_size`."""
 
-    _STORE_INIT_LOCK = threading.Lock()
-
     _event_buffer: EventStore | None = None
 
+    @property
     def event_store(self) -> EventStore:
-        """Event store, created lazily."""
-        if self._event_buffer is None:
-            with DisplayEventStoreMixin._STORE_INIT_LOCK:
-                if self._event_buffer is None:
-                    self.with_store_backend(MemoryEventStore(self.DEFAULT_EVENT_BUFFER_SIZE))
-        return cast(EventStore, self._event_buffer)
+        store = vars(self).get("_event_buffer")
+        if store is None:
+            store = vars(self).setdefault(
+                "_event_buffer", MemoryEventStore(self.DEFAULT_EVENT_BUFFER_SIZE))
+        return cast(EventStore, store)
 
-    def with_store_backend(self, store: EventStore) -> Self:
-        """Set a custom event store backend; it owns its own resource cleanup."""
+    @event_store.setter
+    def event_store(self, store: EventStore) -> None:
         self._event_buffer = store
-        return self
 
     def with_buffer_size(self, max_events: int) -> Self:
         """Set how many events the store retains (oldest dropped beyond that)."""
-        self.event_store().set_buffer_size(max_events)
+        self.event_store.set_buffer_size(max_events)
         return self
 
     def _record_event(self, event: DisplayEvent) -> None:
-        self.event_store().add(event)
+        self.event_store.add(event)
 
     def events(
         self, 
@@ -400,7 +391,7 @@ class DisplayEventStoreMixin:
         limit: int | None = None,
         from_latest: bool = False,
         ) -> list[DisplayEvent]:
-        return self.event_store().select(
+        return self.event_store.select(
             agent_id, 
             offset=offset, 
             limit=limit, 
@@ -408,13 +399,10 @@ class DisplayEventStoreMixin:
             )
 
     def event_count(self, agent_id: str | None = None) -> int:
-        return self.event_store().count(agent_id)
-    
-    def event_agent_ids(self) -> list[str]:
-        return self.event_store().agent_ids()
+        return self.event_store.count(agent_id)
 
     def clear_events(self, agent_id: str | None = None) -> None:
-        self.event_store().clear(agent_id)
+        self.event_store.clear(agent_id)
 
     def render_history_as_html(self, title: str = "Session") -> str:
         """Render this display's buffered events as a standalone HTML page."""

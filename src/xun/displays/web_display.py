@@ -167,7 +167,7 @@ class WebDisplay(DisplayAbstract):
             if args.command.name == "clear":
                 self.clear_events(agent.identifier)
                 # also drop events left behind by agents no longer bound to this display
-                agent_all = set(self.event_agent_ids())
+                agent_all = set(self.event_store.agent_ids())
                 for agent_id in agent_all - set(self.agents.keys()):
                     self.clear_events(agent_id)
             elif args.command.name == "retry":
