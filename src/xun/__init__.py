@@ -12,11 +12,12 @@ from .toolcall import tool_attr
 from .config import AgentConfig, xun_version
 from .extension import ExtensionContext, extension_attr, extension_data_dir
 from .workspace import Workspace
+from .slot_semaphore import SlotSemaphore
 from .agent import Agent
 
 __all__ = [
     "Agent", "AgentConfig",
-    "Workspace", 
+    "Workspace", "SlotSemaphore",
     "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr",
     "extension_data_dir",
     "xun_version",

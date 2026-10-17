@@ -8,7 +8,6 @@ import weakref
 from openai import OpenAI
 from pydantic import BaseModel
 from PIL.Image import Image
-from threading import Semaphore
 
 from .types import CancelledError
 from .agent_lifecycle import T, LifecycleT, _Uninit, _Init, _Final, _LT
@@ -16,6 +15,7 @@ from .agent_state import AgentState
 from .display_abstract import *
 from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
+from .slot_semaphore import SlotSemaphore
 from .conversation import Conversation
 from .config import AgentConfig, load_config, get_internal_env
 from .error_catch import except_safe
@@ -68,7 +68,7 @@ class Agent(
 
     # below auto inherit
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
-    api_call_semaphore: Semaphore = field(default_factory=lambda: Semaphore(DEFAULT_API_CALL_CONCURRENCY))
+    api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULT_API_CALL_CONCURRENCY))
     extension_loader: ExtensionLoader = default_loader
     """Shared by reference, all agents replay the same scanned modules."""
 
