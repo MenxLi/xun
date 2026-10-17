@@ -87,9 +87,7 @@ class AgentState(ToJson, FromJson):
             return entry
         if or_else is None:
             return None
-        entry = or_else()
-        self._entries[key] = entry
-        return entry
+        return self._entries.setdefault(key, or_else())
 
     def to_json(self) -> dict[str, JsonType]:
         """Serialize the persist entries; runtime entries are skipped."""
