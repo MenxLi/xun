@@ -202,6 +202,25 @@ class AffinityTest(unittest.TestCase):
             pass  # slot 0 held then released cold; slot 1 never used
         self.assertEqual(self._head_take(gate, "HEAD"), 1)  # untouched slot: no owner's cache to destroy
 
+    def test_clear_warm_lets_the_head_take_at_once(self):
+        now = [100.0]
+        gate = SlotSemaphore(1, max_warm_run=100, warm_grace=10.0, poll=POLL, clock=lambda: now[0])
+        gate._slots[0] = _Slot(warm_owner="A", warm_until=110.0, released_at=100.0)
+        gate._queue.append("HEAD")
+        with gate._cond:
+            self.assertIsNone(gate._take("HEAD")[0])  # live reservation blocks the head
+        gate.clear_warm("A")
+        self.assertEqual(self._head_take(gate, "HEAD"), 0)  # despite 10s grace left
+
+    def test_clear_warm_spares_held_and_foreign_slots(self):
+        gate = SlotSemaphore(2, max_warm_run=100, warm_grace=10.0, poll=POLL)
+        gate._slots[0] = _Slot(warm_owner="A", warm_until=110.0)  # A's ended run
+        gate._slots[1] = _Slot(held=True, warm_owner="B", warm_until=110.0)  # B still holds
+        gate.clear_warm("A")
+        with gate._cond:
+            self.assertIsNone(gate._slots[0].warm_owner)  # hint dropped: plain cold slot
+            self.assertEqual(gate._slots[1].warm_owner, "B")  # held: untouched
+
     def test_head_waits_while_all_reservations_live(self):
         now = [100.0]
         gate = SlotSemaphore(2, max_warm_run=100, warm_grace=10.0, poll=POLL, clock=lambda: now[0])

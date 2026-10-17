@@ -26,8 +26,9 @@ class SlotSemaphore:
     model call may present a different conversation prefix, thrashing the
     server's KV prefix cache. Here a released slot stays reserved to its owner
     for ``warm_grace``, and the returning owner reclaims it ahead of the queue.
-    Reservations lapse after ``warm_grace``, and an owner reclaims at most
-    ``max_warm_run`` times in a row before the slot rotates out cold.
+    Reservations lapse after ``warm_grace``, an owner reclaims at most
+    ``max_warm_run`` times in a row before the slot rotates out cold, and a run
+    that ends drops its reservations outright (:meth:`clear_warm`).
     """
 
     def __init__(
@@ -58,6 +59,14 @@ class SlotSemaphore:
         finally:
             self._release(slot)
 
+    def clear_warm(self, owner: str) -> None:
+        """Drop ``owner``'s unheld reservations: those slots become plain cold ones."""
+        with self._cond:
+            for slot in self._slots:
+                if slot.warm_owner == owner and not slot.held:
+                    slot.warm_owner = None
+            self._cond.notify_all()
+
     def _acquire(self, owner: str, poll_abort: Callable[[], None]) -> int:
         with self._cond:
             self._queue.append(owner)
@@ -80,7 +89,7 @@ class SlotSemaphore:
         for i, slot in enumerate(self._slots):
             if slot.held:
                 continue
-            if slot.warm_owner == owner:
+            if slot.warm_owner == owner and slot.warm_until > now:
                 self._claim(i, owner, warm=True)
                 return i, 0.0
             if not head:
@@ -107,7 +116,7 @@ class SlotSemaphore:
             slot.held = False
             slot.released_at = self._clock()
             if slot.reclaim_count >= self._max_warm_run:
-                slot.warm_owner = None  # cap reached: rotate the slot out cold
+                slot.warm_owner = None
             else:
-                slot.warm_until = self._clock() + self._warm_grace
+                slot.warm_until = slot.released_at + self._warm_grace
             self._cond.notify_all()
