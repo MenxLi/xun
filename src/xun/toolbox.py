@@ -100,6 +100,7 @@ class ToolBox:
         Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
         The getter receives an AgentGetterParam and is supposed to commit to it (e.g. name).
+        the agent at the `max_depth` generation is born with sub-agent tools disabled.
         """
         if agent_getter is None:
             def _agent_getter(param: AgentGetterParam) -> "Agent[_Uninit]":
@@ -118,7 +119,7 @@ class ToolBox:
                 parent_entry = parent.state.get_entry(self.SUBAGENT_DEPTH_FLAG)
                 depth = (parent_entry.value if isinstance(parent_entry, RuntimeEntry) else 0) + 1
                 agent.state[self.SUBAGENT_DEPTH_FLAG] = RuntimeEntry(depth)
-                if depth > max_depth:
+                if depth >= max_depth:
                     agent.toolbox.disable_subagent()
                 return agent
             return wrap
