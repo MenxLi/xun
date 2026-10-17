@@ -27,8 +27,7 @@ class SlotSemaphore:
     server's KV prefix cache. Here a released slot stays reserved to its owner
     for ``warm_grace``, and the returning owner reclaims it ahead of the queue.
     Reservations lapse after ``warm_grace``, an owner reclaims at most
-    ``max_warm_run`` times in a row before the slot rotates out cold, and a run
-    that ends drops its reservations outright (:meth:`clear_warm`).
+    ``max_warm_run`` times in a row before the slot rotates out cold.
     """
 
     def __init__(

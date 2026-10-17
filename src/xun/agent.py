@@ -236,6 +236,7 @@ class Agent(
             raise
         finally:
             self.sync_project_instructions()
+            self.api_call_semaphore.clear_warm(self.identifier)
 
     def system[AliveT: Agent[T.Alive]](self: AliveT, content: str) -> AliveT:
         self.conversation.set_system_message_content(content)

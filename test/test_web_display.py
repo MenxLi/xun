@@ -23,7 +23,6 @@ from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
 from xun.running_state import AgentRunningStateMixin, ChainedEvent
-from xun.slot_semaphore import SlotSemaphore
 from xun.hooks import Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.web_serve import MAX_SERVE_SERVERS
@@ -55,7 +54,6 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.cancel_called = threading.Event()
         self._running = False
         self.cancel_event = ChainedEvent()
-        self.api_call_semaphore = SlotSemaphore(1)
         self.hooks = Hooks()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []

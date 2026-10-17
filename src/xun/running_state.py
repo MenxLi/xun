@@ -7,7 +7,6 @@ from threading import Event
 from typing import cast, Optional, Protocol, TYPE_CHECKING
 
 from .types import CancelledError
-from .slot_semaphore import SlotSemaphore
 
 if TYPE_CHECKING:
     from .agent import Agent
@@ -43,7 +42,6 @@ class AgentRunningStateProtocol(Protocol):
     identifier: str
     cancel_event: ChainedEvent
     hooks: "Hooks"
-    api_call_semaphore: SlotSemaphore
     _running: bool
 
     def display_event(self, ev: "DisplayEventType") -> None: ...
@@ -100,6 +98,5 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         finally:
             self._running = prev_running
             if scope is not None:
-                self.api_call_semaphore.clear_warm(self.identifier)
                 self.hooks.run_end.invoke(scope)
                 self.display_event(AgentRunningEndEvent())
