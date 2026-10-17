@@ -1,7 +1,7 @@
 """Event ring buffer and standalone-HTML rendering, shared by every display."""
 
 from __future__ import annotations
-from typing import Any, Optional, Sequence, Literal, Self
+from typing import Any, Optional, Sequence, Literal, Self, Protocol, cast
 from collections import deque
 import json
 import threading
@@ -275,55 +275,146 @@ def _group_events(events: Sequence[DisplayEvent]) -> list[Block]:
     close_batch()
     return blocks
 
+class EventStore(Protocol):
+    """Pluggable storage for display events. Should be thread-safe."""
+
+    def set_buffer_size(self, max_events: int | None):
+        """None means the buffer is unbounded."""
+        ...
+
+    def count(self, agent_id: str | None = None) -> int:
+        ...
+
+    def select(
+        self,
+        agent_id: str | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+        from_latest: bool = False,
+        ) -> list[DisplayEvent]:
+        ...
+
+    def clear(self, agent_id: str | None = None) -> None:
+        ...
+
+    def add(self, event: DisplayEvent) -> None:
+        ...
+    
+    def agent_ids(self) -> list[str]:
+        ...
+
+    def close(self) -> None:
+        ...
+
+
+class MemoryEventStore:
+    """In-process ring buffer implementing `EventStore`; the default backend."""
+
+    def __init__(self, max_events: int | None = 0) -> None:
+        self._ring: deque[DisplayEvent] = deque(maxlen=max_events)
+        self._lock = threading.Lock()
+
+    def set_buffer_size(self, max_events: int | None) -> None:
+        with self._lock:
+            self._ring = deque(self._ring, maxlen=max_events)
+
+    def count(self, agent_id: str | None = None) -> int:
+        with self._lock:
+            if agent_id is None:
+                return len(self._ring)
+            return sum(1 for event in self._ring if event.agent.identifier == agent_id)
+
+    def select(
+        self,
+        agent_id: str | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+        from_latest: bool = False,
+        ) -> list[DisplayEvent]:
+        with self._lock:
+            events = list(self._ring)
+        if from_latest:
+            events.reverse()
+        if agent_id is not None:
+            events = [event for event in events if event.agent.identifier == agent_id]
+        end = None if limit is None else offset + limit
+        return events[offset:end]
+
+    def clear(self, agent_id: str | None = None) -> None:
+        with self._lock:
+            if agent_id is None:
+                self._ring.clear()
+            else:
+                kept = [event for event in self._ring if event.agent.identifier != agent_id]
+                self._ring.clear()
+                self._ring.extend(kept)
+
+    def add(self, event: DisplayEvent) -> None:
+        with self._lock:
+            self._ring.append(event)
+    
+    def agent_ids(self) -> list[str]:
+        with self._lock:
+            return list({event.agent.identifier for event in self._ring})
+
+    def close(self) -> None:
+        pass  # nothing held outside the process
+
 
 class DisplayEventStoreMixin:
-    """Event ring buffer and standalone-HTML rendering. """
+    """Event store facade and standalone-HTML rendering. """
 
     DEFAULT_EVENT_BUFFER_SIZE = 0
     """Zero on purpose: payloads can be large (tool results, base64 images),
     consumers need to set their own capacity via `with_buffer_size`."""
 
-    _event_ring: deque[DisplayEvent]
-    _event_ring_lock: threading.Lock
+    _STORE_INIT_LOCK = threading.Lock()
 
-    def _event_store(self) -> tuple[deque[DisplayEvent], threading.Lock]:
-        """Ring buffer of every event seen by this display, plus its lock."""
-        if not hasattr(self, "_event_ring_lock"):
-            self._event_ring_lock = threading.Lock()
-        if not hasattr(self, "_event_ring"):
-            self._event_ring = deque(maxlen=self.DEFAULT_EVENT_BUFFER_SIZE)
-        return self._event_ring, self._event_ring_lock
+    _event_buffer: EventStore | None = None
+
+    def event_store(self) -> EventStore:
+        """Event store, created lazily."""
+        if self._event_buffer is None:
+            with DisplayEventStoreMixin._STORE_INIT_LOCK:
+                if self._event_buffer is None:
+                    self.with_store_backend(MemoryEventStore(self.DEFAULT_EVENT_BUFFER_SIZE))
+        return cast(EventStore, self._event_buffer)
+
+    def with_store_backend(self, store: EventStore) -> Self:
+        """Set a custom event store backend; it owns its own resource cleanup."""
+        self._event_buffer = store
+        return self
 
     def with_buffer_size(self, max_events: int) -> Self:
-        """Set how many events the ring buffer retains (oldest dropped beyond that)."""
-        ring, lock = self._event_store()
-        with lock:
-            self._event_ring = deque(ring, maxlen=max_events)
+        """Set how many events the store retains (oldest dropped beyond that)."""
+        self.event_store().set_buffer_size(max_events)
         return self
 
     def _record_event(self, event: DisplayEvent) -> None:
-        """Store an event for later rendering. `display_event` calls this for every event."""
-        buffer, lock = self._event_store()
-        with lock:
-            buffer.append(event)
+        self.event_store().add(event)
 
-    def events(self, agent_id: str | None = None) -> list[DisplayEvent]:
-        """Buffered events, oldest first; optionally only those emitted by one agent."""
-        buffer, lock = self._event_store()
-        with lock:
-            events = list(buffer)
-        return [event for event in events if event.agent.identifier == agent_id] if agent_id else events
+    def events(
+        self, 
+        agent_id: str | None = None, 
+        offset: int = 0,
+        limit: int | None = None,
+        from_latest: bool = False,
+        ) -> list[DisplayEvent]:
+        return self.event_store().select(
+            agent_id, 
+            offset=offset, 
+            limit=limit, 
+            from_latest=from_latest
+            )
+
+    def event_count(self, agent_id: str | None = None) -> int:
+        return self.event_store().count(agent_id)
+    
+    def event_agent_ids(self) -> list[str]:
+        return self.event_store().agent_ids()
 
     def clear_events(self, agent_id: str | None = None) -> None:
-        """Drop buffered events, all of them or only those from one agent."""
-        buffer, lock = self._event_store()
-        with lock:
-            if agent_id is None:
-                buffer.clear()
-            else:
-                kept = [event for event in buffer if event.agent.identifier != agent_id]
-                buffer.clear()
-                buffer.extend(kept)
+        self.event_store().clear(agent_id)
 
     def render_history_as_html(self, title: str = "Session") -> str:
         """Render this display's buffered events as a standalone HTML page."""
@@ -343,4 +434,4 @@ class DisplayEventStoreMixin:
             },
         )
 
-__all__ = ["DisplayEventStoreMixin"]
+__all__ = ["EventStore", "MemoryEventStore", "DisplayEventStoreMixin"]
