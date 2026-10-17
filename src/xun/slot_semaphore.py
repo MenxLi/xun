@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Condition
 
-DEFAULT_ACQUIRE_POLL = 0.5
+DEFAULT_ACQUIRE_POLL = 1.0
 DEFAULT_WARM_GRACE = 3.0
 
 @dataclass
