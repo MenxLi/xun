@@ -53,7 +53,7 @@ class CompletionRetryTest(unittest.TestCase):
         params = HookArgs.BeforeExecutionArgs(agent=self.agent, schema=None, max_iterations=1)
         with patch("xun.loop.time.sleep") as sleep:
             with self.assertRaises(RuntimeError) as raised:
-                _execute_step(params, "call-id")
+                _execute_step(params, 1)
         return raised.exception, [call.args[0] for call in sleep.call_args_list]
 
     def test_declined_retry_raises_after_the_backoff_is_spent(self) -> None:

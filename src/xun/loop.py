@@ -45,16 +45,11 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     if params.schema is not None:
         # prompt-injected schema
         agent.conversation.set_response_schema(params.schema)
-    for iteration in range(params.max_iterations):
-        agent.check_cancel()
-        agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
-        model_call_id = str(uuid.uuid4())
-        agent.display_event(ModelWorkingEvent(
-            model_call_id=model_call_id,
-            remaining_iterations=params.max_iterations - iteration
-            ))
-        should_continue, result_str = _execute_step(params, model_call_id)
 
+    for remaining in range(params.max_iterations, 0, -1):
+        agent.check_cancel()
+
+        should_continue, result_str = _execute_step(params, remaining)
         if should_continue:
             continue
 
@@ -77,8 +72,35 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
     )
 
 
-def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]:
+def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tuple[bool, str]:
 
+    agent = params.agent
+    agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
+
+    call_id = str(uuid.uuid4())
+    agent.display_event(ModelWorkingEvent(
+        model_call_id=call_id,
+        remaining_iterations=remaining_iterations
+        ))
+
+    # the main execution step
+    message = _run_model_call(params, call_id)
+    tool_results = _run_tool_calls(params, message)
+
+    # conversation update
+    agent.conversation.add_agent_message(message)
+    for tool_id, tr in tool_results:
+        agent.conversation.add_tool_result(tool_id, tr)
+
+    agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(
+        agent=agent,
+    ))
+
+    return bool(tool_results), message.content or ""
+
+
+def _run_model_call(params: ExecutionLoopParams, call_id: str) -> ChatCompletionMessageWithReasoning:
+    # one model turn; the retry policy: backoff retries, then ask a human
     agent = params.agent
 
     completion_retry_backoff = COMPLETION_RETRY_BACKOFF
@@ -237,7 +259,12 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             total_tokens=total_tokens,
             conclusive=not message.tool_calls,
             ))
-    tool_called = False
+    return message
+
+
+def _run_tool_calls(params: ExecutionLoopParams, message: ChatCompletionMessageWithReasoning) -> list[tuple[str, ToolResultType]]:
+
+    agent = params.agent
 
     tool_results: list[tuple[str, ToolResultType]] = []
     if message.tool_calls:
@@ -291,20 +318,10 @@ def _execute_step(params: ExecutionLoopParams, call_id: str) -> tuple[bool, str]
             ))
 
             tool_results.append((tool_id, tool_res))
-            tool_called = True
 
         agent.hooks.after_tool_call.invoke(HookArgs.AfterToolCallArgs(
             agent=agent,
             tool_results=tool_results
         ))
 
-    # conversation update
-    agent.conversation.add_agent_message(message)
-    for tool_id, tr in tool_results:
-        agent.conversation.add_tool_result(tool_id, tr)
-
-    agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(
-        agent=agent,
-    ))
-
-    return tool_called, message.content or ""
+    return tool_results
