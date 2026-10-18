@@ -77,14 +77,8 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
     agent = params.agent
     agent.hooks.before_execution_step.invoke(HookArgs.BeforeExecutionStepArgs(agent=agent))
 
-    call_id = str(uuid.uuid4())
-    agent.display_event(ModelWorkingEvent(
-        model_call_id=call_id,
-        remaining_iterations=remaining_iterations
-        ))
-
     # the main execution step
-    message = _run_model_call(params, call_id)
+    message = _run_model_call(params, remaining_iterations)
     tool_results = _run_tool_calls(params, message)
 
     # conversation update
@@ -99,7 +93,7 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
     return bool(tool_results), message.content or ""
 
 
-def _run_model_call(params: ExecutionLoopParams, call_id: str) -> ChatCompletionMessageWithReasoning:
+def _run_model_call(params: ExecutionLoopParams, remaining_iterations: int) -> ChatCompletionMessageWithReasoning:
     # one model turn; the retry policy: backoff retries, then ask a human
     agent = params.agent
 
@@ -108,6 +102,13 @@ def _run_model_call(params: ExecutionLoopParams, call_id: str) -> ChatCompletion
 
     while True:
         agent.check_cancel()
+
+        call_id = str(uuid.uuid4())
+        agent.display_event(ModelWorkingEvent(
+            model_call_id=call_id,
+            remaining_iterations=remaining_iterations
+            ))
+
         try:
             config = agent.config
             model_params = {
