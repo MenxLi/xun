@@ -63,7 +63,7 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
             return result.unwrap()
         else:
             if n_resolve_fail < MAX_RESOLVE_RETRIES:
-                agent.instruct(f"Failed to resolve result: {result.value_str()}", _emit_event=False, is_synthetic=True)
+                agent.conversation.add_user_message(f"Failed to resolve result: {result.value_str()}", is_synthetic=True)
                 if params.schema:
                     agent.conversation.set_response_schema(params.schema)
                 n_resolve_fail += 1

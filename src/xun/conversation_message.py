@@ -65,6 +65,8 @@ Context management notes:
 - This conversation will be compacted again when the context limit is reached. Persist important state rather than keeping it only in the context window.
 """
 
+COMPACTION_NOTICE = """Context management note: the history around this point is not contiguous. Earlier turns, including any between the user message above and the following recent messages, have been compacted into the summary in the system message."""
+
 
 @dataclass
 class SystemPrompt(AbstractMessage):

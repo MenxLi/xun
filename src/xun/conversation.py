@@ -8,7 +8,7 @@ import uuid, json, time
 from PIL.Image import Image
 from .compact import CompactionCounter, SummaryCompactResult, ToolCallCompactResult
 from .conversation_message import (
-    AbstractMessage, RawOpenAIMessage, SystemPrompt, UserMessage, ToolResultMessage,
+    AbstractMessage, COMPACTION_NOTICE, RawOpenAIMessage, SystemPrompt, UserMessage, ToolResultMessage,
     message_from_json, remove_empty_tool_calls,
 )
 from .types import Result, ToolResultType
@@ -131,6 +131,10 @@ class Conversation:
         normalized_images = [image_to_url(image) for image in images or ()]
         self.messages.append(UserMessage(text=content, images=normalized_images, is_synthetic=is_synthetic))
     
+    def add_developer_message(self, content: str) -> None:
+        dev_msg: chat.chat_completion_message_param.ChatCompletionMessageParam = {"role": "developer", "content": content}
+        self.messages.append(RawOpenAIMessage(raw=dev_msg))
+    
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage | ChatCompletionMessageWithReasoning):
         self.messages.append(RawOpenAIMessage(raw=remove_empty_tool_calls(msg.model_dump())))
     
@@ -209,36 +213,35 @@ class Conversation:
         return self._compacted_toolcalls.get(toolcall_id)
 
     def compact(self, summarize: Callable[[list[AbstractMessage]], str | None], keep_recent: int):
-        """Replace older messages with a `summarize(messages)` summary in the system message
-        (None to abort), keeping a tail of at most `keep_recent` messages.
+        """Replace messages before a cut point with a `summarize(messages)` summary
+        (None to abort) in the system message, keeping a tail of at most `keep_recent`
+        messages. History is untouched unless the status is COMPACTED.
 
-        The cut lands on the last user message when its tail is short enough, otherwise on
-        `len - keep_recent` advanced past `tool` messages so the tail never opens with an
-        orphaned result. A user message skipped by that cut is re-kept at the head of the
-        tail: providers reject bodies without a user message, and it preserves the task verbatim.
-
-        History is untouched unless the returned status is COMPACTED.
+        The anchor — the last non-synthetic user message — is always kept verbatim:
+        cut at it when its tail fits, otherwise at the window start advanced to a
+        self-contained turn (`user`/`assistant`) so the tail never opens on an
+        orphaned tool result or a context-bound annotation. When carrying the anchor
+        across that cut left a gap, a `developer` notice right after it marks it.
         """
         len_before = self.estimated_message_length()
         msgs = self.messages
 
-        cut: int | None = None
-        last_user_idx: int | None = None
+        anchor: int = -1    # the place of the last non-synthetic user message
         for i in range(len(msgs) - 1, -1, -1):
-            if isinstance(msgs[i], UserMessage):
-                last_user_idx = i
-                if len(msgs) - i <= keep_recent:
-                    cut = i
+            if isinstance(msg_i:=msgs[i], UserMessage) and not msg_i.is_synthetic:
+                anchor = i
                 break
-        if cut is None:
-            cut = max(len(msgs) - keep_recent, 0)
-            while cut < len(msgs) and msgs[cut].role == "tool":
-                cut += 1
+        assert anchor != -1, "There must be at least one non-synthetic user message in the conversation."
+
+        # cut at the anchor when its tail fits (max picks the anchor), otherwise at the
+        # window start; when the window start lands inside the anchor's tail (anchor > 0),
+        # the anchor is carried to the head of the tail below
+        cut = max(anchor, len(msgs) - keep_recent)
+        while cut < len(msgs) and msgs[cut].role not in ("user", "assistant"):
+            cut += 1
 
         condense_messages = msgs[:cut]
-        keep_messages = msgs[cut:]
-        if last_user_idx is not None and last_user_idx < cut:
-            keep_messages = [msgs[last_user_idx]] + keep_messages
+        keep_messages = ([msgs[anchor]] if anchor < cut else []) + msgs[cut:]
 
         Status = SummaryCompactResult.Status
         if not any(m.role != "system" for m in condense_messages):
@@ -253,6 +256,11 @@ class Conversation:
                 Status.SUMMARIZE_FAILED, 
                 "Conversation compaction did not produce a summary."
                 )
+
+        if anchor + 1 < cut:
+            # the carried anchor lost msgs[anchor+1:cut] behind it
+            notice: chat.chat_completion_message_param.ChatCompletionMessageParam = {"role": "developer", "content": COMPACTION_NOTICE}
+            keep_messages.insert(1, RawOpenAIMessage(raw=notice))
 
         self.set_system_message_content(summary, is_compressed=True)
         self.messages = self.messages[:1] + keep_messages

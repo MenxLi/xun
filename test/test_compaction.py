@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from xun import Agent, NullDisplay
 from xun.conversation import Conversation
-from xun.conversation_message import RawOpenAIMessage, SystemPrompt
+from xun.conversation_message import COMPACTION_NOTICE, RawOpenAIMessage, SystemPrompt
 from xun.types import Result
 from xun.compact import AutoCompactor, CompactionCounter, CompactorAbstract, SummaryCompactResult, compact_conversation
 from xun.hooks import HookArgs, Hooks
@@ -39,6 +39,8 @@ class ConversationCompactTest(unittest.TestCase):
         conversation.add_user_message("second")
 
         self.assertTrue(conversation.compact(lambda messages: "SUMMARY", keep_recent=KEEP_RECENT).compacted)
+        # cut at the anchor: the kept tail is contiguous (only earlier history was
+        # condensed), so no developer notice is inserted
         self.assertEqual([m.role for m in conversation.messages], ["system", "user"])
         # the raw summary is stored; the compaction wrapper applies at completion_param time
         system_message = conversation.messages[0]
@@ -53,7 +55,7 @@ class ConversationCompactTest(unittest.TestCase):
         conversation = _conversation_with_tool_chain(tool_rounds=40)
 
         self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT).compacted)
-        self.assertLessEqual(len(conversation.messages), KEEP_RECENT + 2)  # system + carried user + retained tail
+        self.assertLessEqual(len(conversation.messages), KEEP_RECENT + 3)  # system + carried user + notice + retained tail
         # the kept tail never opens with an orphaned tool result
         self.assertNotEqual(conversation.messages[1].role, "tool")
         # every tool result in the tail keeps its owning assistant message
@@ -71,6 +73,73 @@ class ConversationCompactTest(unittest.TestCase):
 
         self.assertTrue(conversation.compact(lambda messages: "BIG", keep_recent=KEEP_RECENT).compacted)
         self.assertIn("user", [m.role for m in conversation.messages])
+
+    def test_anchor_prefers_human_user_over_trailing_synthetic(self) -> None:
+        # the tail must keep a non-synthetic user message even when a synthetic one
+        # sits after it and would be the cheaper cut
+        conversation = Conversation()
+        conversation.set_system_message_content("sys")
+        conversation.add_user_message("human task")
+        for _ in range(3):
+            conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "a" * 100}))
+        conversation.add_user_message("system notice", is_synthetic=True)
+
+        self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=1).compacted)
+        self.assertEqual([m.role for m in conversation.messages], ["system", "user", "developer", "user"])
+        self.assertFalse(conversation.messages[1].is_synthetic)
+        self.assertTrue(conversation.messages[3].is_synthetic)
+        # the notice marks the condensation gap right after the anchor
+        notice = conversation.messages[2]
+        self.assertIsInstance(notice, RawOpenAIMessage)
+        self.assertEqual(notice.completion_param(), {"role": "developer", "content": COMPACTION_NOTICE})
+
+    def test_compact_requires_a_non_synthetic_anchor(self) -> None:
+        # every agent conversation is guaranteed a human message by construction (instruct()
+        # is the only human path and always precedes execution), so a conversation without
+        # one is a programming error rather than a runtime state to recover from
+        conversation = Conversation()
+        conversation.set_system_message_content("sys")
+        conversation.add_user_message("synthetic task", is_synthetic=True)
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "a" * 100}))
+
+        with self.assertRaises(AssertionError):
+            conversation.compact(lambda messages: "S", keep_recent=1)
+        self.assertEqual([m.role for m in conversation.messages], ["system", "user", "assistant"])
+
+    def test_compact_twice_inserts_notice_once(self) -> None:
+        conversation = Conversation()
+        conversation.set_system_message_content("sys")
+        conversation.add_user_message("human task")
+
+        def grow() -> None:
+            for _ in range(5):
+                conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "a" * 100}))
+                conversation.add_user_message("system notice", is_synthetic=True)
+
+        for _ in range(2):
+            grow()
+            self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=2).compacted)
+            # the human anchor is carried across the window cut, leaving a gap that
+            # exactly one fresh notice marks, directly after the anchor
+            self.assertEqual([m.role for m in conversation.messages[:3]], ["system", "user", "developer"])
+            self.assertFalse(conversation.messages[1].is_synthetic)
+            self.assertEqual([m.role for m in conversation.messages if m.role == "developer"], ["developer"])
+
+    def test_notice_only_when_gap_is_real(self) -> None:
+        # window start lands exactly on the anchor's successor (cut == anchor + 1):
+        # the anchor is carried, but the kept tail is contiguous, so no notice
+        conversation = Conversation()
+        conversation.set_system_message_content("sys")
+        conversation.add_user_message("old task")
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "a" * 100}))
+        conversation.add_user_message("human task")
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "b" * 100}))
+        conversation.messages.append(RawOpenAIMessage(raw={"role": "assistant", "content": "c" * 100}))
+
+        # cut = len - keep_recent = anchor + 1 (assistant: self-contained, no advance)
+        self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=2).compacted)
+        self.assertEqual([m.role for m in conversation.messages], ["system", "user", "assistant", "assistant"])
+        self.assertEqual(conversation.messages[1].text, "human task")
 
     def test_nothing_to_condense_leaves_history_untouched(self) -> None:
         conversation = Conversation()

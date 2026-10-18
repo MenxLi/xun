@@ -82,7 +82,7 @@ class ToolCallCompactResult:
     reclaimed_count: int
     reclaimed_fraction: float
 
-def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 16) -> SummaryCompactResult:
+def compact_conversation(agent: "Agent[Agent.T.Init]", keep_recent: int = 24) -> SummaryCompactResult:
     """
     Condense conversation history via `Conversation.compact`,
     supplying the summarizer and logging.
@@ -152,12 +152,12 @@ class CompactorAbstract(ABC):
 @dataclass
 class AutoCompactor(CompactorAbstract):
     """Cheap tool-call reclaims first, escalating to a full summary when needed."""
-    toolcall_keep_max: int = 12
-    summary_keep_max: int = 16
     escalation_rounds: int = 2
     """Cheap rounds before escalating to a summary."""
     max_retries: int = 2
     """Further full compactions allowed while the token estimate stays over the threshold."""
+    toolcall_keep_max: int = 12
+    summary_keep_max: int = 24      # about 2x the toolcall_keep_max
 
     def auto_compact(self, agent: "Agent[Agent.T.Init]") -> None:
         self._auto_compact(agent, self.toolcall_keep_max, self.summary_keep_max, self.max_retries)
