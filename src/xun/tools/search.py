@@ -203,7 +203,7 @@ def web_search(ctx: ToolCallContext, query: str, max_results: int = 5) -> WebSea
     # no schema= here: it biases models toward skipping the browsing steps
     last_error = ""
     with agent as initialized:
-        worker = initialized.instruct(task, _emit_event=False)
+        worker = initialized.instruct(task)
         res = worker.execute(max_iterations=SEARCH_MAX_ITERATIONS, context=ctx.value)
         text = res.unwrap() if res.is_ok() else ""
         if res.is_err():
@@ -211,7 +211,7 @@ def web_search(ctx: ToolCallContext, query: str, max_results: int = 5) -> WebSea
         output = _extract_json(text) if text else None
         if output is None:
             # one retry in the same conversation: browsing state is kept
-            res = worker.instruct(_JSON_RECOVERY, _emit_event=False).execute(
+            res = worker.instruct(_JSON_RECOVERY).execute(
                 max_iterations=SEARCH_MAX_ITERATIONS, context=ctx.value
             )
             text = res.unwrap() if res.is_ok() else ""

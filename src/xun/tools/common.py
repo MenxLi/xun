@@ -26,7 +26,7 @@ def defer_tool_image(ctx: Context, image: str | Image, msg: str = "") -> None:
     image_url = image_to_url(image)
 
     def add_image(args: HookArgs.AfterExecutionStepArgs) -> None:
-        args.agent.conversation.add_user_message(msg, images=[image_url])
+        args.agent.conversation.add_user_message(msg, images=[image_url], is_synthetic=True)
 
     ctx.agent.hooks.after_execution_step.add_once(add_image)
 

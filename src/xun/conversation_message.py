@@ -39,15 +39,15 @@ class AbstractMessage(ToJson, ABC):
 
 
 @dataclass
-class RawOpenAIMessage(AbstractMessage):
+class RawOpenAIMessage[M: chat.chat_completion_message_param.ChatCompletionMessageParam](AbstractMessage):
     """Assistant messages, kept as raw OpenAI message params."""
-    raw: chat.chat_completion_message_param.ChatCompletionMessageParam
+    raw: M
 
     @property
     def role(self) -> str:
         return self.raw.get("role", "unknown")
 
-    def completion_param(self) -> chat.chat_completion_message_param.ChatCompletionMessageParam:
+    def completion_param(self) -> M:
         return self.raw
 
     def to_json(self) -> dict:
@@ -111,8 +111,16 @@ class UserMessage(AbstractMessage):
     text: str
     images: list[str] = field(default_factory=list)
     """Normalized URLs (data or http(s)) from image_to_url."""
+
     response_schema: str | None = None
-    """JSON schema; appended via RESPONSE_SCHEMA_PROMPT at completion_param time."""
+    """The expected response schema for this user message."""
+
+    is_synthetic: bool = False
+    """Indicates whether this user message is send from the system/developer, not really a human message.
+    In openai completion api, if the system want to insert image content, it must be provided as a user message, 
+    thus synthetic messages are all implemented as user message, and they should be marked as so.
+    This field is blind to model in `completion_param`, but should be treated differently in the application logic.
+    """
 
     @property
     def role(self) -> str:
@@ -131,7 +139,7 @@ class UserMessage(AbstractMessage):
         return {"role": "user", "content": parts}
 
     def to_json(self) -> dict:
-        return {"kind": "user", "text": self.text, "images": self.images, "response_schema": self.response_schema}
+        return {"kind": "user", "text": self.text, "images": self.images, "response_schema": self.response_schema, "is_synthetic": self.is_synthetic}
 
 @dataclass
 class ToolResultMessage(AbstractMessage):
@@ -169,6 +177,7 @@ def message_from_json(data: dict) -> AbstractMessage:
             text=data.get("text", ""),
             images=list(data.get("images", [])),
             response_schema=data.get("response_schema"),
+            is_synthetic=data.get("is_synthetic", False),
         )
     if kind == "tool":
         return ToolResultMessage(

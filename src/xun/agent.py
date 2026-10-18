@@ -246,9 +246,10 @@ class Agent(
         self: AliveT,
         instruction: str,
         images: Sequence[str | Image] | None = None,
+        is_synthetic: bool = False,
         _emit_event: bool = True,
     ) -> AliveT:
-        self.conversation.add_user_message(instruction, images=images)
+        self.conversation.add_user_message(instruction, images=images, is_synthetic=is_synthetic)
         if _emit_event:
             self.display_event(UserMessageEvent.from_inputs(instruction, images=images))
         return self

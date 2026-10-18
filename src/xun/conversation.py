@@ -126,9 +126,10 @@ class Conversation:
         self,
         content: str,
         images: Sequence[str | Image] | None = None,
+        is_synthetic: bool = False,
     ) -> None:
         normalized_images = [image_to_url(image) for image in images or ()]
-        self.messages.append(UserMessage(text=content, images=normalized_images))
+        self.messages.append(UserMessage(text=content, images=normalized_images, is_synthetic=is_synthetic))
     
     def add_agent_message(self, msg: chat.chat_completion_message.ChatCompletionMessage | ChatCompletionMessageWithReasoning):
         self.messages.append(RawOpenAIMessage(raw=remove_empty_tool_calls(msg.model_dump())))
