@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from dataclasses import dataclass, field
+from functools import cached_property
 import shlex
 import uuid
 import weakref
@@ -74,7 +75,6 @@ class Agent(
     hooks: Hooks = field(default_factory=Hooks)
     compactor: CompactorAbstract = field(default_factory=AutoCompactor)
 
-    _openai_client: OpenAI = field(init=False, repr=False)
     _lifecycle: LifecycleT = field(init=False, repr=False, default_factory=lambda: cast(LifecycleT, _Uninit()))
     _running: bool = field(default=False, init=False, repr=False)
 
@@ -89,14 +89,12 @@ class Agent(
         self._lifecycle = s()
         return cast(Agent[_LT], self)
     
-    @property
+    @cached_property
     def openai_client(self) -> OpenAI:
-        if not hasattr(self, "_openai_client"):
-            self._openai_client = OpenAI(
-                base_url = self.config.provider.openai_base_url,
-                api_key = self.config.provider.openai_api_key,
-            )
-        return self._openai_client
+        return OpenAI(
+            base_url = self.config.provider.openai_base_url,
+            api_key = self.config.provider.openai_api_key,
+        )
 
     def initialize(self: Agent[T.Uninit]) -> Agent[T.Init]:
         """

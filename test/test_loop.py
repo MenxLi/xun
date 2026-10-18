@@ -37,7 +37,8 @@ class CompletionRetryTest(unittest.TestCase):
     def _agent(self, display: DisplayAbstract) -> Agent:
         agent = Agent(display=display, workspace=Workspace(workdir=Path(self._tmp.name)))
         agent.config.auto_confirm = False
-        agent._openai_client = SimpleNamespace(   # type: ignore
+        # openai_client is a cached_property; write its cache slot to inject the fake
+        agent.__dict__["openai_client"] = SimpleNamespace(   # type: ignore
             chat=SimpleNamespace(completions=SimpleNamespace(create=self._create))
         )
         return agent
