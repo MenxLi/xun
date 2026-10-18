@@ -237,6 +237,8 @@ def _parse_command_spec(command_line: str) -> CommandSpec:
 
     lexer = shlex.shlex(command_line, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    # to prevent pattern such as 'ls#foo; bash ./evil.sh'
+    lexer.commenters = ""   
     argv = list(lexer)
     if not argv:
         raise ValueError("Command must not be empty.")
