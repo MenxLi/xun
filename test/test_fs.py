@@ -1,10 +1,13 @@
 """Read-file output preserves the bytes needed for reliable text patches."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from xun.tools.fs import fs_read_file
+from xun.tools.common import Policy
+from xun.tools.fs import fs_copy, fs_move, fs_read_file
 from xun.tools.patch import apply_patch
 from test.test_patch import make_ctx
 
@@ -80,6 +83,41 @@ class TestReadFile(unittest.TestCase):
         )
         apply_patch(self.ctx, content)
         self.assertEqual(self.file.read_bytes(), b"first\r\nnew\r\nlast\r\n")
+
+
+class TestCopyMove(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.ctx = make_ctx(self.root)
+
+    def test_directory_copy_is_repeatable(self):
+        (self.root / "src" / "sub").mkdir(parents=True)
+        (self.root / "src" / "a.txt").write_text("a")
+        (self.root / "dst").mkdir()
+        for _ in range(2):
+            fs_copy(self.ctx, "src", "dst")
+        self.assertEqual((self.root / "dst" / "src" / "a.txt").read_text(), "a")
+
+    def test_special_source_is_not_silently_ok(self):
+        os.mkfifo(self.root / "pipe")
+        with self.assertRaises(ValueError):
+            fs_copy(self.ctx, "pipe", "out")
+
+    def test_move_over_existing_destination_asks(self):
+        (self.root / "a.txt").write_text("new")
+        (self.root / "b.txt").write_text("old")
+        policy = Policy()  # empty write allowlist: both sides need confirmation
+        self.ctx.agent.state.get_entry.return_value = policy
+        self.ctx.agent.get_choice.side_effect = [
+            SimpleNamespace(choice="Allow once", source="user"),  # src side passes
+            SimpleNamespace(choice="Deny", source="user"),         # dst overwrite denied
+        ]
+        with self.assertRaises(RuntimeError):
+            fs_move(self.ctx, "a.txt", "b.txt")
+        self.assertEqual((self.root / "b.txt").read_text(), "old")
+        self.assertTrue((self.root / "a.txt").exists())
 
 
 if __name__ == "__main__":

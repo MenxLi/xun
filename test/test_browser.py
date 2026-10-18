@@ -1,7 +1,9 @@
 import threading
 import unittest
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
@@ -11,8 +13,36 @@ from xun.conversation import Conversation
 from xun.hooks import HookArgs, Hooks
 from xun.agent_state import AgentState
 from xun.toolcall import ToolCallContext
-from xun.tools.browser import BrowserPage, BrowserRuntime, ScreenshotCapture, expose_browser_tools
+from xun.tools.browser import BrowserPage, BrowserRuntime, ScreenshotCapture, check_url, expose_browser_tools
 from xun.types import Result
+from test.test_patch import make_ctx
+
+
+class UrlGateTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.ctx = make_ctx(self.root)
+
+    def test_web_urls_pass(self) -> None:
+        check_url(self.ctx, "https://example.com/a")
+        check_url(self.ctx, "http://localhost:8080")
+
+    def test_file_url_is_scoped_to_workspace(self) -> None:
+        page = self.root / "page.html"
+        page.write_text("<html></html>")
+        check_url(self.ctx, page.as_uri())
+        for url in ("file:///etc/passwd", "file://other/share/x", "file:relative"):
+            with self.subTest(url=url):
+                with self.assertRaises(ValueError):
+                    check_url(self.ctx, url)
+
+    def test_other_schemes_are_rejected(self) -> None:
+        for url in ("data:text/html,<script>alert(1)</script>", "javascript:alert(1)", "example.com"):
+            with self.subTest(url=url):
+                with self.assertRaises(ValueError):
+                    check_url(self.ctx, url)
 
 
 class BrowserRuntimeTest(unittest.TestCase):

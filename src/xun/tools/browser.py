@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from queue import Queue
 from typing import Literal, cast
+from urllib.parse import unquote, urlparse
 from typing_extensions import NotRequired, TypedDict
 
 from ..types import TypeVar
@@ -651,6 +652,19 @@ class BrowserRuntime:
         thread.join()
 
 
+def check_url(ctx: Context, url: str) -> None:
+    """Web URLs only; file:// is allowed solely inside the agent's workspace.
+    A relative file: target would resolve against the current page, not the
+    workspace, so only absolute paths qualify."""
+    parsed = urlparse(url)
+    if parsed.scheme in ("http", "https"):
+        return
+    if parsed.scheme == "file" and not parsed.netloc and parsed.path.startswith("/"):
+        if resolve_path(ctx, unquote(parsed.path), raise_on_invalid=False).valid:
+            return
+    raise ValueError(f"URL not allowed (need http/https, or file:// inside the workspace): {url}")
+
+
 def expose_browser_tools() -> list[Callable]:
     runtime = BrowserRuntime()
 
@@ -688,6 +702,8 @@ def expose_browser_tools() -> list[Callable]:
         Pages retain cookies, storage, and state across browser tool calls.
         """
         agent_id = prepare(ctx)
+        if url is not None:
+            check_url(ctx, url)
         if action == "navigate":
             if url is None:
                 raise ValueError("url is required for the 'navigate' action.")

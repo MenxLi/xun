@@ -42,6 +42,13 @@ def ask_for_write_permission(ctx: Context, path: Path, message: str) -> bool:
         return True
     return outcome.choice != "Deny"
 
+def confirm_write(ctx: Context, path: Path, in_tempdir: bool, question: str) -> None:
+    """Gate a write outside the temp dir through the allowlist and user confirmation."""
+    if in_tempdir or get_policy(ctx).write_allowlist.has(path):
+        return
+    if not ask_for_write_permission(ctx, path, question):
+        raise RuntimeError(f"Operation cancelled by user, `{path}` was not written.")
+
 @tool_attr(name="temp_dir")
 def fs_temp_dir(ctx: Context) -> str:
     """
@@ -165,10 +172,8 @@ def fs_write_file(ctx: Context, path: str, content: str = "") -> Literal["OK"]:
     If the file already exists, its content will be overwritten.
     """
     resolved = resolve_path(ctx, path)
-    if resolved.path.exists() and not resolved.in_tempdir:
-        if not get_policy(ctx).write_allowlist.has(resolved.path) and \
-            not ask_for_write_permission(ctx, resolved.path, f"File `{resolved.path}` already exists. Do you want to overwrite it?"):
-            raise RuntimeError(f"Operation cancelled by user, file `{resolved.path}` was not overwritten.")
+    if resolved.path.exists():
+        confirm_write(ctx, resolved.path, resolved.in_tempdir, f"File `{resolved.path}` already exists. Do you want to overwrite it?")
     resolved.path.write_text(content)
     return "OK"
 
@@ -186,13 +191,11 @@ def fs_move(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     dst_resolved = resolve_path(ctx, dst)
     if not src_resolved.path.exists():
         raise FileNotFoundError("Source file/directory does not exist.")
-    # If the source file is in temp dir, we can be more lenient.
-    # Otherwise, we require confirmation for move operation.
-    # (Move from source equals to delete source and create destination, which is a potentially dangerous.)
-    if not src_resolved.in_tempdir: 
-        if not get_policy(ctx).write_allowlist.has(src_resolved.path) and \
-            not ask_for_write_permission(ctx, src_resolved.path, f"Are you sure you want to move `{src_resolved.path}` to `{dst_resolved.path}`?"):
-            raise RuntimeError(f"Operation cancelled by user, `{src_resolved.path}` was not moved to `{dst_resolved.path}`.")
+    # a move writes on both ends: source removal and destination overwrite
+    confirm_write(ctx, src_resolved.path, src_resolved.in_tempdir, f"Are you sure you want to move `{src_resolved.path}` to `{dst_resolved.path}`?")
+    effective_dst = dst_resolved.path / src_resolved.path.name if dst_resolved.path.is_dir() else dst_resolved.path
+    if effective_dst.exists() and effective_dst != src_resolved.path:
+        confirm_write(ctx, effective_dst, dst_resolved.in_tempdir, f"Destination `{effective_dst}` already exists. Are you sure you want to overwrite it with `{src_resolved.path}`?")
     shutil.move(src_resolved.path, dst_resolved.path)
     return "OK"
 
@@ -218,16 +221,14 @@ def fs_copy(ctx: Context, src: str, dst: str) -> Literal["OK"]:
     if src_resolved.path.is_dir() and dst_resolved.path.is_file():
         raise FileExistsError("Destination path exists as a file, cannot copy a directory onto a file.")
     effective_dst = dst_resolved.path / src_resolved.path.name if dst_resolved.path.is_dir() else dst_resolved.path
-    # If the destination is in temp dir, we can be more lenient.
-    # Otherwise, copying onto an existing destination overwrites it, requiring explicit permission.
-    if effective_dst.exists() and not dst_resolved.in_tempdir:
-        if not get_policy(ctx).write_allowlist.has(effective_dst) and \
-            not ask_for_write_permission(ctx, effective_dst, f"Destination `{effective_dst}` already exists. Are you sure you want to copy `{src_resolved.path}` onto it?"):
-            raise RuntimeError(f"Operation rejected by user, `{src_resolved.path}` was not copied to `{effective_dst}` (existing destination).")
+    if effective_dst.exists():
+        confirm_write(ctx, effective_dst, dst_resolved.in_tempdir, f"Destination `{effective_dst}` already exists. Are you sure you want to copy `{src_resolved.path}` onto it?")
     if src_resolved.path.is_file():
         shutil.copy2(src_resolved.path, effective_dst)
     elif src_resolved.path.is_dir():
-        shutil.copytree(src_resolved.path, effective_dst)
+        shutil.copytree(src_resolved.path, effective_dst, dirs_exist_ok=True)
+    else:
+        raise ValueError(f"Source is neither a file nor a directory: {src_resolved.path}")
     return "OK"
 
 @tool_attr(name="mkdir")
@@ -251,15 +252,12 @@ def fs_delete(ctx: Context, path: str) -> Literal["OK"]:
     if not p.exists():
         raise FileNotFoundError("File/directory does not exist.")
 
-    if not resolved.in_tempdir:
-        if not get_policy(ctx).write_allowlist.has(resolved.path) and \
-            not ask_for_write_permission(ctx, resolved.path, f"Are you sure you want to delete `{resolved.path}`?"):
-            raise RuntimeError(f"Operation cancelled by user, `{resolved.path}` was not deleted.")
+    confirm_write(ctx, resolved.path, resolved.in_tempdir, f"Are you sure you want to delete `{resolved.path}`?")
 
-    if p.is_file():
-        p.unlink()
-    elif p.is_dir():
+    if p.is_dir():
         shutil.rmtree(p)
+    else:
+        p.unlink()
     return "OK"
 
 @tool_attr(name="request_image", required_capabilities=["vision"])
