@@ -29,9 +29,11 @@ class HookRegistry[T]:
         self._callbacks.append(HookCallback(wrapped_fn, False))
     
     def invoke(self, args: T):
-        for cb in self._callbacks:
+        # one time callbacks registered during invoke survive for the next one
+        cbs, self._callbacks = self._callbacks, []
+        for cb in cbs:
             cb.fn(args)
-        self._callbacks = [cb for cb in self._callbacks if cb.persistent]
+        self._callbacks = [cb for cb in cbs if cb.persistent] + self._callbacks
 
 class HookArgs:
 
