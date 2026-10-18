@@ -168,20 +168,22 @@ class AutoCompactor(CompactorAbstract):
         toolcall_keep_max: int, 
         summary_keep_max: int, 
         remaining: int, 
+        est_tokens: int | None = None,
     ) -> None:
         if not (ac := agent.config.auto_compact).enabled:
             return
         conv = agent.conversation
-        # `total_tokens` is reset to None by Conversation.compact until the next model call refreshes it
-        if conv.total_tokens is None or conv.total_tokens <= ac.token_threshold:
+        # last real usage; compact() resets it to None, so recursion passes est_tokens as fallback
+        tokens = conv.total_tokens if conv.total_tokens is not None else est_tokens
+        if tokens is None or tokens <= ac.token_threshold:
             return
 
         # Cheap first: shrinking old tool results costs no API call. Escalate to a summary
         # once enough cheap rounds pile up, or when the reclaim did not sufficiently reduce the estimated token count.
         reclaimed = conv.compact_toolcall(keep_max = toolcall_keep_max)
-        estimated_token_after_reclaim = int(conv.total_tokens * (1 - reclaimed.reclaimed_fraction))
+        estimated_token_after_reclaim = int(tokens * (1 - reclaimed.reclaimed_fraction))
         agent.display_info(
-            f"Last call used {conv.total_tokens} tokens, over the auto-compact threshold "
+            f"Last call used {tokens} tokens, over the auto-compact threshold "
             f"({ac.token_threshold}); compacted {reclaimed.reclaimed_count} tool calls, estimated tokens after reclaim: {estimated_token_after_reclaim:.0f}"
         )
 
@@ -201,8 +203,7 @@ class AutoCompactor(CompactorAbstract):
                 agent.display_error(f"Conversation still ~{et} tokens after compaction; no further progress possible.")
             else:
                 agent.display_warning(f"Estimated tokens after full conversation compaction: {et}. Will auto-compact again.")
-                conv.total_tokens = et      # must update before recursive auto-compaction
-                self._auto_compact(agent, toolcall_keep_max//2, summary_keep_max//2, remaining - 1)
+                self._auto_compact(agent, toolcall_keep_max//2, summary_keep_max//2, remaining - 1, est_tokens=et)
         except CancelledError:
             raise
         except Exception as exc:

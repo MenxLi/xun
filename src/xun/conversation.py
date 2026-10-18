@@ -59,8 +59,8 @@ class Conversation:
         return json.dumps(self.to_json(), indent=2, ensure_ascii=False)
     
     def dump(self, file_path: str | Path):
-        with open(file_path, "w") as f:
-            return f.write(self.dumps())
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(self.dumps())
     
     def load_json(self, data: dict):
         self.conversation_id = data.get("conversation_id", self.conversation_id)
@@ -75,7 +75,7 @@ class Conversation:
         self.load_json(obj)
     
     def load(self, file_path: str | Path):
-        with open(file_path, "r") as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             self.loads(f.read())
     
     def set_system_message_content(self, content: str, is_compressed: bool | None = None):
@@ -270,7 +270,7 @@ class Conversation:
         return SummaryCompactResult(
             Status.COMPACTED, 
             "Conversation history condensed.", 
-            reclaimed_fraction = 1 - self.estimated_message_length() / len_before
+            reclaimed_fraction = 1 - self.estimated_message_length() / len_before if len_before else 0.0
             )
     
     def to_history(self, truncate = False) -> list[MessageRecord]:
