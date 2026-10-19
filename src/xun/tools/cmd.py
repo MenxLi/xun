@@ -18,7 +18,7 @@ from typing_extensions import TypedDict
 from ..agent_state import RuntimeEntry
 from ..toolcall import ToolCallContext
 from ..types import CancelledError
-from .cmd_policy import prepare_command
+from .cmd_policy import authorize_command
 
 _POOL_CREATION_LOCK = Lock()
 
@@ -273,22 +273,22 @@ def bash(
     ctx: ToolCallContext,
     command: str,
     timeout: float = 300,
-    cd: str | None = None,
     envs: dict[str, str] | None = None,
     max_output_size: int | None = 16_000,
 ) -> CmdExecResult:
     """
     Run through bash, returning output, exit code and duration.
-    `cd` defaults to the workspace; `envs` overrides inherited variables for this call.
+    Runs in the workspace; prefix with `cd <dir>; ` to work elsewhere in it.
+    `envs` overrides inherited variables for this call.
     Timeout (seconds) or cancellation terminates the command.
     `max_output_size` limits characters per stream, preserving head/tail plus a marker;
     null disables truncation. For non-blocking execution, use `bash_spawn`.
     """
     _validate_timeout(timeout)
     _validate_output_size(max_output_size)
-    cwd = prepare_command(ctx, command, cd)
+    authorize_command(ctx, command)
     start = time.monotonic()
-    result = run_command(command, timeout, cwd, envs, ctx.agent.cancel_event.is_set)
+    result = run_command(command, timeout, ctx.agent.workspace.workdir, envs, ctx.agent.cancel_event.is_set)
     return CmdExecResult(
         stdout=truncate_output(result.stdout.strip(), max_output_size),
         stderr=truncate_output(result.stderr.strip(), max_output_size),
@@ -299,12 +299,11 @@ def bash(
 def bash_spawn(
     ctx: ToolCallContext,
     command: str,
-    cd: str | None = None,
     envs: dict[str, str] | None = None,
 ) -> SpawnResult:
     """
     Start a background command and return its id and log file paths; same
-    approval/cd/envs rules as `bash`. No time limit; stdin is closed.
+    approval/envs rules as `bash`. No time limit; stdin is closed.
     Prefer this over other background execution methods (such as `&` and `nohup`).
 
     Stdout/stderr stream in real time to `bash_<id>.stdout.log` /
@@ -315,14 +314,14 @@ def bash_spawn(
     A finished command stays visible to `bash_wait` until its result is returned.
     On agent finalization, running commands are killed and all logs are deleted.
     """
-    cwd = prepare_command(ctx, command, cd)
+    authorize_command(ctx, command)
     ctx.agent.check_cancel()
     pool = CommandPool.of(ctx)
     identifier = uuid.uuid4().hex[:8]
     with pool.lock:
         if pool.closed:
             raise RuntimeError("Cannot start a command after its pool has shut down.")
-        job = CommandJob.start(identifier, command, cwd, envs, ctx.agent.workspace.tempdir.path)
+        job = CommandJob.start(identifier, command, ctx.agent.workspace.workdir, envs, ctx.agent.workspace.tempdir.path)
         pool.value[identifier] = job
         pool.log_files.update((job.stdout_log, job.stderr_log))
     return SpawnResult(id=identifier, stdout_log=str(job.stdout_log), stderr_log=str(job.stderr_log))

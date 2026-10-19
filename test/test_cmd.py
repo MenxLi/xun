@@ -39,6 +39,11 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "echo $(ls | wc)",
             'echo "$(pwd)"',
             "echo '$(rm)'",
+            "cd child; ls",
+            "cd child && ls",
+            "cd child/ && ls -l",
+            "cd; pwd",
+            "cd -P child; ls",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, False)
@@ -64,6 +69,8 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "echo $(echo $(rm))",
             "echo hi 2>&11",
             "echo hi 2>/dev/nullx",
+            "cd child; rm",
+            "cd && rm",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, True)
@@ -78,6 +85,21 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "ls &",
             "ls\npwd",
             "echo `pwd`",
+            "echo &&&",
+            "ls >>> x",
+            "echo $((1+2))",
+            "diff <(ls) <(wc)",
+            "echo x<(1)",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, True)
+
+    def test_leading_cd_with_unvalidated_target_requires_confirmation(self) -> None:
+        for command in (
+            "cd -; pwd",
+            "cd ~; ls",
+            "cd $HOME; ls",
+            "cd $(pwd); ls",
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, True)
@@ -182,11 +204,12 @@ class CmdExecutionTest(unittest.TestCase):
         original_cwd = Path.cwd()
         result = bash(
             self.ctx,
-            self.command("import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
-                         "print('error', file=sys.stderr); sys.exit(7)"),
-            cd="child", envs={"XUN_TEST": "value"},
+            "cd child; " + self.command(
+                "import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
+                "print('error', file=sys.stderr); sys.exit(7)"),
+            envs={"XUN_TEST": "value"},
         )
-        self.assertEqual(result["stdout"], f"{self.cwd / 'child'}\nvalue")
+        self.assertEqual(result["stdout"], f"{(self.cwd / 'child').resolve()}\nvalue")
         self.assertEqual(result["stderr"], "error")
         self.assertEqual(result["returncode"], 7)
         self.assertEqual(set(result), {"stdout", "stderr", "returncode", "duration"})
@@ -241,15 +264,16 @@ class CmdExecutionTest(unittest.TestCase):
         (self.cwd / "child").mkdir()
         spawn = bash_spawn(
             self.ctx,
-            self.command("import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
-                         "print('error', file=sys.stderr); sys.exit(9)"),
-            cd="child", envs={"XUN_TEST": "value"},
+            "cd child; " + self.command(
+                "import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
+                "print('error', file=sys.stderr); sys.exit(9)"),
+            envs={"XUN_TEST": "value"},
         )
         identifier = spawn["id"]
         self.assertEqual(Path(spawn["stdout_log"]), self.logs(identifier)[0])
         self.assertEqual(Path(spawn["stderr_log"]), self.logs(identifier)[1])
         self.assertEqual(self.wait(identifier)["returncode"], 9)
-        self.assertEqual(self.read_log(identifier), f"{self.cwd / 'child'}\nvalue")
+        self.assertEqual(self.read_log(identifier), f"{(self.cwd / 'child').resolve()}\nvalue")
         self.assertEqual(self.read_log(identifier, stream=1), "error")
 
     def test_finished_jobs_stay_waitable_until_result_returned(self) -> None:
@@ -420,7 +444,11 @@ class CmdExecutionTest(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "rejected by confirmation"):
                         tool(self.ctx, self.command("print('no')"))
                     with self.assertRaisesRegex(ValueError, "not within agent"):
-                        tool(self.ctx, "echo no", cd=str(self.cwd.parent))
+                        tool(self.ctx, f"cd {self.cwd.parent}; echo no")
+                    with self.assertRaisesRegex(ValueError, "not within agent"):
+                        tool(self.ctx, "cd ..; echo no")
+                    with self.assertRaisesRegex(ValueError, "not within agent"):
+                        tool(self.ctx, "cd; pwd")
             spawn.assert_not_called()
         self.assertEqual(bash_running(self.ctx), [])
 

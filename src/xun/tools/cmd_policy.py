@@ -2,19 +2,22 @@
 The bash command execution is highly un-controlled and nearly impossible to control safely without external sandboxing.
 The code in this module are best-effort assessments of command risk and should not be relied upon for complete safety.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import shlex
 import shutil
 from pathlib import Path
 from pydantic import BaseModel
-from typing import Callable, Optional, Literal, Sequence
+from typing import Optional, Literal, Sequence
 from ..toolcall import ToolCallContext
 from .common import resolve_path, get_policy
 
-SHELL_OPERATORS = {";", "&&", "&", "||", "|", ">", ">>", "<", "<<", ">&", "<&", "(", ")"}
-AUTO_APPROVED_SHELL_OPERATORS = {";", "&&", "||", "|", "(", ")"}
+# Shell metacharacters: shlex tokenises these into standalone (or run-together)
+# tokens, so any all-punctuation token is an operator of some kind.
+_SHELL_PUNCTUATION = set("&;|<>()")
 COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
+AUTO_APPROVED_SHELL_OPERATORS = COMMAND_CHAIN_OPERATORS | {"(", ")"}
 SAFE_REDIRECTION_TARGETS = {"/dev/null"}
+_HARMLESS_CD_FLAGS = {"--", "-P", "-L"}
 
 class RiskAssessResult(BaseModel):
     policy: Literal['allow', 'unsure', 'reject']
@@ -128,10 +131,19 @@ class CommandSpec:
     argv: tuple[str, ...]
     commands: tuple[ExecutableSpec, ...]
     segments: tuple[CommandSegment, ...]
+    leading_cd_target: str | None
+    """Validated target of a leading `cd x; cmd` / `cd x && cmd` (a bare `cd`
+    yields the home directory, matching bash), or None for any other command.
+    Only non-None targets are workspace-checked by authorize_command and exempt
+    from the allowlist; dynamic cd forms fall through to normal confirmation."""
 
     @property
     def disallowed_operators(self) -> tuple[str, ...]:
         return _disallowed_shell_operators(self.argv)
+
+
+def _is_shell_punctuation(token: str) -> bool:
+    return bool(token) and all(character in _SHELL_PUNCTUATION for character in token)
 
 
 def _safe_redirection_span(argv: tuple[str, ...], index: int) -> int | None:
@@ -153,6 +165,8 @@ def _safe_redirection_span(argv: tuple[str, ...], index: int) -> int | None:
 
 
 def _disallowed_shell_operators(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Default-deny scan: every token made of shell metacharacters must be on
+    the approved list, so operators we have never heard of are suspicious."""
     disallowed: set[str] = set()
     index = 0
 
@@ -168,12 +182,40 @@ def _disallowed_shell_operators(argv: tuple[str, ...]) -> tuple[str, ...]:
             index += safe_redirection_span
             continue
 
-        if token in SHELL_OPERATORS:
+        if _is_shell_punctuation(token):
             disallowed.add(token)
 
         index += 1
 
     return tuple(sorted(disallowed))
+
+
+def _leading_cd_target(argv: Sequence[str]) -> str | None:
+    """Target of a command that starts with `cd` followed by a chain operator,
+    e.g. `cd x; cmd` or `cd x && cmd` — the common agent pattern. A bare `cd`
+    yields the home directory (as bash does), which fails the workspace check.
+    Returns None when the form is not statically resolvable (unknown options,
+    `~` or variable/expansion targets) or not this pattern; those cd uses are
+    simply unallowlisted commands and go through normal confirmation."""
+    if not argv or argv[0] != "cd":
+        return None
+
+    index = 1
+    while index < len(argv) and argv[index].startswith("-"):
+        if argv[index] not in _HARMLESS_CD_FLAGS:
+            return None
+        index += 1
+
+    target = str(Path.home())
+    if index < len(argv) and argv[index] not in COMMAND_CHAIN_OPERATORS:
+        target = argv[index]
+        index += 1
+
+    if index >= len(argv) or argv[index] not in COMMAND_CHAIN_OPERATORS:
+        return None
+    if target.startswith("~") or "$" in target or "`" in target:
+        return None
+    return target
 
 
 @dataclass(frozen=True)
@@ -201,7 +243,7 @@ def _extract_exes(argv: list[str]) -> tuple[ExecutableSpec, ...]:
         if token in COMMAND_CHAIN_OPERATORS:
             expect_command = True
             continue
-        if expect_command and token not in SHELL_OPERATORS:
+        if expect_command and not _is_shell_punctuation(token):
             commands.append(ExecutableSpec(token))
             expect_command = False
 
@@ -254,25 +296,12 @@ def _parse_command_spec(command_line: str) -> CommandSpec:
         argv=tuple(argv),
         commands=commands,
         segments=segments,
+        leading_cd_target=_leading_cd_target(argv),
     )
 
 
-def _first_matching_command(
-    spec: CommandSpec,
-    predicate: Callable[[ExecutableSpec], bool],
-) -> ExecutableSpec | None:
-    return next((command for command in spec.commands if predicate(command)), None)
-
-
-def _first_matching_segment(
-    segments: tuple[CommandSegment, ...],
-    predicate: Callable[[CommandSegment], bool],
-) -> CommandSegment | None:
-    return next((seg for seg in segments if predicate(seg)), None)
-
-
 def _command_path_reason(spec: CommandSpec) -> str | None:
-    if _first_matching_command(spec, lambda command: not command.is_bare_command):
+    if any(not command.is_bare_command for command in spec.commands):
         return "command chain includes a path-based command"
     return None
 
@@ -336,7 +365,7 @@ def _command_substitution_reasons(ctx: ToolCallContext, command_line: str) -> tu
     reasons: list[str] = []
     for substitution in _command_substitutions(command_line):
         try:
-            policy = _confirmation_policy(ctx, _parse_command_spec(substitution))
+            policy = _confirmation_policy(ctx, _parse_substitution_spec(substitution))
         except ValueError:
             reasons.append("contains an invalid command substitution")
             continue
@@ -345,11 +374,30 @@ def _command_substitution_reasons(ctx: ToolCallContext, command_line: str) -> tu
     return tuple(reasons)
 
 
+def _parse_substitution_spec(substitution: str) -> CommandSpec:
+    # authorize_command validates a leading `cd` only for the top-level command,
+    # so a substitution gets no cd exemption and a leading `cd` there is just
+    # another unallowlisted command.
+    return replace(_parse_command_spec(substitution), leading_cd_target=None)
+
+
 def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> ConfirmationPolicy:
     reasons: list[str] = []
 
-    # Check if any segment is not allowlisted.
-    unallowlisted_segment = _first_matching_segment(spec.segments, lambda seg: not seg.is_allowlisted(ctx))
+    # Check if any segment is not allowlisted. A leading `cd` is exempt when its
+    # target is statically resolvable: authorize_command workspace-checks it
+    # before execution. All other cd forms fall through to the allowlist,
+    # where `cd` is not listed, so they require confirmation.
+    def segment_unapproved(index: int, segment: CommandSegment) -> bool:
+        if index == 0 and spec.leading_cd_target is not None:
+            return False
+        return not segment.is_allowlisted(ctx)
+
+    unallowlisted_segment = next(
+        (segment for index, segment in enumerate(spec.segments)
+         if segment_unapproved(index, segment)),
+        None,
+    )
     path_reason = _command_path_reason(spec)
     syntax_reasons = _shell_syntax_reasons(spec.command_line)
     substitution_reasons = _command_substitution_reasons(ctx, spec.command_line)
@@ -448,30 +496,30 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path
     return None
 
 
-def prepare_command(
+def authorize_command(
     ctx: ToolCallContext,
     command: str,
-    cd: Optional[str] = None,
-) -> Path:
-    """Validate the command and working directory, obtaining approval before execution."""
+) -> None:
+    """Validate the command and obtain approval before execution.
+    Raises on rejection; the command then runs with the workspace workdir
+    as its process cwd (a leading `cd` inside the command moves from there)."""
     spec = _parse_command_spec(command)
-    policy = _confirmation_policy(ctx, spec)
 
-    # Determine workdir with safety validation
-    cwd: Path
-    if cd is not None:
-        resolved = resolve_path(ctx, cd, raise_on_invalid=False)
+    # A leading `cd x; cmd` / `cd x && cmd` must stay within the workspace;
+    # once validated, the rest of the chain is assessed against that directory.
+    cd_target = spec.leading_cd_target
+    effective_dir: Path = ctx.agent.workspace.workdir
+    if cd_target is not None:
+        resolved = resolve_path(ctx, cd_target, raise_on_invalid=False)
         if not resolved.valid:
             raise ValueError(
-                f"Workdir `{cd}` is not within agent's workspace "
+                f"`cd` target `{cd_target}` is not within agent's workspace "
                 f"(workdir: {ctx.agent.workspace.workdir}, or its temporary directory)."
             )
-        cwd = resolved.path
-    else:
-        cwd = ctx.agent.workspace.workdir
+        effective_dir = resolved.path
 
-    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=cwd)
+    policy = _confirmation_policy(ctx, spec)
+
+    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=effective_dir)
     for exe in spec.commands:
-        _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=cwd)
-
-    return cwd
+        _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=effective_dir)
