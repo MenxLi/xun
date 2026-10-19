@@ -46,6 +46,7 @@ const sendError = ref('')
 const promptErrors = ref(new Map<string, string>())
 const resolvingPrompts = ref(new Set<string>())
 const stream = ref<InstanceType<typeof StickyScroll> | null>(null)
+const fileBrowser = ref<InstanceType<typeof FileBrowser> | null>(null)
 let socket: WebSocket | null = null
 let reconnectTimer: number | undefined
 let sessionRefreshTimer: number | undefined
@@ -374,6 +375,10 @@ function handleServerMessage(payload: ServerMessage) {
   } else {
     applyAgentEvent(payload)
     events.value.push(payload)
+    if (payload.name === 'ModelMessageEvent' && payload.payload.conclusive
+      && payload.agent.identifier === agents.value[0]?.identifier) {
+      void fileBrowser.value?.refresh()
+    }
   }
 }
 
@@ -657,7 +662,7 @@ onBeforeUnmount(() => {
 
     <div v-if="narrowLayout && showFiles" class="mobile-scrim workspace-scrim" @click="closeFiles" />
     <div v-if="settingsOpen" class="settings-scrim" @click="settingsOpen = false" />
-    <FileBrowser v-if="showFiles" v-model:state="browserState" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" :session-key="currentSessionPath" @close="closeFiles" />
+    <FileBrowser v-if="showFiles" ref="fileBrowser" v-model:state="browserState" :agents="agents" :agent-id="selectedAgentId" :available="exposeFiles" :session-key="currentSessionPath" @close="closeFiles" />
 
   </div>
 </template>

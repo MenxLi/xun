@@ -228,6 +228,8 @@ async function refresh() {
   }
 }
 
+defineExpose({ refresh })
+
 async function open(entry: FileEntry) {
   if (entry.kind === 'directory') {
     cancelInlineEdit(true)
