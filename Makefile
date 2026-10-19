@@ -1,4 +1,4 @@
-.PHONY: build-web build-docker test test-ext doc doc-build doc-dist doc-clean doc-update
+.PHONY: build-web build-docker test test-ext doc doc-build doc-dist doc-clean doc-update doc-sync
 
 DOC_PATH := src/xun/assets/docs
 
@@ -43,6 +43,11 @@ doc-clean:
 		rm -rf site; \
 	fi \
 	&& rm -rf docs/ && git checkout -- docs/
+
+# Synchronize the packaged documentation with the one shipped in the PyPI xun-agent wheel.
+# Useful when installing from source without generating the docs locally.
+doc-sync:
+	sh scripts/sync_docs.sh $(DOC_PATH)
 
 test:
 	uv run python -m unittest discover -s test -t . -v
