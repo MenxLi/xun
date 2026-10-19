@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Callable, TYPE_CHECKING, Literal
+from typing import Optional, Callable, TYPE_CHECKING, Literal, TypedDict
 from threading import Event, Lock, Thread
 from .types import CancelledError
 from .toolcall import ToolCallContext
@@ -11,11 +11,28 @@ if TYPE_CHECKING:
 
 SUBAGENT_POOL_FLAG = '__subagents'
 
+class AgentWaitTimeout(TypedDict):
+    status: Literal["timeout"]
+    id: str
+    notice: str
+    background_jobs: list[dict]
+
+class AgentWaitFinished(TypedDict):
+    status: Literal["finished"]
+    result: str
+    background_jobs: list[dict]
+
 @dataclass
 class AgentThread:
     finished: Event
     agent: Optional["Agent[Agent.T.Init]"] = None
     result: Optional[Result[str, ErrorInfo]] = None
+
+    def info(self) -> dict:
+        return {
+            "name": self.agent.name if self.agent is not None else None,
+            "status": "finished" if self.finished.is_set() else "running"
+        }
 
 @dataclass
 class AgentPool(RuntimeEntry[dict[str, AgentThread]]):
@@ -84,7 +101,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         ).start()
         return identifier
     
-    def agent_wait_impl(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int]) -> Result[str, ErrorInfo] | dict[str, str]:
+    def agent_wait_impl(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int]) -> Result[str, ErrorInfo] | AgentWaitTimeout:
         pool = AgentPool.of(ctx.agent)
         agent_t = pool.get(identifier)
         if agent_t is None:
@@ -98,6 +115,7 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
                         "status": "timeout",
                         "id": identifier,
                         "notice": "the agent is still running; call agent_wait again with this id to keep waiting",
+                        "background_jobs": agent_list_impl(ctx),
                     }
         except (CancelledError, KeyboardInterrupt) as e:
             # hand chained children their own flag (the chained one dies at the
@@ -111,6 +129,13 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         ctx.agent.check_cancel()
         assert agent_t.result is not None
         return agent_t.result
+    
+    def agent_list_impl(ctx: ToolCallContext) -> list[dict]:
+        with (pool := AgentPool.of(ctx.agent)).lock:
+            return [
+                {"id": identifier, **thr.info()}
+                for identifier, thr in pool.value.items()
+            ]
     
     @except_safe
     def agent_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> Result[str, ErrorInfo]:
@@ -148,20 +173,31 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         return {"id": identifier}
     
     @except_safe
-    def agent_wait(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int] = 300) -> Result[str, ErrorInfo] | dict[str, str]:
+    def agent_wait(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int] = 300) -> Result[AgentWaitFinished | AgentWaitTimeout, ErrorInfo]:
         """
         Waits for a spawned agent to complete its task. 
         Will remove the agent from the pool once it has finished. 
 
         Input: The identifier of the background agent and an optional timeout in seconds
-            (defaults to 300; pass null to wait indefinitely).
-        Output: Returns the agent's final output message upon successful completion, an error message if the agent encounters any issues, 
-            or a {"status": "timeout", ...} object if the timeout is reached before the agent finishes.
+            (pass null to wait indefinitely).
+        Output: A discriminated object: {"status": "finished", "result": ...} with the agent's final output
+            message when it finishes, or {"status": "timeout", "id": ..., "notice": ...} if the timeout
+            is reached before the agent finishes. Both also carry "background_jobs": every tracked
+            background agent as {"id", "name", "status"}.
 
         Notes:
-        • On timeout the agent keeps running; wait again with the same identifier to keep collecting its result.
+        • On timeout the agent keeps running (it stays in background_jobs); wait again with the same
+          identifier to keep collecting its result.
+        • A job listed as "finished" in background_jobs has a pending result; wait on its id to collect it.
         """
-        return agent_wait_impl(ctx, identifier, timeout_seconds)
+        r = agent_wait_impl(ctx, identifier, timeout_seconds)
+        if isinstance(r, dict):       # timeout
+            return Result.Ok(r)
+        assert isinstance(r, Result)  # r should be a Result at this point
+        if r.is_ok():
+            return Result.Ok({"status": "finished", "result": r.unwrap(), "background_jobs": agent_list_impl(ctx)})
+        else:
+            return Result.Err(r.unwrap_err())
     
     @except_safe
     def agent_list(ctx: ToolCallContext) -> list[dict]:
@@ -170,12 +206,8 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
         results have not been retrieved yet. Use this if you forget the identifiers.
 
         Input: The tool call context.
-        Output: A list of {"id": ..., "status": "running" | "finished"} for each tracked agent.
+        Output: A list of {"id": ..., "name": ..., "status": "running" | "finished"} for each tracked agent.
         """
-        pool = AgentPool.of(ctx.agent)
-        with pool.lock:
-            return [
-                {"id": k, "status": "running" if not v.finished.is_set() else "finished"} for k, v in pool.value.items()
-            ]
+        return agent_list_impl(ctx)
 
     return [agent_run, agent_spawn, agent_wait, agent_list]
