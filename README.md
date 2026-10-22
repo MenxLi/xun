@@ -167,7 +167,10 @@ or each session gets its own temporary workspace if omitted.
 
 ## Docker
 
-To use `xunc` and `xunx`, you need to build the Docker image first.
+To use `xunc` and `xunx`, you need to:
+- Install Docker runtime, and ensure it is running.
+- Add current user to the `docker` group (see [details](https://docs.docker.com/engine/install/linux-postinstall/)). 
+- Build the Docker image (as described below). 
 
 ```bash
 # first clone the repository
