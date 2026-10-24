@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Any, TYPE_CHECKING, Optional, Final
 from pydantic import BaseModel
 from .error_catch import except_safe
+import secrets
 if TYPE_CHECKING:
     from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall
     from .agent import Agent
@@ -15,27 +16,53 @@ type HookProtocol[T] = Callable[[T], Any]
 class HookCallback[T]:
     fn: HookProtocol[T]
     persistent: bool
+    signature: str
+    dropped: bool = False
 
 class HookRegistry[T]:
     def __init__(self):
         self._callbacks: list[HookCallback[T]] = []
+        self._invoking = False
     
-    def add(self, fn: HookProtocol[T]):
-        wrapped_fn = except_safe(fn)
-        self._callbacks.append(HookCallback(wrapped_fn, True))
+    def add(self, fn: HookProtocol[T]) -> str:
+        """Register `fn`; returns its removal signature."""
+        return self._add(fn, persistent=True)
     
-    def add_once(self, fn: HookProtocol[T]):
-        wrapped_fn = except_safe(fn)
-        self._callbacks.append(HookCallback(wrapped_fn, False))
+    def add_once(self, fn: HookProtocol[T]) -> str:
+        """Register `fn` for one invoke; returns its removal signature."""
+        return self._add(fn, persistent=False)
+    
+    def _add(self, fn: HookProtocol[T], persistent: bool) -> str:
+        sig = secrets.token_hex(16)
+        self._callbacks.append(HookCallback(except_safe(fn), persistent, sig))
+        return sig
     
     def invoke(self, args: T):
-        # one time callbacks registered during invoke survive for the next one
-        cbs, self._callbacks = self._callbacks, []
+        """Fire the callbacks; registrations made mid-invoke wait for the next one.
+        Cancellation still consumes the batch's one-time callbacks; re-entry drops."""
+        if self._invoking:
+            return
+        self._invoking = True
+        batch = list(self._callbacks)
+        batch_sigs = {cb.signature for cb in batch}
         try:
-            for cb in cbs:
-                cb.fn(args)
+            for cb in batch:
+                if not cb.dropped:
+                    cb.fn(args)
         finally:
-            self._callbacks = [cb for cb in cbs if cb.persistent] + self._callbacks
+            self._callbacks = [cb for cb in self._callbacks
+                               if cb.persistent or cb.signature not in batch_sigs]
+            self._invoking = False
+    
+    def remove(self, signature: str):
+        """Drop the registration `signature` refers to; a no-op if already gone."""
+        for cb in self._callbacks:
+            if cb.signature == signature:
+                cb.dropped = True
+        self._callbacks = [cb for cb in self._callbacks if not cb.dropped]
+    
+    def has(self, signature: str) -> bool:
+        return any(cb.signature == signature for cb in self._callbacks)
 
 class HookArgs:
 
