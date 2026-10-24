@@ -150,12 +150,12 @@ class McpCommandTest(unittest.TestCase):
     def test_status_and_restart_available_after_failed_start(self) -> None:
         from xun import Agent, NullDisplay
 
-        agent = Agent(display=NullDisplay())
+        agent = Agent(display=NullDisplay().with_buffer_size(1000))  # the test reads events back
         agent.config.extension_settings = {"mcp": {"servers": {
             "image": {"command": "unused"}, "other": {"command": "unused"}}}}
         context = Mock(agent=agent)
         with patch("extensions.mcp.setup_extension.MANAGER") as manager, \
-             patch.object(agent, "info") as info, patch.object(agent, "error") as error:
+             patch.object(agent, "display_info") as info, patch.object(agent, "display_error") as error:
             manager.ensure.side_effect = McpError("start failed")
             setup_extension(context)
             names = [tool.name for tool in agent.toolbox.list_tools()]

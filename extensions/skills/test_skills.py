@@ -35,7 +35,8 @@ class SkillsTestBase(unittest.TestCase):
             self.add_bundle(extra_files={"reference.txt": "reference"})
         self.env = patch.dict(os.environ, {"XUN_HOME": str(Path(self.temp.name) / "home")})
         self.env.start()
-        agent = Agent(display=NullDisplay(), toolbox=ToolBox(), workspace=Workspace(workdir=self.workdir))
+        display = NullDisplay().with_buffer_size(1000)  # the test reads events back
+        agent = Agent(display=display, toolbox=ToolBox(), workspace=Workspace(workdir=self.workdir))
         agent.config.model.name = "test-model"
         self.agent: Agent[Agent.T.Init] = agent.initialize()
         setup_extension(SimpleNamespace(agent=self.agent))  # type: ignore[arg-type]

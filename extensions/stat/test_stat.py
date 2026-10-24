@@ -203,7 +203,8 @@ class _AgentTestBase(_DbTestBase):
 
     def setUp(self) -> None:
         super().setUp()
-        agent = Agent(display=NullDisplay(), toolbox=ToolBox().with_defaults(),
+        display = NullDisplay().with_buffer_size(1000)  # the test reads events back
+        agent = Agent(display=display, toolbox=ToolBox().with_defaults(),
                       workspace=Workspace(workdir=self.root))
         agent.config.model.name = "test-model"
         self.agent = agent.initialize()
