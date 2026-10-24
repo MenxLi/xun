@@ -97,4 +97,5 @@ def setup_extension(ctx: ExtensionContext) -> None:
                             budget.usage(db_path, user or current_username()), top),
         ))
 
-    ctx.agent.command.register(Command("stat", stat_command))
+    # override: setup replays onto cloned registries for sub-agents
+    ctx.agent.command.register(Command("stat", stat_command, override=True))

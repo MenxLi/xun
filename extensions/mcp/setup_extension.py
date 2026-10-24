@@ -240,9 +240,10 @@ def setup_extension(ctx: ExtensionContext) -> None:
             return
         raise ValueError("Usage: /mcp status [server] | /mcp restart <server>")
 
+    # override: setup replays onto cloned registries for sub-agents
     ctx.agent.command.register(Command(
         "mcp", command, "Show MCP status or restart a server.",
-        "Usage: /mcp status [server] | /mcp restart <server>"))
+        "Usage: /mcp status [server] | /mcp restart <server>", override=True))
     if loaded:
         rich.print(f"[green]MCP:[/green] {loaded} tools from {len(servers)} server(s) "
                    f"on '{ctx.agent.name}'")

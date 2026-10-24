@@ -47,6 +47,7 @@ class EnvParams:
     max_execution_iterations: int = 512 if not (s:=get_internal_env("MAX_EXECUTION_ITERATIONS")) else int(s)
     subagent_max_depth: int = 2 if not (s:=get_internal_env("SUBAGENT_MAX_DEPTH")) else int(s)
     info_tool_override: bool = bool(get_internal_env_bool("INFO_TOOL_OVERRIDE"))
+    info_command_override: bool = bool(get_internal_env_bool("INFO_COMMAND_OVERRIDE"))
 
 DEFAULTS = EnvParams()
 

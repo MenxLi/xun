@@ -4,8 +4,10 @@ import inspect
 from .types import CancelledError
 from .prompt import get_handoff_prompt
 from .conversation_message import UserMessage
+from .config import DEFAULTS
 import datetime
 from pathlib import Path
+import rich
 if TYPE_CHECKING:
     from .agent import Agent
 
@@ -18,6 +20,7 @@ class Command:
     name: str
     description: str
     description_long: Optional[str]
+    override: bool
 
     def __init__(
         self,
@@ -25,8 +28,10 @@ class Command:
         handler: CommandHandler | "CommandRegistry",
         description: str = "",
         description_long: Optional[str] = None,
+        override: bool = False,
     ) -> None:
         self.name = name
+        self.override = override
 
         if isinstance(handler, CommandRegistry):
             self._run = lambda agent, args: self._dispatch(agent, handler, args)  # type: ignore[misc]
@@ -113,14 +118,29 @@ class CommandRegistry:
         for command in commands:
             if isinstance(command, Command):
                 assert command.name != 'help', "Command name 'help' is reserved."
-                self.commands[command.name] = command
+                self._place(command)
             elif callable(command):
                 cmd = Command.from_function(command)
                 assert cmd.name != 'help', "Command name 'help' is reserved."
-                self.commands[cmd.name] = cmd
+                self._place(cmd)
             else:
                 raise TypeError(f"Expected Command or callable")
         return self
+
+    def _place(self, command: Command) -> None:
+        old = self.commands.get(command.name)
+        if old is None:
+            self.commands[command.name] = command
+            return
+        if command.override:
+            self.commands[command.name] = command
+            msg = f"Overriding command '{command.name}'"
+        elif old.override:
+            msg = f"Kept existing override for '{command.name}', skipped incoming"
+        else:
+            raise ValueError(f"Conflict command name: {command.name}")
+        if DEFAULTS.info_command_override:
+            rich.print(f"[blue]Info: {msg}[/blue]")
 
     def get(self, name: str) -> Optional[Command]:
         from .display_abstract import ShowHelpEvent

@@ -61,4 +61,5 @@ def setup_extension(ctx: ExtensionContext) -> None:
             f"Bundled files:\n{files}"
         )
 
-    agent.command.register(Command("skills", command, "List, inspect, or activate skills."))
+    # override: setup replays onto cloned registries for sub-agents
+    agent.command.register(Command("skills", command, "List, inspect, or activate skills.", override=True))
