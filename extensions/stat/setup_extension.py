@@ -18,7 +18,7 @@ from .report import stats_html
 
 USAGE = "Usage: /stat [days=N] [until=YYYYMMDD] [user=NAME] [top=N]"
 
-@extension_attr(api_min_version="1.4.0", data_version=DATA_VERSION, cli=(build_parser(), cli.run))
+@extension_attr(api_min_version="1.4.4", data_version=DATA_VERSION, cli=(build_parser(), cli.run))
 def setup_extension(ctx: ExtensionContext) -> None:
     db_path = init_db(ctx.data_dir() / "stat.db")
 
