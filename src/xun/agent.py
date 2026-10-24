@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from dataclasses import dataclass, field
-from functools import cached_property
 import shlex
 import uuid
 import weakref
@@ -68,7 +67,8 @@ class Agent(
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
     api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULTS.max_api_call_concurrency))
     extension_loader: ExtensionLoader = default_loader
-    """Shared by reference, all agents replay the same scanned modules."""
+
+    _openai_client: Optional[OpenAI] = field(default=None, init=False, repr=False)
 
     # below does not inherit
     state: AgentState = field(default_factory=AgentState)
@@ -89,12 +89,18 @@ class Agent(
         self._lifecycle = s()
         return cast(Agent[_LT], self)
     
-    @cached_property
+    @property
     def openai_client(self) -> OpenAI:
-        return OpenAI(
-            base_url = self.config.provider.openai_base_url,
-            api_key = self.config.provider.openai_api_key,
-        )
+        if self._openai_client is None:
+            self._openai_client = OpenAI(
+                base_url = self.config.provider.openai_base_url,
+                api_key = self.config.provider.openai_api_key,
+            )
+        return self._openai_client
+
+    @openai_client.setter
+    def openai_client(self, client: OpenAI) -> None:
+        self._openai_client = client
 
     def initialize(self: Agent[T.Uninit]) -> Agent[T.Init]:
         """
@@ -168,6 +174,8 @@ class Agent(
             extension_loader=parent_agent.extension_loader,
             display=parent_agent.display if share_display else NullDisplay(),
         )
+        # share one client (and its connection pool) once built
+        new_agent._openai_client = parent_agent._openai_client
         if share_workspace:
             # share the whole on-disk footprint: same workdir and same (lazy) tempdir
             new_agent.workspace = parent_agent.workspace
