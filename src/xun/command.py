@@ -114,20 +114,20 @@ class CommandRegistry:
         new_registry.commands = self.commands.copy()
         return new_registry
 
-    def register(self, *commands: Command | CommandHandler):
+    def register(self, *commands: Command | CommandHandler, raise_on_conflict: bool = False):
         for command in commands:
             if isinstance(command, Command):
                 assert command.name != 'help', "Command name 'help' is reserved."
-                self._place(command)
+                self._place(command, raise_on_conflict=raise_on_conflict)
             elif callable(command):
                 cmd = Command.from_function(command)
                 assert cmd.name != 'help', "Command name 'help' is reserved."
-                self._place(cmd)
+                self._place(cmd, raise_on_conflict=raise_on_conflict)
             else:
                 raise TypeError(f"Expected Command or callable")
         return self
 
-    def _place(self, command: Command) -> None:
+    def _place(self, command: Command, raise_on_conflict) -> None:
         old = self.commands.get(command.name)
         if old is None:
             self.commands[command.name] = command
@@ -138,7 +138,9 @@ class CommandRegistry:
         elif old.override:
             msg = f"Kept existing override for '{command.name}', skipped incoming"
         else:
-            raise ValueError(f"Conflict command name: {command.name}")
+            if raise_on_conflict:
+                raise ValueError(f"Conflict command name: {command.name}")
+            msg = f"Skipped existing command '{command.name}'"
         if DEFAULTS.info_command_override:
             rich.print(f"[blue]Info: {msg}[/blue]")
 

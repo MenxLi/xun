@@ -146,8 +146,8 @@ def _reconcile(box: ToolBox, prefix: str, wanted: dict[str, Function]) -> tuple[
     - schema changed       -> pop + register_raw, then restore the user's disabled mark
     - unchanged            -> untouched, so whatever the user switched off stays off
 
-    `setup_extension` replays onto cloned toolboxes, and `register_raw` rejects a name
-    already held, so this must run before anything is registered.
+    `setup_extension` replays onto cloned toolboxes, and `register_raw` silently keeps
+    a name already held, so this must run before anything is registered.
     """
     added = replaced = removed = 0
     known = {t.name: t for t in box.list_tools(include_disabled=True)

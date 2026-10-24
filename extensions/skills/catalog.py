@@ -4,10 +4,7 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
-from typing import Callable
-
 from xun.agent import Agent
-from xun.toolcall import ToolAttr
 from xun.agent_state import StateRuntimeEntry
 
 try:
@@ -127,16 +124,10 @@ def refresh(agent: Agent[Agent.T.Alive]) -> None:
     agent.conversation.set_system_persistent_section(SECTION_NAME, "\n".join(content))
 
 
-def _tool_name(func: Callable) -> str:
-    """The name `func` registers under: its `tool_attr` override, else its `__name__`."""
-    attr = ToolAttr.extract_from(func)
-    return (attr.name if attr and attr.name else None) or func.__name__
-
-
 def sync_tools(agent: Agent[Agent.T.Alive], available: list[Skill]) -> None:
     """Register the skill tools while the catalog is non-empty.
 
-    Additive and idempotent: present names are left alone, so a tool the user
+    Idempotent: a name already held is silently skipped, so a tool the user
     disabled stays disabled. Runs on every resync and on a sub-agent's setup replay.
     """
     if not available:
@@ -146,8 +137,7 @@ def sync_tools(agent: Agent[Agent.T.Alive], available: list[Skill]) -> None:
     funcs = [list_skills, activate_skill, read_skill_file]
     if os.name != "nt":
         funcs.append(run_skill_script)  # POSIX only
-    present = {tool.name for tool in agent.toolbox.list_tools(include_disabled=True)}
-    agent.toolbox.register(*[f for f in funcs if _tool_name(f) not in present])
+    agent.toolbox.register(*funcs)
 
 
 def ensure_fresh(agent: Agent[Agent.T.Alive]) -> tuple[list[Skill], list[tuple[str, str]]]:

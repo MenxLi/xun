@@ -56,16 +56,16 @@ class ToolBox:
             self.register(*factory())
         return self
 
-    def register(self, *funcs: Callable):
+    def register(self, *funcs: Callable, raise_on_conflict: bool = False):
         functions = [
             Function.from_function(f if is_except_safe_wrapper(f) else except_safe(f)) 
             for f in funcs
             ]
         for f in functions:
-            self.register_raw(f)
+            self.register_raw(f, raise_on_conflict=raise_on_conflict)
         return self
     
-    def register_raw(self, *funcs: Function):
+    def register_raw(self, *funcs: Function, raise_on_conflict: bool = False):
         for f in funcs:
             old = self._tools.get(f.name)
             if old is None:
@@ -73,13 +73,17 @@ class ToolBox:
                 continue
             if f.override:
                 self._tools[f.name] = f
-                msg = f"Overriding tool '{f.name}'"
+                if DEFAULTS.info_tool_override:
+                    rich.print(f"[blue]Info: Overriding tool '{f.name}'[/blue]")
             elif old.override:
-                msg = f"Kept existing override for '{f.name}', skipped incoming"
+                if DEFAULTS.info_tool_override:
+                    rich.print(f"[blue]Info: Kept existing override for '{f.name}', skipped incoming[/blue]")
             else:
-                raise ValueError(f"Conflict tool name: {f.name}")
-            if DEFAULTS.info_tool_override:
-                rich.print(f"[blue]Info: {msg}[/blue]")
+                if raise_on_conflict:
+                    raise ValueError(f"Conflict tool name: {f.name}")
+                if DEFAULTS.info_tool_override:
+                    rich.print(f"[blue]Info: Skipped existing tool '{f.name}'[/blue]")
+
         return self
     
     def pop(self, tool_name: str) -> Function | None:

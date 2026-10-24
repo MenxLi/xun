@@ -227,7 +227,7 @@ def setup_extension(ctx: ExtensionContext) -> None:
         self.assertEqual(_json_value(agent, "cfg"), {"base_url": "https://x"})
         self.assertEqual(_json_value(agent, "bare"), {})
 
-    def test_subagent_replays_hooks_but_survives_tool_conflict(self) -> None:
+    def test_subagent_replays_hooks_despite_duplicate_tool_registration(self) -> None:
         self._write_ext("both", """
 from xun import tool_attr, JsonEntry
 @tool_attr()
@@ -235,15 +235,13 @@ def ext_tool() -> str:
     '''ext tool'''
     return 'x'
 def setup_extension(ctx):
-    # hooks first: on sub-agent replay the tool re-registration conflicts,
-    # which aborts the rest of this function via apply_extensions' error isolation
     ctx.agent.hooks.before_tool_call.add(lambda a: ctx.agent.state.get_entry('hits', lambda: JsonEntry([])).value.append(1))
     ctx.agent.toolbox.register(ext_tool)
 """)
         parent = self._new_agent().initialize()
         self.assertIn("ext_tool", [t.name for t in parent.toolbox.list_tools()])
         child = Agent.inherit(parent).initialize()
-        # tool re-registration conflicts are downgraded to a warning, init still succeeds...
+        # tool re-registration on replay is silently skipped, init succeeds...
         self.assertIn("ext_tool", [t.name for t in child.toolbox.list_tools()])
         # ...while hooks (not inherited) arrive only via replay
         from xun.hooks import HookArgs
