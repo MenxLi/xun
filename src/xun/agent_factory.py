@@ -24,7 +24,8 @@ class AgentWaitFinished(TypedDict):
 
 @dataclass
 class AgentThread:
-    finished: Event
+    finished: Event = field(default_factory=Event)
+    born: Event = field(default_factory=Event)
     agent: Optional["Agent[Agent.T.Init]"] = None
     result: Optional[Result[str, ErrorInfo]] = None
 
@@ -83,22 +84,25 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
             param = AgentGetterParam(tool_context = ctx, name = name)
             with agent_getter(param) as agent:
                 agent_t.agent = agent
+                agent_t.born.set()
                 agent_t.result = agent.instruct(task, _emit_event = False).execute(context = ctx.value)
         except CancelledError as e:
             agent_t.result = Result.Err(ErrorInfo(error=e.reason, details=e.reason))
         except BaseException as e:
             agent_t.result = Result.Err(ErrorInfo(error=str(e), details=repr(e)))
         finally:
+            agent_t.born.set()
             agent_t.finished.set()
     
     def agent_thread_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> str:
         identifier = uuid.uuid4().hex[:8]
-        agent_t = AgentThread(finished=Event())
+        agent_t = AgentThread()
         AgentPool.of(ctx.agent).add(identifier, agent_t)
         Thread(
             target=agent_run_impl, args=(ctx, task, name, agent_t),
             name=f"subagent-{identifier}", daemon=True,
         ).start()
+        agent_t.born.wait()  # pin the child's span
         return identifier
     
     def agent_wait_impl(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int]) -> Result[str, ErrorInfo] | AgentWaitTimeout:
