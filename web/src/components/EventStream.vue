@@ -35,7 +35,6 @@ const items = computed<StreamItem[]>(() => {
   const toolOwners = new Map<string, ToolOwner>()
   const latestActivities = new Map<string, AgentActivity>()
   let batch: BatchItem | null = null
-  let rootAgent = ''
 
   function pushPreview(target: BatchItem, preview: ActivityPreview) {
     target.previews.push(preview)
@@ -69,7 +68,6 @@ const items = computed<StreamItem[]>(() => {
   props.events.forEach((data, index) => {
     if (data.name === 'UserMessageEvent' || data.name === 'UserCommandEvent') {
       batch = null
-      rootAgent = data.agent.identifier
       latestActivities.clear()
       output.push({ kind: 'event', key: `${data.name}-${index}`, data })
     } else if (data.name === 'ToolResultEvent') {
@@ -93,7 +91,7 @@ const items = computed<StreamItem[]>(() => {
     } else if (data.name === 'ModelWorkingEvent') {
       const current = ensureActivity(data, index)
       current.last = data
-    } else if (data.name === 'ModelMessageEvent' && (data.agent.identifier !== rootAgent || !data.payload.content.trim())) {
+    } else if (data.name === 'ModelMessageEvent' && (data.span.parent !== null || !data.payload.content.trim())) {
       const hasContent = !!data.payload.content.trim()
       if (data.payload.reasoning?.trim()) {
         const current = ensureActivity(data, index)

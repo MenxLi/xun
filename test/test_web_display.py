@@ -16,6 +16,7 @@ from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
 from xun.agent import T
+from xun.tracing import SpanContext, SpanSnapshot
 from xun.command import Command, CommandRegistry
 from xun.config import AgentConfig, AutoCompactionConfig, ModelConfig, ProviderConfig
 from xun.conversation import Conversation
@@ -54,6 +55,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.cancel_called = threading.Event()
         self._running = False
         self.cancel_event = ChainedEvent()
+        self.span = SpanContext()
         self.hooks = Hooks()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
@@ -886,7 +888,7 @@ class WebDisplayTest(unittest.TestCase):
 
             main_agent._running = True
             self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "running")
-            main_display._pending.set("main-agent", {"prompt": "Continue?", "choices": ["Yes"]})
+            main_display._pending.set("main-agent", {"prompt": "Continue?", "choices": ["Yes"]}, SpanSnapshot().model_dump())
             self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "waiting")
 
             created = client.post("/api/sessions/create", json={"name": "Research"})

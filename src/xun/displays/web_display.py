@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 import rich
 
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
+from ..tracing import SpanSnapshot
 from ..types import CancelledError, Result
 from .web_file import build_file_router
 from .web_serve import ServeManager, build_serve_router
@@ -68,10 +69,10 @@ class _PendingPrompts:
         self._lock = threading.Lock()
         self._prompts: dict[str, _PendingPrompt] = {}
 
-    def set(self, agent_id: str, prompt: dict[str, Any]) -> _PendingPrompt:
+    def set(self, agent_id: str, prompt: dict[str, Any], span: dict[str, Any]) -> _PendingPrompt:
         with self._lock:
             prompt_id = secrets.token_urlsafe(12)
-            pending = _PendingPrompt({"id": prompt_id, "agent_id": agent_id, **prompt})
+            pending = _PendingPrompt({"id": prompt_id, "agent_id": agent_id, "span": span, **prompt})
             self._prompts[prompt_id] = pending
             return pending
 
@@ -185,6 +186,7 @@ class WebDisplay(DisplayAbstract):
         pending = self._pending.set(
             request.agent_info.identifier,
             request.model_dump(mode="json", exclude={"agent_info"}),
+            agent.span.snapshot().model_dump() if agent is not None else SpanSnapshot().model_dump(),
         )
         self._broadcast({"type": "pending_prompt", "data": pending.data})
         try:

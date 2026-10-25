@@ -4,6 +4,13 @@ export interface AgentInfo {
   workdir: string
 }
 
+export interface SpanSnapshot {
+  parent: SpanSnapshot | null
+  execution: string | null
+  step: string | null
+  tool_call: string | null
+}
+
 export interface CommandInfo {
   name: string
   description: string
@@ -26,6 +33,7 @@ export interface ExtensionRecord {
 type EventEnvelope<Name extends string, Payload> = {
   name: Name
   agent: AgentInfo
+  span: SpanSnapshot
   timestamp: number
   payload: Payload
 }
@@ -76,6 +84,7 @@ export type ToolItem = { key: string; call: ToolCallDisplayEvent; result?: ToolR
 export interface PendingPrompt {
   id: string
   agent_id: string | null
+  span: SpanSnapshot
   prompt: string
   choices: string[]
   message?: string

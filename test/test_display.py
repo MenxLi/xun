@@ -26,6 +26,7 @@ from xun.display_abstract import (
     ToolResultEvent,
     UserMessageEvent,
 )
+from xun.tracing import SpanSnapshot
 from xun.displays.cli_session import (
     _ActivePrompt,
     CliCompleter,
@@ -127,6 +128,7 @@ class DisplayTest(unittest.TestCase):
             display.on_event(DisplayEvent(
                 name=payload.__class__.__name__,
                 agent=agent,
+                span=SpanSnapshot(),
                 payload=payload,
             ))
 
@@ -292,7 +294,7 @@ AGENT = AgentInfo(name="Xun", identifier="agent-1", workdir=Path.cwd())
 
 
 def _ev(payload):
-    return DisplayEvent(name=payload.__class__.__name__, agent=AGENT, payload=payload)
+    return DisplayEvent(name=payload.__class__.__name__, agent=AGENT, span=SpanSnapshot(), payload=payload)
 
 
 def _render(events, title="Session") -> str:

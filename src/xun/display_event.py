@@ -239,7 +239,7 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     agent: AgentInfo
     """ The agent that emitted the event. Represented as an `AgentInfo` object. """
 
-    span: Optional[SpanSnapshot] = None
+    span: SpanSnapshot
     """ The span context snapshot when the event was emitted, for trace attribution. """
 
     payload: DisplayEventT
@@ -263,7 +263,7 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
             name=event_name,
             agent=agent_info,
             timestamp=timestamp,
-            span=data.get("span"),
+            span=data.get("span") or SpanSnapshot(),
             payload=event_cls(**event_data)   # type: ignore
         )
 
