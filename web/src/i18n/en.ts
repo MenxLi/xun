@@ -34,6 +34,18 @@ export default {
     sourceCodeTitle: 'Source code',
     messageAgent: 'Message {name}',
   },
+  flame: {
+    title: 'Execution trace',
+    model: 'model',
+    tool: 'tool',
+    failed: 'failed',
+    running: 'running',
+    active: 'active',
+    resolution: 'Time resolution',
+    skipped: '{time} skipped',
+    close: 'Close trace',
+    empty: 'No traced executions for this agent yet.',
+  },
   sessions: {
     title: 'Sessions',
     newSession: 'New session',

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Bot, BookOpen, Check, Github, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type } from 'lucide-vue-next'
+import { Bot, BookOpen, Check, Flame, Github, Globe, Languages, LoaderCircle, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Settings, Sun, Type } from 'lucide-vue-next'
 import { api, appUrl, chatUrl, configureSession, docsUrl, formatTokens } from './api'
 import i18n, { resolveLocale, type Language } from './i18n'
 import InputComposer from './components/InputComposer.vue'
 import EventStream from './components/EventStream.vue'
+import FlameView from './components/FlameView.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptCard from './components/PromptCard.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
@@ -27,6 +28,7 @@ const sessionStorageKey = chatUrl('/').split('?')[0]
 const events = ref<DisplayEvent[]>([])
 const agents = ref<AgentInfo[]>([])
 const selectedOnly = ref(false)
+const flameOpen = ref(false)
 const commands = ref<CommandInfo[]>([])
 const connected = ref(false)
 const exposeFiles = ref<boolean | null>(null)
@@ -578,6 +580,7 @@ onBeforeUnmount(() => {
             <span>{{ t('app.selectedOnly') }}</span>
           </label>
           <span v-if="selectedAgentTokens != null" class="token-badge" :title="t('app.tokensTitle')">{{ formatTokens(selectedAgentTokens) }} {{ t('app.tokens') }}</span>
+          <button class="icon-button flame-toggle" :class="{ active: flameOpen }" :title="t('flame.title')" :aria-label="t('flame.title')" :aria-expanded="flameOpen" @click="flameOpen = !flameOpen"><Flame :size="15" /></button>
         </div>
         <div class="topbar-actions">
           <span class="connection" :class="{ connected }" :title="connected ? t('app.connected') : t('app.reconnecting')"><span class="connection-dot" /><span class="connection-text">{{ connected ? t('app.connected') : t('app.reconnecting') }}</span></span>
@@ -633,6 +636,8 @@ onBeforeUnmount(() => {
         <span>{{ t('stream.loading') }}</span>
       </div>
       </div>
+
+      <FlameView v-if="flameOpen && selectedAgentId" :events="events" :root-id="selectedAgentId" :running="runningAgents" @close="flameOpen = false" />
 
       <footer class="composer-area">
         <Transition name="footer-spectrum" type="transition">

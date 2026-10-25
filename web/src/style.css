@@ -79,6 +79,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .settings-version { padding: 0 3px; color: var(--muted); font: 400 9px/1 'Fira Code', monospace; opacity: .7; user-select: text; }
 .settings-footer .icon-button { width: 22px; height: 22px; }
 .icon-button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 5px; display: inline-grid; place-items: center; color: var(--muted); background: transparent; cursor: pointer; text-decoration: none; }
+.icon-button.active { color: var(--accent); background: var(--accent-soft); }
+.flame-toggle { width: 26px; height: 26px; }
 .icon-button:hover:not(:disabled) { color: var(--ink); background: var(--hover); }
 .icon-button:disabled { opacity: .3; cursor: default; }
 .icon-button.danger:hover { color: var(--danger); background: #f5e4e2; }

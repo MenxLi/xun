@@ -36,6 +36,18 @@ const zh: typeof en = {
     sourceCodeTitle: '查看源码',
     messageAgent: '向 {name} 发送消息',
   },
+  flame: {
+    title: '执行火焰图',
+    model: '模型',
+    tool: '工具',
+    failed: '失败',
+    running: '运行中',
+    active: '活跃',
+    resolution: '时间分辨率',
+    skipped: '已跳过 {time}',
+    close: '关闭火焰图',
+    empty: '该智能体暂无可追踪的执行。',
+  },
   sessions: {
     title: '会话',
     newSession: '新建会话',
