@@ -1,7 +1,6 @@
 from __future__ import annotations
 import uuid
 from typing import Any
-
 import json, time
 import json_repair
 from pydantic import BaseModel
@@ -46,10 +45,11 @@ def execution_loop(params: ExecutionLoopParams) -> str | BaseModel:
         # prompt-injected schema
         agent.conversation.set_response_schema(params.schema)
 
-    for remaining in range(params.max_iterations, 0, -1):
+    for i, remaining in enumerate(range(params.max_iterations, 0, -1)):
         agent.check_cancel()
 
-        should_continue, result_str = _execute_step(params, remaining)
+        with agent.span.step_scope(f"{i}"):
+            should_continue, result_str = _execute_step(params, remaining)
         if should_continue:
             continue
 
@@ -282,43 +282,44 @@ def _run_tool_calls(params: ExecutionLoopParams, message: ChatCompletionMessageW
             tool_name = tool_call.function.name
             arguments = tool_call.function.arguments
 
-            tool_res: ToolResultType
-            arguments_json: Any
-            repair_err: Exception | None = None
-            try:
-                arguments_json = json_repair.loads(arguments) or {} # None, "", [], {}
-                # keep the assistant history consistent with the repaired
-                tool_call.function.arguments = json.dumps(arguments_json, ensure_ascii=False)
-            except CancelledError:
-                raise
-            except Exception as e:
-                arguments_json = {}
-                repair_err = e
-
-            # every tool_call in the assistant history gets a paired call/result event
-            agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
-            if repair_err is not None:
-                tool_res = Result.Err(ErrorInfo(error="Failed to repair tool arguments", details=str(repair_err)))
-            else:
+            with agent.span.tool_call_scope(f"{tool_id}"):
+                tool_res: ToolResultType
+                arguments_json: Any
+                repair_err: Exception | None = None
                 try:
-                    tool_res = agent.toolbox.call_tool(
-                        agent=agent,
-                        tool_name = tool_name,
-                        arguments = arguments_json,
-                        context = params.context_value
-                        )
+                    arguments_json = json_repair.loads(arguments) or {} # None, "", [], {}
+                    # keep the assistant history consistent with the repaired
+                    tool_call.function.arguments = json.dumps(arguments_json, ensure_ascii=False)
                 except CancelledError:
                     raise
                 except Exception as e:
-                    tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
+                    arguments_json = {}
+                    repair_err = e
 
-            agent.display_event(ToolResultEvent(
-                tool_call_id=tool_id,
-                result=tool_res.value_json(),
-                is_error=tool_res.is_err(),
-            ))
+                # every tool_call in the assistant history gets a paired call/result event
+                agent.display_event(ToolCallEvent(tool_call_id=tool_id, tool_name=tool_name, args=arguments_json))
+                if repair_err is not None:
+                    tool_res = Result.Err(ErrorInfo(error="Failed to repair tool arguments", details=str(repair_err)))
+                else:
+                    try:
+                        tool_res = agent.toolbox.call_tool(
+                            agent=agent,
+                            tool_name = tool_name,
+                            arguments = arguments_json,
+                            context = params.context_value
+                            )
+                    except CancelledError:
+                        raise
+                    except Exception as e:
+                        tool_res = Result.Err(ErrorInfo(error="Tool pipeline failed", details=str(e)))
 
-            tool_results.append((tool_id, tool_res))
+                agent.display_event(ToolResultEvent(
+                    tool_call_id=tool_id,
+                    result=tool_res.value_json(),
+                    is_error=tool_res.is_err(),
+                ))
+
+                tool_results.append((tool_id, tool_res))
 
         agent.hooks.after_tool_call.invoke(HookArgs.AfterToolCallArgs(
             agent=agent,

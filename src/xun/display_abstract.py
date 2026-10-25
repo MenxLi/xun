@@ -18,6 +18,7 @@ from .display_event import (  # names used directly in this module
     ErrorEvent, InfoEvent, WarningEvent,
 )
 from .display_store import DisplayEventStoreMixin
+from .tracing import SpanContext
 if TYPE_CHECKING:
     from .agent import Agent
     from .config import AgentConfig
@@ -74,6 +75,7 @@ class AgentDisplayProtocol(Protocol):
     display: DisplayAbstract
     hooks: Hooks
     config: AgentConfig
+    span: SpanContext
 
 class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
     """Display-facing helpers for Agent: event emission, messages and prompts."""
@@ -81,6 +83,7 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
         event = DisplayEvent(
             name=ev.__class__.__name__,
             agent=AgentInfo.from_agent(self),
+            span=self.span.snapshot(),
             payload=ev,
         )
         self.display._record_event(event)

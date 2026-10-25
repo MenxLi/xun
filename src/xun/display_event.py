@@ -14,6 +14,7 @@ from .command import Command
 from .types import JsonType, ModelCapabilityType
 from .util import image_to_url
 from .conversation import Conversation
+from .tracing import SpanSnapshot
 from .types import TypeVar
 if TYPE_CHECKING:
     from .toolcall import Function
@@ -238,6 +239,9 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     agent: AgentInfo
     """ The agent that emitted the event. Represented as an `AgentInfo` object. """
 
+    span: Optional[SpanSnapshot] = None
+    """ The span context snapshot when the event was emitted, for trace attribution. """
+
     payload: DisplayEventT
     """ The actual event data. """
 
@@ -259,6 +263,7 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
             name=event_name,
             agent=agent_info,
             timestamp=timestamp,
+            span=data.get("span"),
             payload=event_cls(**event_data)   # type: ignore
         )
 

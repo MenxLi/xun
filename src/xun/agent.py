@@ -17,7 +17,7 @@ from .displays.null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
 from .slot_semaphore import SlotSemaphore
 from .conversation import Conversation
-from .config import AgentConfig, load_config, get_internal_env, DEFAULTS
+from .config import AgentConfig, load_config, DEFAULTS
 from .error_catch import except_safe
 from .toolbox import ToolBox
 from .workspace import Workspace
@@ -26,6 +26,7 @@ from .compact import AutoCompactor, CompactorAbstract
 from .hooks import Hooks, HookArgs
 from .loop import execution_loop, ExecutionLoopParams
 from .extension import default_loader, ExtensionLoader
+from .tracing import SpanContext
 
 AGENTS_SECTION = "agents-md"
 _AUTO_CONFIRM_WARNED = False
@@ -62,8 +63,9 @@ class Agent(
     command: CommandRegistry = field(default_factory=CommandRegistry)
     workspace: Workspace = field(default_factory=Workspace)
     cancel_event: ChainedEvent = field(default_factory=lambda: ChainedEvent())
+    span: SpanContext = field(default_factory=SpanContext)
 
-    # below auto inherit
+    # below auto inherit or chained
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
     api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULTS.max_api_call_concurrency))
     extension_loader: ExtensionLoader = default_loader
@@ -160,6 +162,7 @@ class Agent(
         copy_command: bool = True,
         copy_conversation: bool = False,
         inherit_cancel_event: bool = True,
+        capture_span: bool = True,
         ) -> "Agent[T.Uninit]":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
@@ -168,11 +171,13 @@ class Agent(
         new_agent = Agent(
             identifier=(new_id := str(uuid.uuid4())),
             name=f"{parent_agent.name}-child-{new_id[:8]}",
+            display=parent_agent.display if share_display else NullDisplay(),
+            span=SpanContext(parent=parent_agent.span) if capture_span else SpanContext(),
+
             # auto inherit
             config = parent_agent.config.clone(),
             api_call_semaphore=parent_agent.api_call_semaphore,
             extension_loader=parent_agent.extension_loader,
-            display=parent_agent.display if share_display else NullDisplay(),
         )
         # share one client (and its connection pool) once built
         new_agent._openai_client = parent_agent._openai_client
@@ -233,7 +238,7 @@ class Agent(
 
         self.sync_project_instructions()
         try:
-            with self.run_scope():
+            with self.run_scope(), self.span.execution_scope(uuid.uuid4().hex):
                 return execution_loop(ExecutionLoopParams(
                     agent=self, schema=schema, max_iterations=max_iterations, context_value=context
                 ))

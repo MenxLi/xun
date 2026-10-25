@@ -24,11 +24,11 @@ from dataclasses import dataclass
 
 # These are not an abstract that must obey a specific inheritance,
 # but a suggested contract for all classes implementing JSON ser/de.
-class ToJson(Protocol):
-    def to_json(self) -> JsonType: ...
-class FromJson(Protocol):
+class ToJson[T: JsonType](Protocol):
+    def to_json(self) -> T: ...
+class FromJson[T: JsonType](Protocol):
     @classmethod
-    def from_json(cls, data: JsonType) -> Self: ...
+    def from_json(cls, data: T) -> Self: ...
 
 class Result[T, E](ToJson):
     def __init__(self, value: Union[T, E], is_ok: bool):
