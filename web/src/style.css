@@ -152,13 +152,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .markdown code, .plain-text, pre, code { font-family: 'Fira Code', monospace; }
 .markdown :not(pre) > code { padding: 2px 5px; border-radius: 3px; background: var(--hover); font-size: .88em; }
 /* Tables: auto-layout squeezes columns to min-content (one char wide with CJK) in narrow
-   containers. Lay tables out at max-content and scroll horizontally instead. */
+   containers — lay out at max-content and scroll; cell code stays wrappable so it can't starve them. */
 .markdown table { display: block; width: max-content; max-width: 100%; margin: 0 0 12px; overflow-x: auto; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font-size: 13px; line-height: 1.55; }
 .markdown th, .markdown td { padding: 7px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: break-word; }
 .markdown thead th { background: var(--panel); color: var(--muted); font-size: 12px; white-space: nowrap; }
 .markdown tbody tr:last-child > * { border-bottom: 0; }
 .markdown tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel) 45%, transparent); }
-.markdown td code { white-space: nowrap; }
+.markdown td code { overflow-wrap: anywhere; }
 .tool-detail pre { max-height: 360px; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
 .code-block { position: relative; margin: 0 0 12px; }
 .code-block pre { max-height: 360px; margin: 0; padding: 13px; overflow: auto; border-radius: 5px; background: var(--code); color: var(--code-ink); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
