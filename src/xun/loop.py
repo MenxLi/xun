@@ -282,7 +282,7 @@ def _run_tool_calls(params: ExecutionLoopParams, message: ChatCompletionMessageW
             tool_name = tool_call.function.name
             arguments = tool_call.function.arguments
 
-            with agent.span.tool_call_scope(f"{tool_id}"):
+            with agent.span.tool_call_scope(tool_id):
                 tool_res: ToolResultType
                 arguments_json: Any
                 repair_err: Exception | None = None

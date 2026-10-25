@@ -62,13 +62,13 @@ class Agent(
     toolbox: ToolBox = field(default_factory=ToolBox)
     command: CommandRegistry = field(default_factory=CommandRegistry)
     workspace: Workspace = field(default_factory=Workspace)
-    cancel_event: ChainedEvent = field(default_factory=lambda: ChainedEvent())
-    span: SpanContext = field(default_factory=SpanContext)
 
     # below auto inherit or chained
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
     api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULTS.max_api_call_concurrency))
     extension_loader: ExtensionLoader = default_loader
+    cancel_event: ChainedEvent = field(default_factory=lambda: ChainedEvent())
+    span: SpanContext = field(default_factory=SpanContext)
 
     _openai_client: Optional[OpenAI] = field(default=None, init=False, repr=False)
 
@@ -161,8 +161,6 @@ class Agent(
         copy_toolbox: bool = True,
         copy_command: bool = True,
         copy_conversation: bool = False,
-        inherit_cancel_event: bool = True,
-        capture_span: bool = True,
         ) -> "Agent[T.Uninit]":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
@@ -172,12 +170,13 @@ class Agent(
             identifier=(new_id := str(uuid.uuid4())),
             name=f"{parent_agent.name}-child-{new_id[:8]}",
             display=parent_agent.display if share_display else NullDisplay(),
-            span=SpanContext(parent=parent_agent.span) if capture_span else SpanContext(),
 
             # auto inherit
             config = parent_agent.config.clone(),
             api_call_semaphore=parent_agent.api_call_semaphore,
             extension_loader=parent_agent.extension_loader,
+            cancel_event=parent_agent.cancel_event.derive(),
+            span=SpanContext(parent=parent_agent.span),
         )
         # share one client (and its connection pool) once built
         new_agent._openai_client = parent_agent._openai_client
@@ -190,8 +189,6 @@ class Agent(
             new_agent.command = parent_agent.command.clone()
         if copy_conversation:
             new_agent.conversation.messages = parent_agent.conversation.messages.copy()
-        if inherit_cancel_event:
-            new_agent.cancel_event.parent = parent_agent.cancel_event
         return new_agent
 
     def sync_project_instructions(self) -> None:

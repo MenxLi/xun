@@ -18,14 +18,17 @@ class SpanContext:
     _tool_call: str | None
 
     def __init__(self, parent: SpanContext | SpanSnapshot | None = None):
+        self.set_parent(parent)
+        self._execution = None
+        self._step = None
+        self._tool_call = None
+
+    def set_parent(self, parent: SpanContext | SpanSnapshot | None):
         if isinstance(parent, SpanContext):
             self._parent = parent.snapshot()
         else:
             self._parent = parent
-        self._execution = None
-        self._step = None
-        self._tool_call = None
-    
+
     @property
     def parent(self) -> SpanSnapshot | None:
         return self._parent
@@ -41,7 +44,7 @@ class SpanContext:
     @property
     def tool_call(self) -> str | None:
         return self._tool_call
-    
+
     def snapshot(self) -> SpanSnapshot:
         return SpanSnapshot(
             parent=self._parent,
@@ -58,7 +61,7 @@ class SpanContext:
             yield self
         finally:
             self._execution = prev
-    
+
     @contextmanager
     def step_scope(self, identifier: str):
         prev = self._step
@@ -67,7 +70,7 @@ class SpanContext:
             yield self
         finally:
             self._step = prev
-    
+
     @contextmanager
     def tool_call_scope(self, identifier: str):
         prev = self._tool_call

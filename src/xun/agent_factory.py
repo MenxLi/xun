@@ -119,8 +119,8 @@ def agent_run_factory(agent_getter: AgentGetterProtocol):
                     }
         except (CancelledError, KeyboardInterrupt) as e:
             # hand chained children their own flag (the chained one dies at the
-            # parent's next run entry); detached children (custom getter with
-            # inherit_cancel_event=False) survive our cancellation
+            # parent's next run entry); detached children (cancel chain cut by a
+            # custom getter) survive our cancellation
             if (child := agent_t.agent) is not None \
                 and child.cancel_event.is_chain_of(ctx.agent.cancel_event):
                 child.cancel()
