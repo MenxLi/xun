@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Flame, X } from 'lucide-vue-next'
 import type { DisplayEvent } from '../types'
@@ -38,18 +38,6 @@ function durationText(seconds: number): string {
 }
 
 const resolution = ref(0)
-const body = ref<HTMLElement>()
-const viewW = ref(0)
-const observer = new ResizeObserver(entries => { viewW.value = entries[0].contentRect.width })
-onBeforeUnmount(() => observer.disconnect())
-
-// the body only mounts with the first traced event
-watch(body, el => {
-  observer.disconnect()
-  if (!el) return
-  observer.observe(el)
-  viewW.value = el.clientWidth
-}, { flush: 'post' })
 
 const hover = ref<{ text: string; x: number; y: number } | null>(null)
 function setHover(event: PointerEvent, text: string) {
@@ -175,26 +163,25 @@ const view = computed(() => {
     return total
   }
 
-  // zoom: cap the visible window at the chosen resolution, scrolling the rest
+  // zoom: show the most recent window; older bars fall off the left edge
   const windowed = resolution.value > 0 ? Math.min(total, resolution.value) : total
-  const scale = total / windowed
+  const windowStart = total - windowed
   const step = RULER_STEPS.find(value => windowed / value <= 6) ?? 3600
   const ticks: Tick[] = []
-  for (let at = 0; at <= total; at += step) {
-    ticks.push({ at: (at / total) * 100, label: at === 0 ? '0' : durationText(at) })
+  for (let at = Math.ceil(windowStart / step) * step; at <= total; at += step) {
+    ticks.push({ at: ((at - windowStart) / windowed) * 100, label: at === 0 ? '0' : durationText(at) })
   }
   const gutter = LABEL_W + DURATION_W + GAPS
-  const trackStyle = scale > 1 && viewW.value > gutter + 100
-    ? { width: `${Math.round((viewW.value - gutter) * scale)}px`, flex: '0 0 auto' }
-    : undefined
 
   // seam where an idle gap was compressed away
   const breaks: { left: string; tip: string }[] = []
   for (let index = 1; index < busy.length; index += 1) {
     const skipped = busy[index].start - busy[index - 1].end
     if (skipped < SUB_SECOND) continue
+    const x = busy[index].offset - windowStart
+    if (x < 0) continue
     breaks.push({
-      left: `calc(${LABEL_W + GAPS / 2}px + (100% - ${gutter}px) * ${(busy[index].offset / total).toFixed(6)})`,
+      left: `calc(${LABEL_W + GAPS / 2}px + (100% - ${gutter}px) * ${(x / windowed).toFixed(6)})`,
       tip: t('flame.skipped', { time: durationText(skipped) }),
     })
   }
@@ -222,14 +209,14 @@ const view = computed(() => {
         depth: depthOf(info),
         total: durationText(own.reduce((sum, segment) => sum + (segment.end - segment.start), 0)),
         bars: own.map((segment, index) => {
-          const left = position(segment.start)
-          const width = Math.max(0.25, position(segment.end) - left)
+          const start = position(segment.start) - windowStart
+          const width = Math.max(0.25, position(segment.end) - position(segment.start))
           const prev = own[index - 1]
           const next = own[index + 1]
           return {
             kind: segment.kind,
-            left: (left / total) * 100,
-            width: (width / total) * 100,
+            left: (start / windowed) * 100,
+            width: (width / windowed) * 100,
             label: segment.label,
             error: segment.error,
             spawns: segment.kind === 'tool' && spawned.has(`${id}:${segment.callId}`),
@@ -248,8 +235,7 @@ const view = computed(() => {
     ticks,
     breaks,
     total: durationText(total),
-    trackStyle,
-    grid: `${((step / total) * 100).toFixed(4)}%`,
+    grid: `${((step / windowed) * 100).toFixed(4)}%`,
   }
 })
 </script>
@@ -272,11 +258,11 @@ const view = computed(() => {
       <button class="icon-button flame-close" :title="t('flame.close')" :aria-label="t('flame.close')" @click="$emit('close')"><X :size="14" /></button>
     </header>
     <div v-if="!view" class="flame-empty">{{ t('flame.empty') }}</div>
-    <div v-else ref="body" class="flame-body" @scroll="hover = null">
+    <div v-else class="flame-body" @scroll="hover = null">
       <div class="flame-canvas" :style="{ '--grid': view.grid }">
         <div class="flame-row flame-ruler">
           <span class="flame-label" />
-          <span class="flame-track" :style="view.trackStyle">
+          <span class="flame-track">
             <span v-for="tick in view.ticks" :key="tick.at" class="flame-tick" :style="{ left: `${tick.at}%` }">
               <i /><em>{{ tick.label }}</em>
             </span>
@@ -287,7 +273,7 @@ const view = computed(() => {
           <span class="flame-label" :style="{ paddingLeft: `${row.depth * 12}px` }">
             <i v-if="row.depth" class="flame-elbow" />{{ row.label }}
           </span>
-          <span class="flame-track" :style="view.trackStyle">
+          <span class="flame-track">
             <span
               v-for="(bar, index) in row.bars"
               :key="index"
@@ -321,16 +307,17 @@ const view = computed(() => {
 .flame-resolution { height: 20px; padding: 0 4px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--input); color: var(--ink); font-size: 10px; }
 .flame-close { width: 24px; height: 24px; }
 .flame-empty { padding: 14px; color: var(--muted); font-size: 12px; }
-.flame-body { overflow: auto; padding: 0 14px 10px; }
-.flame-canvas { position: relative; min-width: 100%; width: max-content; }
+.flame-body { overflow-y: auto; padding: 0 14px 10px; scrollbar-width: none; }
+.flame-body::-webkit-scrollbar { display: none; }
+.flame-canvas { position: relative; }
 .flame-break { position: absolute; top: 20px; bottom: 0; width: 9px; margin-left: -4px; z-index: 0; cursor: help; }
 .flame-break::before { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; border-left: 1px dashed var(--line-strong); }
 .flame-row { display: flex; align-items: center; gap: 8px; height: 26px; }
 .flame-ruler { position: sticky; top: 0; z-index: 2; height: 20px; background: var(--panel); will-change: transform; }
-.flame-label { position: sticky; left: 0; z-index: 1; flex: none; width: 182px; display: flex; align-items: center; gap: 4px; overflow: hidden; background: var(--panel); color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; user-select: none; will-change: transform; }
+.flame-label { flex: none; width: 182px; display: flex; align-items: center; gap: 4px; overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; user-select: none; }
 .flame-ruler .flame-label, .flame-ruler .flame-duration { box-shadow: 0 1px 0 var(--line); }
 .flame-elbow { flex: none; width: 7px; height: 7px; border-left: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
-.flame-track { position: relative; flex: 1; height: 100%; background: repeating-linear-gradient(to right, transparent, transparent calc(var(--grid, 20%) - 1px), color-mix(in srgb, var(--line) 60%, transparent) calc(var(--grid, 20%) - 1px), color-mix(in srgb, var(--line) 60%, transparent) var(--grid, 20%)); }
+.flame-track { position: relative; flex: 1; height: 100%; overflow: hidden; background: repeating-linear-gradient(to right, transparent, transparent calc(var(--grid, 20%) - 1px), color-mix(in srgb, var(--line) 60%, transparent) calc(var(--grid, 20%) - 1px), color-mix(in srgb, var(--line) 60%, transparent) var(--grid, 20%)); }
 .flame-ruler .flame-track { background: none; }
 .flame-tick { position: absolute; top: 0; bottom: 0; user-select: none; }
 .flame-tick i { position: absolute; top: 4px; width: 1px; height: 4px; background: var(--line-strong); }
@@ -346,5 +333,5 @@ const view = computed(() => {
 .flame-seg.spawns { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #fff 70%, transparent); }
 
 .flame-hover { position: fixed; z-index: 40; max-width: 340px; padding: 3px 7px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--panel); color: var(--ink); font: 10px/1.5 'Fira Code', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; box-shadow: 0 3px 10px var(--shadow); }
-.flame-duration { position: sticky; right: 0; z-index: 1; flex: none; width: 44px; background: var(--panel); color: var(--muted); font: 9px/1 'Fira Code', monospace; text-align: right; user-select: none; will-change: transform; }
+.flame-duration { flex: none; width: 44px; color: var(--muted); font: 9px/1 'Fira Code', monospace; text-align: right; user-select: none; }
 </style>
