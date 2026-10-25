@@ -342,10 +342,12 @@ class VersionGateTest(_ExtensionsTestBase):
         with patch.object(ext_mod, "xun_version", return_value="1.2.3"):
             self.assertIsNone(ext(None, None).version_conflict())
             self.assertIsNone(ext("1.0", "2.0").version_conflict())
-            self.assertIsNone(ext("1.2.3", "1.2.3").version_conflict())  # bounds inclusive
+            self.assertIsNone(ext("1.2.3", "1.2.4").version_conflict())  # min inclusive
+            self.assertIsNotNone(ext("1.2.3", "1.2.3").version_conflict())  # max exclusive
             self.assertIsNone(ext("1.2", None).version_conflict())  # 1.2.3 > 1.2
             self.assertIsNotNone(ext("2.0", None).version_conflict())
             self.assertIsNotNone(ext(None, "1.0").version_conflict())
+            self.assertIsNotNone(ext(None, "1.2.3").version_conflict())  # 1.2.3 !< 1.2.3
 
     def test_version_compare_cores(self) -> None:
         self.assertEqual(ext_mod._compare_versions("1.2", "1.2.0"), 0)  # zero-padded

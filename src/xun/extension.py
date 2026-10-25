@@ -102,8 +102,8 @@ class ExtensionAttr:
 
 def extension_attr(api_min_version: str | None = None, api_max_version: str | None = None,
                    data_version: str | None = None, cli: ExtensionCli | None = None):
-    """Declare on `setup_extension` which xun API versions are supported — outside the
-    range the extension is SKIPPED, not FAILED — its data layout version (selects the
+    """Declare on `setup_extension` the supported xun range `[api_min_version, api_max_version)`
+    — outside it the extension is SKIPPED, not FAILED — its data layout version (selects the
     `data_v_<version>` data dir), and optionally `cli=(parser, handler)` run by
     `xune <name>` (an int return becomes the exit code)."""
     def _wrapper[F: Callable](fn: F) -> F:
@@ -123,7 +123,7 @@ class Extension:
     cli: ExtensionCli | None = None
 
     def version_conflict(self) -> str | None:
-        """Why the running xun is outside the declared range, or None when it fits.
+        """Why the running xun falls outside `[api_min_version, api_max_version)`, or None.
         Without version metadata (source checkout) the check passes."""
         current = xun_version()
         if current is None:
@@ -131,8 +131,8 @@ class Extension:
         violations = []
         if self.api_min_version and _compare_versions(current, self.api_min_version) < 0:
             violations.append(f">= {self.api_min_version}")
-        if self.api_max_version and _compare_versions(current, self.api_max_version) > 0:
-            violations.append(f"<= {self.api_max_version}")
+        if self.api_max_version and _compare_versions(current, self.api_max_version) >= 0:
+            violations.append(f"< {self.api_max_version}")
         if not violations:
             return None
         return f"requires xun {', '.join(violations)}, running {current}"
