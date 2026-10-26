@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { File, Folder, ImagePlus, Send, Square, X } from 'lucide-vue-next'
+import { CornerDownRight, File, Folder, ImagePlus, Send, Square, X } from 'lucide-vue-next'
 import { api } from '../api'
 import { useInputHistoryStore } from '../stores/inputHistory'
 import type { CommandInfo, FileEntry } from '../types'
@@ -268,10 +268,12 @@ function handlePaste(event: ClipboardEvent) {
 const hint = computed(() => {
   if (props.cancelling) return t('composer.cancellingHint')
   if (menuKind.value) return t('composer.hintMenu')
+  if (props.running) return t('composer.hintSteering')
   return t('composer.hintSend')
 })
 
 const isCommand = computed(() => input.value.startsWith('/'))
+const hasContent = computed(() => Boolean(input.value.trim() || props.images.length))
 </script>
 
 <template>
@@ -306,7 +308,7 @@ const isCommand = computed(() => input.value.startsWith('/'))
     </div>
     <div class="composer">
       <input v-if="supportsVision" ref="imageInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple @change="selectImages">
-      <button v-if="supportsVision" class="attach-button" type="button" :title="t('composer.attachImages')" :disabled="sending || running || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
+      <button v-if="supportsVision" class="attach-button" type="button" :title="t('composer.attachImages')" :disabled="sending || images.length >= 8" @click="imageInput?.click()"><ImagePlus :size="18" /></button>
       <textarea
         ref="textarea"
         v-model="input"
@@ -322,8 +324,9 @@ const isCommand = computed(() => input.value.startsWith('/'))
         @keyup="updateCursor"
         @paste="handlePaste"
       />
+      <button v-if="running && hasContent" class="send-button steering-send" :title="t('composer.sendSteering')" :disabled="disabled || sending" @click="emit('send')"><CornerDownRight :size="17" /></button>
       <button v-if="running" class="stop-button" :title="cancelling ? t('composer.cancelling') : t('composer.stop')" :disabled="cancelling" @click="emit('stop')"><Square :size="15" fill="currentColor" /></button>
-      <button v-else class="send-button" :title="t('composer.send')" :disabled="disabled || sending || (!input.trim() && !images.length)" @click="emit('send')"><Send :size="18" /></button>
+      <button v-else class="send-button" :title="t('composer.send')" :disabled="disabled || sending || !hasContent" @click="emit('send')"><Send :size="18" /></button>
     </div>
     <span v-if="error" class="composer-error">{{ error }}</span>
     <span class="composer-hint">{{ hint }}</span>

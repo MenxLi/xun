@@ -16,6 +16,7 @@ from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
 from xun.agent import T
+from xun.agent_state import AgentState
 from xun.tracing import SpanContext, SpanSnapshot
 from xun.command import Command, CommandRegistry
 from xun.config import AgentConfig, AutoCompactionConfig, ModelConfig, ProviderConfig
@@ -24,7 +25,7 @@ from xun.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
 from xun.running_state import AgentRunningStateMixin, ChainedEvent
-from xun.hooks import Hooks
+from xun.hooks import HookArgs, Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.web_serve import MAX_SERVE_SERVERS
 from xun.displays.null_display import NullDisplay
@@ -57,6 +58,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.cancel_event = ChainedEvent()
         self.span = SpanContext()
         self.hooks = Hooks()
+        self.state = AgentState()
         self.instructions: list[str] = []
         self.images: list[list[str] | None] = []
         self.execution_result: object = None
@@ -634,6 +636,54 @@ class WebDisplayTest(unittest.TestCase):
             websocket.send_json({"type": "cancel", "agent_id": "agent-1"})
 
         self.assertFalse(self.agent.cancel_called.wait(0.3))
+
+    def test_steering_buffers_while_running_and_flushes_on_step(self) -> None:
+        self.agent._running = True
+        posted = self.client.post("api/steering/agent-1", json={"content": " turn left"})
+        key = posted.json()["key"]
+        self.assertIsNotNone(key)
+        self.assertEqual(self.agent.instructions, [])  # buffered, not delivered yet
+
+        listed = self.client.get("api/steering/agent-1").json()
+        self.assertEqual([item["key"] for item in listed], [key])
+        self.assertEqual(listed[0]["content"], "turn left")
+
+        updated = self.client.put(f"api/steering/agent-1/{key}", json={"content": "turn right"})
+        self.assertEqual(updated.json(), {"updated": True})
+
+        after_args = HookArgs.AfterExecutionStepArgs(agent=self.agent, should_continue=False)  # type: ignore[arg-type]
+        self.agent.hooks.after_execution_step.invoke(after_args)
+
+        self.assertEqual(self.agent.instructions, ["turn right"])
+        self.assertTrue(after_args.should_continue)  # the loop must keep running to answer the steering
+        self.assertEqual(self.client.get("api/steering/agent-1").json(), [])
+        self.assertEqual(
+            self.client.put(f"api/steering/agent-1/{key}", json={"content": "stale"}).status_code, 409)
+        self.assertEqual(
+            self.client.delete(f"api/steering/agent-1/{key}").status_code, 409)
+
+    def test_steering_removal_drops_the_buffered_instruction(self) -> None:
+        self.agent._running = True
+        key = self.client.post("api/steering/agent-1", json={"content": "ignore me"}).json()["key"]
+
+        self.assertEqual(self.client.delete(f"api/steering/agent-1/{key}").json(), {"removed": True})
+        self.assertEqual(self.client.get("api/steering/agent-1").json(), [])
+
+        after_args = HookArgs.AfterExecutionStepArgs(agent=self.agent, should_continue=False)  # type: ignore[arg-type]
+        self.agent.hooks.after_execution_step.invoke(after_args)
+        self.assertEqual(self.agent.instructions, [])
+        self.assertFalse(after_args.should_continue)  # an empty flush must not extend the loop
+
+    def test_idle_steering_is_delivered_as_a_normal_message(self) -> None:
+        posted = self.client.post("api/steering/agent-1", json={"content": "hello"})
+
+        self.assertIsNone(posted.json()["key"])
+        self.assertTrue(self.agent.instruction_called.wait(1))
+        self.assertEqual(self.agent.instructions, ["hello"])
+
+    def test_steering_rejects_empty_content(self) -> None:
+        self.agent._running = True
+        self.assertEqual(self.client.post("api/steering/agent-1", json={"content": "  "}).status_code, 422)
 
     def _wait_until(self, predicate, timeout: float = 1.0) -> bool:
         deadline = time.monotonic() + timeout

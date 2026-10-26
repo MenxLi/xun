@@ -10,8 +10,9 @@ import FlameView from './components/FlameView.vue'
 import FileBrowser from './components/FileBrowser.vue'
 import PromptCard from './components/PromptCard.vue'
 import SessionSidebar from './components/SessionSidebar.vue'
+import SteeringCard from './components/SteeringCard.vue'
 import StickyScroll from './components/StickyScroll.vue'
-import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage, SessionInfo } from './types'
+import type { AgentInfo, ClientMessage, CommandInfo, DisplayEvent, ImageDescriptor, PendingPrompt, ServerMessage, SessionInfo, SteeringItem } from './types'
 import { useSettingsStore, type Theme } from './stores/settings'
 import { useInputHistoryStore } from './stores/inputHistory'
 import { useSessionBuffersStore } from './stores/sessionBuffers'
@@ -64,6 +65,11 @@ type Submission = {
 }
 let pendingSubmission: Submission | null = null
 
+// steering entries carry the agent they belong to; the API is per-agent
+type SteeringEntry = SteeringItem & { agentId: string }
+const steering = ref<SteeringEntry[]>([])
+const steeringSending = ref(false)
+
 // The overlay's CSS-delayed fade-in (.stream-loading) hides it on fast loads:
 // unmounted before it ever paints, no JS timers, no flicker.
 
@@ -97,13 +103,17 @@ const visiblePrompts = computed(() => selectedOnly.value && selectedAgentId.valu
   ? pendingPrompts.value.filter(prompt => prompt.agent_id === selectedAgentId.value)
   : pendingPrompts.value,
 )
+const visibleSteering = computed(() => selectedOnly.value && selectedAgentId.value
+  ? steering.value.filter(item => item.agentId === selectedAgentId.value)
+  : steering.value,
+)
 const streamEvents = computed(() => visibleEvents.value.filter(event =>
   event.name !== 'AgentRunningStartEvent'
   && event.name !== 'AgentRunningEndEvent',
 ))
 const anyRunning = computed(() => runningAgents.value.size > 0)
 const anyWaiting = computed(() => pendingPrompts.value.length > 0)
-const streamSize = computed(() => streamEvents.value.length + visiblePrompts.value.length)
+const streamSize = computed(() => streamEvents.value.length + visiblePrompts.value.length + visibleSteering.value.length)
 const streamViewKey = computed(() => `${currentSessionPath.value}:${selectedOnly.value ? selectedAgentId.value : '*'}`)
 const selectedAgentTokens = computed(() => {
   for (let i = events.value.length - 1; i >= 0; i--) {
@@ -172,6 +182,21 @@ function applyInitialData([config, eventData, agentData, runningData, promptData
   runningAgents.value = new Set(runningData)
   pendingPrompts.value = promptData
   ensureAgentSelection()
+  void refreshSteering()
+}
+
+// steering lives outside the event stream (REST-only mutations), so it is
+// refreshed on connect and dropped by consumed/removal broadcasts
+async function refreshSteering() {
+  const sessionPath = currentSessionPath.value
+  try {
+    const batches = await Promise.all(agents.value.map(agent => api.steering(agent.identifier)))
+    if (currentSessionPath.value !== sessionPath) return
+    steering.value = batches.flatMap((items, index) =>
+      items.map(item => ({ ...item, agentId: agents.value[index].identifier })))
+  } catch {
+    // keep the previous list on failure
+  }
 }
 
 async function loadSessions() {
@@ -275,6 +300,7 @@ function applyAgentEvent(event: DisplayEvent) {
     else agents.value[index] = agent
   } else if (event.name === 'AgentUnbindEvent') {
     agents.value = agents.value.filter(item => item.identifier !== agent.identifier)
+    steering.value = steering.value.filter(item => item.agentId !== agent.identifier)
   } else return
   ensureAgentSelection()
 }
@@ -284,6 +310,7 @@ function resetSessionData() {
   agents.value = []
   commands.value = []
   pendingPrompts.value = []
+  steering.value = []
   runningAgents.value = new Set()
   cancellingAgents.value = new Set()
   resolvingPrompts.value = new Set()
@@ -291,6 +318,7 @@ function resetSessionData() {
   exposeFiles.value = null
   sendError.value = ''
   sending.value = false
+  steeringSending.value = false
 }
 
 function connect() {
@@ -361,6 +389,9 @@ function handleServerMessage(payload: ServerMessage) {
     pendingPrompts.value = [...pendingPrompts.value.filter(prompt => prompt.id !== payload.data.id), payload.data]
   } else if (isPromptResolved(payload)) {
     pendingPrompts.value = pendingPrompts.value.filter(prompt => prompt.id !== payload.prompt_id)
+  } else if (isSteeringConsumed(payload)) {
+    const consumed = new Set(payload.keys)
+    steering.value = steering.value.filter(item => item.agentId !== payload.agent_id || !consumed.has(item.key))
   } else if (payload.name === 'AgentRunningStartEvent' || payload.name === 'AgentRunningEndEvent') {
     events.value.push(payload)
     const running = new Set(runningAgents.value)
@@ -371,6 +402,7 @@ function handleServerMessage(payload: ServerMessage) {
     } else {
       running.delete(payload.agent.identifier)
       cancelling.delete(payload.agent.identifier)
+      void refreshSteering() // a run ending may have left buffered steering behind
     }
     runningAgents.value = running
     cancellingAgents.value = cancelling
@@ -390,6 +422,10 @@ function isPendingPrompt(payload: ServerMessage): payload is Extract<ServerMessa
 
 function isPromptResolved(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'prompt_resolved' }> {
   return 'type' in payload && payload.type === 'prompt_resolved'
+}
+
+function isSteeringConsumed(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'steering_consumed' }> {
+  return 'type' in payload && payload.type === 'steering_consumed'
 }
 
 function isAccepted(payload: ServerMessage): payload is Extract<ServerMessage, { type: 'accepted' }> {
@@ -416,10 +452,16 @@ function acceptSubmission(clientId: string) {
   if (!submission || submission.payload.client_id !== clientId) return
   pendingSubmission = null
   sending.value = false
-  inputHistory.add(submission.input.trim())
-  if (input.value === submission.input) input.value = ''
-  if (submission.imageUrls.length) {
-    const submitted = new Set(submission.imageUrls)
+  consumeComposer(submission.input, submission.imageUrls)
+}
+
+// Clear the composer for a submitted input/images pair, keeping anything the
+// user typed or attached since the submission.
+function consumeComposer(submittedInput: string, submittedImageUrls: string[]) {
+  if (submittedInput.trim()) inputHistory.add(submittedInput.trim())
+  if (input.value === submittedInput) input.value = ''
+  if (submittedImageUrls.length) {
+    const submitted = new Set(submittedImageUrls)
     images.value = images.value.filter(image => {
       if (!submitted.has(image.url)) return true
       URL.revokeObjectURL(image.url)
@@ -440,7 +482,13 @@ function readImage(file: File): Promise<ImageDescriptor> {
 
 async function submit() {
   const value = input.value.trim()
-  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || pendingSubmission || sending.value || selectedAgentRunning.value) return
+  if (!value && !images.value.length) return
+  if (!connected.value || !selectedAgentId.value) return
+  if (selectedAgentRunning.value) {
+    await submitSteering()
+    return
+  }
+  if (pendingSubmission || sending.value) return
   const targetSocket = socket
   const agentId = selectedAgentId.value
   const inputSnapshot = input.value
@@ -473,6 +521,57 @@ function cancelExecution() {
   const agentId = selectedAgentId.value
   if (!agentId || selectedAgentCancelling.value || !send({ type: 'cancel', agent_id: agentId })) return
   cancellingAgents.value = new Set(cancellingAgents.value).add(agentId)
+}
+
+// steering send: plain input while the selected agent runs; a failed post
+// leaves the composer untouched so the user can retry
+async function submitSteering() {
+  const value = input.value.trim()
+  if ((!value && !images.value.length) || !connected.value || !selectedAgentId.value || steeringSending.value) return
+  if (value.startsWith('/')) {
+    sendError.value = t('steering.noCommand')
+    return
+  }
+  const sessionPath = currentSessionPath.value
+  const agentId = selectedAgentId.value
+  const inputSnapshot = input.value
+  const imageSnapshot = [...images.value]
+  steeringSending.value = true
+  sendError.value = ''
+  try {
+    const descriptors = await Promise.all(imageSnapshot.map(image => readImage(image.file)))
+    const { key } = await api.addSteering(agentId, { content: value, images: descriptors })
+    if (currentSessionPath.value !== sessionPath) return
+    if (key) steering.value = [...steering.value, { key, content: value, images: descriptors, agentId }]
+    else await refreshSteering() // raced with the agent going idle: delivered as a normal message
+    consumeComposer(inputSnapshot, imageSnapshot.map(image => image.url))
+  } catch (error) {
+    if (currentSessionPath.value === sessionPath) {
+      sendError.value = error instanceof Error ? error.message : t('steering.sendError')
+    }
+  } finally {
+    if (currentSessionPath.value === sessionPath) {
+      steeringSending.value = false
+    }
+  }
+}
+
+async function saveSteering(entry: SteeringEntry, content: string) {
+  steering.value = steering.value.map(item => item.key === entry.key && item.agentId === entry.agentId ? { ...item, content } : item)
+  try {
+    await api.updateSteering(entry.agentId, entry.key, { content, images: entry.images })
+  } catch {
+    await refreshSteering() // conflict means it was consumed meanwhile; show the truth
+  }
+}
+
+async function removeSteering(entry: SteeringEntry) {
+  steering.value = steering.value.filter(item => item.key !== entry.key || item.agentId !== entry.agentId)
+  try {
+    await api.removeSteering(entry.agentId, entry.key)
+  } catch {
+    await refreshSteering()
+  }
 }
 
 function removeImage(index: number) {
@@ -619,7 +718,7 @@ onBeforeUnmount(() => {
       <div class="stream-wrap">
       <StickyScroll :key="currentSessionPath" ref="stream" :size="streamSize">
         <EventStream v-if="streamEvents.length" :key="streamViewKey" :events="streamEvents" :markdown="settings.markdown" :running-agents="runningAgents" :selected-agent-id="selectedAgentId" />
-        <div v-if="visiblePrompts.length" class="prompt-stream">
+        <div v-if="visiblePrompts.length || visibleSteering.length" class="prompt-stream">
           <PromptCard
             v-for="prompt in visiblePrompts"
             :key="prompt.id"
@@ -629,9 +728,17 @@ onBeforeUnmount(() => {
             :error="promptErrors.get(prompt.id)"
             @submit="value => answerPrompt(prompt.id, value)"
           />
+          <SteeringCard
+            v-for="entry in visibleSteering"
+            :key="`${entry.agentId}:${entry.key}`"
+            :item="entry"
+            :agent-name="agents.find(agent => agent.identifier === entry.agentId)?.name"
+            @save="content => saveSteering(entry, content)"
+            @remove="() => removeSteering(entry)"
+          />
         </div>
       </StickyScroll>
-      <div v-if="syncing && !events.length && !pendingPrompts.length" class="stream-loading" role="status" aria-live="polite">
+      <div v-if="syncing && !events.length && !pendingPrompts.length && !steering.length" class="stream-loading" role="status" aria-live="polite">
         <LoaderCircle :size="22" class="spinning" />
         <span>{{ t('stream.loading') }}</span>
       </div>
@@ -654,7 +761,7 @@ onBeforeUnmount(() => {
           :images="images"
           :running="selectedAgentRunning"
           :cancelling="selectedAgentCancelling"
-          :sending="sending"
+          :sending="sending || steeringSending"
           :error="sendError"
           @send="submit"
           @stop="cancelExecution"

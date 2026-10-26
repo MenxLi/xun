@@ -1,4 +1,4 @@
-import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ModelCapabilities, PathInfo, PendingPrompt, SavedFile, ServeServer, SessionInfo, SessionList, WebConfig } from './types'
+import type { AgentInfo, CommandInfo, DisplayEvent, FileListing, ImageDescriptor, ModelCapabilities, PathInfo, PendingPrompt, SavedFile, ServeServer, SessionInfo, SessionList, SteeringItem, WebConfig } from './types'
 import i18n from './i18n'
 
 const configuredServiceRoot = import.meta.env.VITE_XUN_BASE_PATH as string | undefined
@@ -110,6 +110,21 @@ export const api = {
   ),
   agents: () => request<AgentInfo[]>(appUrl('/api/agents')),
   running: () => request<string[]>(appUrl('/api/running')),
+  steering: (agentId: string) => request<SteeringItem[]>(appUrl(`/api/steering/${encodeURIComponent(agentId)}`)),
+  addSteering: (agentId: string, payload: { content: string; images: ImageDescriptor[] }) =>
+    request<{ key: string | null }>(appUrl(`/api/steering/${encodeURIComponent(agentId)}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  updateSteering: (agentId: string, key: string, payload: { content: string; images: ImageDescriptor[] }) =>
+    request<{ updated: boolean }>(appUrl(`/api/steering/${encodeURIComponent(agentId)}/${encodeURIComponent(key)}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  removeSteering: (agentId: string, key: string) =>
+    request<{ removed: boolean }>(appUrl(`/api/steering/${encodeURIComponent(agentId)}/${encodeURIComponent(key)}`), { method: 'DELETE' }),
   commands: (agentId: string) => request<CommandInfo[]>(appUrl(`/api/commands/${encodeURIComponent(agentId)}`)),
   capabilities: (agentId: string) => request<ModelCapabilities>(appUrl(`/api/capabilities/${encodeURIComponent(agentId)}`)),
   files: (agentId: string, path = '') =>

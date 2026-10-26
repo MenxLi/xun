@@ -18,6 +18,7 @@ import rich
 from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..tracing import SpanSnapshot
 from ..types import CancelledError, Result
+from .steering import SteeringStore, UserInstruction
 from .web_file import build_file_router
 from .web_serve import ServeManager, build_serve_router
 from ..hooks import HookArgs
@@ -51,6 +52,33 @@ class ChoiceMessage(BaseModel):
 class CancelMessage(BaseModel):
     type: Literal["cancel"]
     agent_id: str
+
+
+class SteeringMessage(BaseModel):
+    content: str = ""
+    images: list[UserMessageEvent.ImageDescriptor] = Field(default_factory=list, max_length=8)
+
+
+def _steering_input(message: SteeringMessage) -> tuple[str, list[str]]:
+    content = message.content.strip()
+    images = [image.value for image in message.images]
+    if not content and not images:
+        raise HTTPException(422, "Steering message is empty")
+    return content, images
+
+
+def _steering_item_json(key: str, instruction: UserInstruction) -> dict[str, Any]:
+    return {
+        "key": key,
+        "content": instruction.content,
+        "images": [
+            UserMessageEvent.ImageDescriptor(
+                kind="base64" if isinstance(img, str) and img.startswith("data:") else "url",
+                value=str(img),
+            )
+            for img in instruction.images
+        ],
+    }
 
 
 WebMessage = Annotated[Union[ChatMessage, CommandMessage, ChoiceMessage, CancelMessage], Field(discriminator="type")]
@@ -174,6 +202,21 @@ class WebDisplay(DisplayAbstract):
             elif args.command.name == "retry":
                 args.agent.execute()
         agent.hooks.after_command.add(after_command)
+
+        def flush_steering(args: HookArgs.AfterExecutionStepArgs) -> None:
+            items = SteeringStore.of(args.agent).take()
+            if not items:
+                return
+            for _, instruction in items:
+                args.agent.instruct(instruction.content, images=instruction.images or None)
+            # keep the loop alive so the model sees the injected instructions even on the last step
+            args.should_continue = True
+            self._broadcast({
+                "type": "steering_consumed",
+                "agent_id": args.agent.identifier,
+                "keys": [key for key, _ in items],
+            })
+        agent.hooks.after_execution_step.add(flush_steering)
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
@@ -364,6 +407,43 @@ class WebDisplay(DisplayAbstract):
         async def capabilities(agent_id: str) -> dict[str, Any]:
             model = self._agent(agent_id).config.model
             return {"model": model.name, "capabilities": sorted(model.capabilities)}
+
+        @router.get("/api/steering/{agent_id}")
+        async def list_steering(agent_id: str) -> list[dict[str, Any]]:
+            store = SteeringStore.of(self._agent(agent_id))
+            return [_steering_item_json(key, inst) for key, inst in store.snapshot()]
+
+        @router.post("/api/steering/{agent_id}")
+        async def add_steering(agent_id: str, message: SteeringMessage) -> dict[str, Any]:
+            from ..agent import Agent
+            agent = self._agent(agent_id)
+            content, images = _steering_input(message)
+            if images and Agent.is_initialized(agent) and not self._supports_vision(agent):
+                raise HTTPException(422, "The configured model does not support image input")
+            if not agent.is_running:
+                # idle: steering would only be flushed by the next run; deliver as a normal message
+                if not Agent.is_initialized(agent):
+                    self._report_uninitialized(agent)
+                    raise HTTPException(409, "Agent is not initialized")
+                self._enqueue(agent_id, self._execute_message, agent, content, images)
+                return {"key": None}
+            key = SteeringStore.of(agent).add(UserInstruction(content=content, images=images))
+            return {"key": key}
+
+        @router.put("/api/steering/{agent_id}/{key}")
+        async def update_steering(agent_id: str, key: str, message: SteeringMessage) -> dict[str, bool]:
+            agent = self._agent(agent_id)
+            content, images = _steering_input(message)
+            if not SteeringStore.of(agent).swap(key, UserInstruction(content=content, images=images)):
+                raise HTTPException(409, "Steering message is no longer pending")
+            return {"updated": True}
+
+        @router.delete("/api/steering/{agent_id}/{key}")
+        async def remove_steering(agent_id: str, key: str) -> dict[str, bool]:
+            agent = self._agent(agent_id)
+            if not SteeringStore.of(agent).remove(key):
+                raise HTTPException(409, "Steering message is no longer pending")
+            return {"removed": True}
 
         if self.expose_files:
             assert self._serve is not None

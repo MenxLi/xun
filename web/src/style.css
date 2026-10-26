@@ -305,6 +305,37 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .stop-button { width: 36px; height: 36px; margin: 3px; padding: 0; border: 0; border-radius: 5px; display: grid; place-items: center; background: var(--danger); color: white; cursor: pointer; }
 .stop-button:hover:not(:disabled) { background: #91332f; }
 .stop-button:disabled { opacity: .55; cursor: wait; }
+.steering-send { margin-right: 0; background: var(--warm); animation: dialog-in .14s ease-out; }
+.steering-send:hover:not(:disabled) { background: color-mix(in srgb, var(--warm) 84%, black); }
+/* Queued steering renders as a pending user-message bubble: right-aligned like
+   .message.user, warm tint and pulsing dot signal "not delivered yet". */
+.steering-card { position: relative; min-width: 0; width: fit-content; max-width: 84%; margin-left: auto; padding: 8px 12px 10px; border: 1px solid color-mix(in srgb, var(--warm) 30%, var(--line)); border-radius: 7px 7px 2px 7px; background: color-mix(in srgb, var(--warm) 7%, var(--paper)); animation: dialog-in .16s ease-out; transition: border-color .15s ease, background .15s ease; }
+.steering-card:hover { border-color: color-mix(in srgb, var(--warm) 52%, var(--line)); background: color-mix(in srgb, var(--warm) 10%, var(--paper)); }
+.steering-card.editing { width: 100%; border-style: solid; border-color: var(--warm); background: var(--paper); box-shadow: 0 4px 16px color-mix(in srgb, var(--warm) 16%, transparent); }
+.steering-header { min-height: 20px; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.steering-dot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--warm); animation: steering-pulse 1.8s ease-in-out infinite; }
+@keyframes steering-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warm) 42%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
+.steering-icon { flex: none; color: var(--warm); opacity: .9; }
+.steering-label { flex: 1; min-width: 0; color: color-mix(in srgb, var(--warm) 82%, var(--ink)); font: 500 9px/1 'Fira Code', monospace; letter-spacing: .05em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.steering-actions { flex: none; margin: -2px -4px -2px 0; display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .14s ease; }
+.steering-actions .icon-button { width: 22px; height: 22px; border-radius: 4px; }
+.steering-card:hover .steering-actions, .steering-card:focus-within .steering-actions { opacity: 1; }
+@media (hover: none) { .steering-actions { opacity: 1; } }
+.steering-actions .icon-button.danger:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.steering-body { cursor: text; }
+.steering-content { margin: 4px 0 0; color: var(--ink); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.steering-editor { margin-top: 6px; }
+.steering-card textarea { display: block; width: 100%; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--input); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+.steering-card textarea:focus-visible { outline: none; border-color: var(--warm); }
+.steering-images { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px; }
+.steering-images img { width: 54px; height: 54px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.steering-footer { margin-top: 7px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.steering-save { min-width: 64px; height: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: 5px; background: var(--warm); color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; }
+.steering-save:hover:not(:disabled) { background: color-mix(in srgb, var(--warm) 84%, black); }
+.steering-save:disabled { opacity: .35; cursor: default; }
+.steering-cancel { height: 26px; padding: 0 9px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.steering-cancel:hover { background: var(--hover); color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .steering-dot { animation: none; } }
 .composer-hint { display: block; margin-top: 6px; color: #929a95; font-size: 9px; text-align: right; }
 .command-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); max-height: 270px; overflow-y: auto; padding: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); box-shadow: 0 16px 45px rgba(34, 41, 37, .15); z-index: 15; }
 .command-menu button { width: 100%; min-height: 38px; padding: 7px 9px; display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }

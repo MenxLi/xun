@@ -94,6 +94,12 @@ export interface PendingPrompt {
   allow_extra?: boolean
 }
 
+export interface SteeringItem {
+  key: string
+  content: string
+  images: ImageDescriptor[]
+}
+
 export interface SavedFile {
   path: string
   size: number
@@ -157,6 +163,7 @@ export interface ModelCapabilities {
 export type ServerMessage = DisplayEvent
   | { type: 'pending_prompt'; data: PendingPrompt }
   | { type: 'prompt_resolved'; prompt_id: string }
+  | { type: 'steering_consumed'; agent_id: string; keys: string[] }
   | { type: 'accepted'; client_id: string }
 
 export type ClientMessage =
