@@ -315,11 +315,13 @@ def bash_spawn(
     On agent finalization, running commands are killed and all logs are deleted.
     """
     authorize_command(ctx, command)
-    ctx.agent.check_cancel()
     pool = CommandPool.of(ctx)
+    if pool.closed:
+        raise RuntimeError("Cannot start a command after its pool has shut down.")
+    ctx.agent.check_cancel()
     identifier = uuid.uuid4().hex[:8]
     with pool.lock:
-        if pool.closed:
+        if pool.closed:  # racing shutdown()
             raise RuntimeError("Cannot start a command after its pool has shut down.")
         job = CommandJob.start(identifier, command, ctx.agent.workspace.workdir, envs, ctx.agent.workspace.tempdir.path)
         pool.value[identifier] = job
