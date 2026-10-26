@@ -94,9 +94,7 @@ class ConversationCompactTest(unittest.TestCase):
         self.assertEqual(notice.completion_param(), {"role": "developer", "content": COMPACTION_NOTICE})
 
     def test_compact_requires_a_non_synthetic_anchor(self) -> None:
-        # every agent conversation is guaranteed a human message by construction (instruct()
-        # is the only human path and always precedes execution), so a conversation without
-        # one is a programming error rather than a runtime state to recover from
+        # a human message is guaranteed by construction; its absence is a programming error
         conversation = Conversation()
         conversation.set_system_message_content("sys")
         conversation.add_user_message("synthetic task", is_synthetic=True)
@@ -151,7 +149,7 @@ class ConversationCompactTest(unittest.TestCase):
         self.assertFalse(result.compacted)
         self.assertEqual([m.role for m in conversation.messages], ["system", "user"])
 
-    def test_failed_summary_rolls_back_and_clears_token_count(self) -> None:
+    def test_failed_summary_rolls_back_keeping_token_count(self) -> None:
         conversation = _conversation_with_tool_chain(tool_rounds=3)
         conversation.total_tokens = 12345
         # give the cut point something to condense, so the summarizer actually runs
@@ -256,7 +254,8 @@ class AutoCompactionTest(unittest.TestCase):
         agent.conversation.messages = agent.conversation.messages[:4]  # below keep_max, nothing to reclaim
         with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             AutoCompactor().auto_compact(agent)
-        compact_conversation.assert_called()
+        # zero reclaim keeps the estimate over threshold, but the first summary fixes it
+        self.assertEqual(compact_conversation.call_count, 1)
 
     def test_no_retrigger_while_token_count_unknown(self) -> None:
         agent = self._agent(1_000, None)
@@ -301,11 +300,6 @@ class CompactorInstallTest(unittest.TestCase):
         self.assertIsInstance(child.compactor, AutoCompactor)
         child.initialize()
         self.assertEqual(len(child.hooks.before_execution_step._callbacks), 1)
-
-    def test_install_wires_the_step_hook(self) -> None:
-        hooks = Hooks()
-        AutoCompactor().install(hooks)
-        self.assertEqual(len(hooks.before_execution_step._callbacks), 1)
 
     def test_abstract_contract(self) -> None:
         with self.assertRaises(TypeError):

@@ -7,22 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from xun.tools.common import get_policy
+from xun.tools.common import Policy, get_policy
 from xun.tools.fs import fs_write_file
 from xun.tools.patch import _run_git_apply, apply_patch
 from xun.workspace import DeferredTempDirectory
-from test.test_patch import EXPECTED, ORIGINAL, SAMPLE_PATCH, make_ctx
+from test.test_patch import EXPECTED, ORIGINAL, PatchTestBase, SAMPLE_PATCH, make_ctx
 
 
-class TestPatchErrors(unittest.TestCase):
-    def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.ctx = make_ctx(self.root)
-        self.file = self.root / "hello.py"
-        self.file.write_text(ORIGINAL)
-
+class TestPatchErrors(PatchTestBase):
     def test_empty_patch(self):
         for content in ("", " \n\t"):
             with self.subTest(content=content):
@@ -100,6 +92,10 @@ class TestPatchErrors(unittest.TestCase):
                 apply_patch(self.ctx, SAMPLE_PATCH, directory=other)
 
     def test_path_traversal_is_rejected(self):
+        # Nest the root so escapes land inside this sandbox, where cleanup reaches them.
+        root = self.root / "deep" / "nest"
+        root.mkdir(parents=True)
+        ctx = make_ctx(root)
         for name in ("../escaped.txt", "../../escaped.txt"):
             with self.subTest(name=name):
                 content = (
@@ -107,8 +103,10 @@ class TestPatchErrors(unittest.TestCase):
                     "new file mode 100644\n"
                     f"--- /dev/null\n+++ b/{name}\n@@ -0,0 +1 @@\n+x\n"
                 )
-                with self.assertRaisesRegex(RuntimeError, "invalid path"):
-                    apply_patch(self.ctx, content)
+                # Rejection wording is git's; assert the safety property instead.
+                with self.assertRaises((RuntimeError, ValueError)):
+                    apply_patch(ctx, content)
+                self.assertFalse((root / name).resolve().exists())
 
     def test_symlink_directory_cannot_escape_patch_directory(self):
         with tempfile.TemporaryDirectory() as other:
@@ -274,16 +272,13 @@ class TestPatchErrors(unittest.TestCase):
         self.assertEqual(self.file.read_text(), ORIGINAL)
 
 
-class TestPatchPermissions(unittest.TestCase):
+class TestPatchPermissions(PatchTestBase):
+    policy: Policy
+
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.ctx = make_ctx(self.root)
+        super().setUp()
         self.policy = get_policy(self.ctx)
         self.policy.write_allowlist.remove(self.root)
-        self.file = self.root / "hello.py"
-        self.file.write_text(ORIGINAL)
 
     def test_denied_patch_leaves_file_unchanged(self):
         self.ctx.agent.get_choice.return_value = SimpleNamespace(

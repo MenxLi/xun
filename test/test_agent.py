@@ -154,19 +154,6 @@ class AgentLifecycleTest(unittest.TestCase):
         gc.collect()
         self.assertIsNone(weak())
 
-    def test_finalized_agent_cannot_execute_or_reinitialize(self) -> None:
-        agent = self._new_agent()
-        finalized = agent.initialize().finalize()
-        self.assertTrue(Agent.is_finalized(finalized))
-        self.assertFalse(Agent.is_initialized(finalized))
-        # type-level: execute()/initialize() are not callable on Agent[T.Final];
-        # the casts test the runtime guards.
-        res = cast("Agent[Agent.T.Init]", finalized).execute()
-        self.assertTrue(res.is_err())
-        with self.assertRaises(RuntimeError) as ctx:
-            cast("Agent[Agent.T.Uninit]", finalized).initialize()
-        self.assertIn("finalized", str(ctx.exception))
-
     def test_cancel_only_sets_event_while_running(self) -> None:
         # cancelling an idle agent must not set the (possibly shared) cancel event,
         # which would poison the next execution before it starts

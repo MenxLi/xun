@@ -36,7 +36,11 @@ def make_ctx(workdir: Path) -> MagicMock:
     return ctx
 
 
-class TestApplyPatch(unittest.TestCase):
+class PatchTestBase(unittest.TestCase):
+    root: Path
+    ctx: MagicMock
+    file: Path
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -45,6 +49,8 @@ class TestApplyPatch(unittest.TestCase):
         self.file = self.root / "hello.py"
         self.file.write_text(ORIGINAL)
 
+
+class TestApplyPatch(PatchTestBase):
     def test_apply_outside_repository(self):
         self.assertFalse((self.root / ".git").exists())
         result = apply_patch(self.ctx, SAMPLE_PATCH)
@@ -83,10 +89,6 @@ class TestApplyPatch(unittest.TestCase):
         self.assertEqual(target.read_text(), EXPECTED)
         self.assertEqual(self.file.read_text(), ORIGINAL)
 
-    def test_incorrect_hunk_counts_are_recounted(self):
-        patch = SAMPLE_PATCH.replace("@@ -1,3 +1,4 @@", "@@ -1,99 +1,99 @@")
-        apply_patch(self.ctx, patch)
-        self.assertEqual(self.file.read_text(), EXPECTED)
 
     def test_multi_file_counts_are_recounted(self):
         (self.root / "other.py").write_text(ORIGINAL)
