@@ -75,6 +75,7 @@ export type DisplayEvent =
   | EventEnvelope<'ConfirmEvent', { prompt: string; choices: string[]; choice: string; source: 'user' | 'auto'; message?: string | null }>
   | EventEnvelope<'WarningEvent', { message: string }>
   | EventEnvelope<'ErrorEvent', { message: string }>
+  | EventEnvelope<'CustomEvent', { value: unknown }>
 
 export type ModelMessageDisplayEvent = Extract<DisplayEvent, { name: 'ModelMessageEvent' }>
 export type ConfirmDisplayEvent = Extract<DisplayEvent, { name: 'ConfirmEvent' }>

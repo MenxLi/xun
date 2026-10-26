@@ -66,6 +66,7 @@ const items = computed<StreamItem[]>(() => {
   }
 
   props.events.forEach((data, index) => {
+    if (data.name === 'CustomEvent') return // extension-defined payloads, not rendered here
     if (data.name === 'UserMessageEvent' || data.name === 'UserCommandEvent') {
       batch = null
       latestActivities.clear()

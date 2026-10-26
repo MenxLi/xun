@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 from typing import Any, Generic, Optional, TYPE_CHECKING, Sequence, Annotated, Literal, NoReturn, TypeAlias
-import json
 import re
 import time
 from html import unescape
@@ -193,6 +192,10 @@ class AgentRunningStartEvent(BaseModel):
 class AgentRunningEndEvent(BaseModel):
     ...
 
+class CustomEvent(BaseModel):
+    """Extension-defined payload; ignored by built-in displays."""
+    value: JsonType
+
 DisplayEventType: TypeAlias = (
     ShowHelpEvent
     | ShowToolsEvent
@@ -213,6 +216,7 @@ DisplayEventType: TypeAlias = (
     | ConfirmEvent
     | WarningEvent
     | ErrorEvent
+    | CustomEvent
 )
 DisplayEventT = TypeVar("DisplayEventT", bound=DisplayEventType)
 

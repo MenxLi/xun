@@ -83,6 +83,7 @@ class Display(DisplayAbstract):
             case AgentUnbindEvent(): self._agent_unbind(event)
             case AgentRunningStartEvent(): self._show_agent_running_start(event)
             case AgentRunningEndEvent(): ...
+            case CustomEvent(): ... # no built-in rendering
             case _: self._unhandled(event)
 
     def _show_help(self, event: DisplayEvent[ShowHelpEvent]) -> None:
