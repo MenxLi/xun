@@ -2,6 +2,7 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, JsonEntry, NullDisplay, ToolBox, CommandRegistry
@@ -275,7 +276,7 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
 
     def _run_command(self) -> ShowExtensionsEvent:
         agent = self._CapturingAgent()
-        CommandRegistry().with_defaults().get("extensions").invoke(agent)  # type: ignore[arg-type]
+        CommandRegistry().with_defaults().get("extensions").invoke(cast("Agent[Agent.T.Init]", agent))
         self.assertEqual(len(agent.events), 1)
         event = agent.events[0]
         self.assertIsInstance(event, ShowExtensionsEvent)

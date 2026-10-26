@@ -30,17 +30,17 @@ class DisplayAbstract(DisplayEventStoreMixin, ABC):
     display helpers (display_event / display_info / display_warning / display_error /
     get_choice / get_confirm).
     """
-    _agents: dict[str, "Agent[Agent.T.Any]"]
+    _agents: dict[str, "Agent[Agent.T.Alive]"]
 
-    def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
+    def bind(self, agent: "Agent[Agent.T.Alive]") -> None:
         self.agents[agent.identifier] = agent
 
-    def unbind(self, agent: "Agent[Agent.T.Any]") -> None:
+    def unbind(self, agent: "Agent[Agent.T.Alive]") -> None:
         if agent.identifier in self.agents:
             del self.agents[agent.identifier]
     
     @property
-    def agents(self) -> dict[str, "Agent[Agent.T.Any]"]:
+    def agents(self) -> dict[str, "Agent[Agent.T.Alive]"]:
         """Return the dictionary of {identifier: Agent} for all agents bound to this display."""
         agents = vars(self).get("_agents")
         if agents is None:
@@ -48,7 +48,7 @@ class DisplayAbstract(DisplayEventStoreMixin, ABC):
         return agents
 
     @agents.setter
-    def agents(self, agents: dict[str, "Agent[Agent.T.Any]"]) -> None:
+    def agents(self, agents: dict[str, "Agent[Agent.T.Alive]"]) -> None:
         self._agents = agents
 
     @abstractmethod

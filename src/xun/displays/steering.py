@@ -10,7 +10,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from PIL.Image import Image
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 @dataclass
 class UserInstruction:
     content: str
-    images: list[str | Image]
+    images: Sequence[str | Image]
 
 @dataclass
 class SteeringStore(StateRuntimeEntry):

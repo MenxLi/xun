@@ -190,7 +190,7 @@ class WebDisplay(DisplayAbstract):
         app.include_router(self.build_routes())
         return app
 
-    def bind(self, agent: "Agent[Agent.T.Uninit]") -> None:
+    def bind(self, agent: "Agent[Agent.T.Alive]") -> None:
         super().bind(agent)
         def after_command(args: HookArgs.CommandArgs) -> None:
             if args.command.name == "clear":
@@ -239,7 +239,7 @@ class WebDisplay(DisplayAbstract):
             self._broadcast({"type": "prompt_resolved", "prompt_id": pending.data["id"]})
             raise
 
-    def _agent(self, identifier: str) -> "Agent[Agent.T.Any]":
+    def _agent(self, identifier: str) -> "Agent[Agent.T.Alive]":
         agent = self.agents.get(identifier)
         if agent is None:
             raise HTTPException(404, "Agent not found")

@@ -9,13 +9,14 @@ from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
-from xun.agent import T
+from xun.agent import Agent, T
 from xun.agent_state import AgentState
 from xun.tracing import SpanContext, SpanSnapshot
 from xun.command import Command, CommandRegistry
@@ -91,7 +92,7 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
         self.display_event(UserCommandEvent(name=name, arguments=arguments))
         command = self.command.get(name)
         if command is not None:
-            command.invoke(self, shlex.split(arguments or ""))  # type: ignore[arg-type]
+            command.invoke(cast("Agent[T.Init]", self), shlex.split(arguments or ""))
 
 
 class WebDisplayTest(unittest.TestCase):
@@ -101,7 +102,7 @@ class WebDisplayTest(unittest.TestCase):
         self.agent = _Agent(self.root)
         self.display = WebDisplay(expose_files=True)
         self.agent.display = self.display
-        self.display.bind(self.agent)  # type: ignore[arg-type]
+        self.display.bind(cast("Agent[T.Alive]", self.agent))
         self.service = WebDisplayService(token="test-token").mount("/", self.display)
         self.client = TestClient(self.service.app, base_url="http://testserver/session/")
         self.client.__enter__()
@@ -137,7 +138,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_file_routes_are_opt_in(self) -> None:
         display = WebDisplay()
-        display.bind(self.agent)  # type: ignore[arg-type]
+        display.bind(cast("Agent[T.Alive]", self.agent))
         service = WebDisplayService(token="test-token").mount("/", display)
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
@@ -582,7 +583,7 @@ class WebDisplayTest(unittest.TestCase):
         second_root.mkdir()
         second_agent = _Agent(second_root, "agent-2", "Research")
         second_agent.display = self.display
-        self.display.bind(second_agent)  # type: ignore[arg-type]
+        self.display.bind(cast("Agent[T.Alive]", second_agent))
         command_called = threading.Event()
         second_agent.command.register(Command(name="sample", description="Sample command.", handler=lambda _agent, _args: command_called.set()))
 
@@ -651,7 +652,7 @@ class WebDisplayTest(unittest.TestCase):
         updated = self.client.put(f"api/steering/agent-1/{key}", json={"content": "turn right"})
         self.assertEqual(updated.json(), {"updated": True})
 
-        after_args = HookArgs.AfterExecutionStepArgs(agent=self.agent, should_continue=False)  # type: ignore[arg-type]
+        after_args = HookArgs.AfterExecutionStepArgs(agent=cast("Agent[T.Init]", self.agent), should_continue=False)
         self.agent.hooks.after_execution_step.invoke(after_args)
 
         self.assertEqual(self.agent.instructions, ["turn right"])
@@ -669,7 +670,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(self.client.delete(f"api/steering/agent-1/{key}").json(), {"removed": True})
         self.assertEqual(self.client.get("api/steering/agent-1").json(), [])
 
-        after_args = HookArgs.AfterExecutionStepArgs(agent=self.agent, should_continue=False)  # type: ignore[arg-type]
+        after_args = HookArgs.AfterExecutionStepArgs(agent=cast("Agent[T.Init]", self.agent), should_continue=False)
         self.agent.hooks.after_execution_step.invoke(after_args)
         self.assertEqual(self.agent.instructions, [])
         self.assertFalse(after_args.should_continue)  # an empty flush must not extend the loop
@@ -755,7 +756,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_authentication_base_path_and_capabilities(self) -> None:
         display = WebDisplay()
-        display.bind(self.agent)  # type: ignore[arg-type]
+        display.bind(cast("Agent[T.Alive]", self.agent))
         service = WebDisplayService(token="fixed-token").mount("/agents/research", display)
         with TestClient(service.app) as client:
             self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 401)
@@ -882,13 +883,13 @@ class WebDisplayTest(unittest.TestCase):
         coding_agent = _Agent(self.root, "coding-agent", "Coding")
         coding_display = WebDisplay()
         coding_agent.display = coding_display
-        coding_display.bind(coding_agent)  # type: ignore[arg-type]
+        coding_display.bind(cast("Agent[T.Alive]", coding_agent))
         second_root = self.root / "second"
         second_root.mkdir()
         second_agent = _Agent(second_root, "agent-2", "Research")
         second_display = WebDisplay()
         second_agent.display = second_display
-        second_display.bind(second_agent)  # type: ignore[arg-type]
+        second_display.bind(cast("Agent[T.Alive]", second_agent))
         service = WebDisplayService(token="service-token")
         service.mount("/coding", coding_display)
         service.mount("/research", second_display)
@@ -914,7 +915,7 @@ class WebDisplayTest(unittest.TestCase):
         main_agent = _Agent(self.root, "main-agent", "Main")
         main_display = WebDisplay()
         main_agent.display = main_display
-        main_display.bind(main_agent)  # type: ignore[arg-type]
+        main_display.bind(cast("Agent[T.Alive]", main_agent))
 
         @contextmanager
         def new_session():

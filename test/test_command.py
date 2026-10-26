@@ -1,10 +1,11 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, HookArgs, NullDisplay
-from xun.agent import AGENTS_SECTION
+from xun.agent import AGENTS_SECTION, T
 from xun.command import Command, CommandRegistry
 from xun.workspace import Workspace
 from xun.conversation_message import SystemPrompt
@@ -32,7 +33,7 @@ class ToolsCommandTest(unittest.TestCase):
 
         agent = _CapturingAgent(ToolBox().register(inspect_image))
 
-        CommandRegistry().with_defaults().get("tools").invoke(agent)  # type: ignore[arg-type]
+        CommandRegistry().with_defaults().get("tools").invoke(cast("Agent[T.Init]", agent))
 
         self.assertEqual(len(agent.events), 1)
         event = agent.events[0]
@@ -49,7 +50,7 @@ class ToolsCommandTest(unittest.TestCase):
     def test_emits_empty_tool_list(self) -> None:
         agent = _CapturingAgent(ToolBox())
 
-        CommandRegistry().with_defaults().get("tools").invoke(agent)  # type: ignore[arg-type]
+        CommandRegistry().with_defaults().get("tools").invoke(cast("Agent[T.Init]", agent))
 
         self.assertEqual(agent.events, [ShowToolsEvent(tools=[])])
 
