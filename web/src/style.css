@@ -307,11 +307,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .stop-button:disabled { opacity: .55; cursor: wait; }
 .steering-send { margin-right: 0; background: var(--warm); animation: dialog-in .14s ease-out; }
 .steering-send:hover:not(:disabled) { background: color-mix(in srgb, var(--warm) 84%, black); }
-/* Queued steering renders as a pending user-message bubble: right-aligned like
-   .message.user, warm tint and pulsing dot signal "not delivered yet". */
-.steering-card { position: relative; min-width: 0; width: fit-content; max-width: 84%; margin-left: auto; padding: 8px 12px 10px; border: 1px solid color-mix(in srgb, var(--warm) 30%, var(--line)); border-radius: 7px 7px 2px 7px; background: color-mix(in srgb, var(--warm) 7%, var(--paper)); animation: dialog-in .16s ease-out; transition: border-color .15s ease, background .15s ease; }
-.steering-card:hover { border-color: color-mix(in srgb, var(--warm) 52%, var(--line)); background: color-mix(in srgb, var(--warm) 10%, var(--paper)); }
-.steering-card.editing { width: 100%; border-style: solid; border-color: var(--warm); background: var(--paper); box-shadow: 0 4px 16px color-mix(in srgb, var(--warm) 16%, transparent); }
+.steering-card { position: relative; min-width: 0; width: fit-content; max-width: 84%; margin-left: auto; padding: 8px 12px 10px; border: 1px solid transparent; border-radius: 7px 7px 2px 7px; background: color-mix(in srgb, var(--warm) 7%, var(--paper)); animation: dialog-in .16s ease-out; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.steering-card:hover { background: color-mix(in srgb, var(--warm) 10%, var(--paper)); }
+.steering-card.editing { width: 100%; border-color: var(--warm); background: var(--paper); box-shadow: 0 4px 16px color-mix(in srgb, var(--warm) 16%, transparent); }
 .steering-header { min-height: 20px; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .steering-dot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--warm); animation: steering-pulse 1.8s ease-in-out infinite; }
 @keyframes steering-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warm) 42%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
