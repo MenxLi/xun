@@ -229,6 +229,8 @@ const view = computed(() => {
         }),
       }
     })
+    // rows with no bar inside the visible window carry no information
+    .filter(row => row.bars.some(bar => bar.left + bar.width > 0))
 
   return {
     rows,
