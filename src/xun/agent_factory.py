@@ -5,6 +5,7 @@ from .types import CancelledError
 from .toolcall import ToolCallContext
 from .error_catch import ErrorInfo, except_safe, Result
 from .agent_state import RuntimeEntry
+from .tracing import SpanSnapshot
 import uuid, time
 if TYPE_CHECKING:
     from .agent import Agent
@@ -25,7 +26,6 @@ class AgentWaitFinished(TypedDict):
 @dataclass
 class AgentThread:
     finished: Event = field(default_factory=Event)
-    born: Event = field(default_factory=Event)
     agent: Optional["Agent[Agent.T.Init]"] = None
     result: Optional[Result[str, ErrorInfo]] = None
 
@@ -73,36 +73,39 @@ class AgentPool(RuntimeEntry[dict[str, AgentThread]]):
 class AgentGetterParam:
     tool_context: ToolCallContext
     name: Optional[str] = None
+    span: Optional[SpanSnapshot] = None
 
 AgentGetterProtocol = Callable[["AgentGetterParam"], "Agent[Agent.T.Uninit]"]
+"""Caller should conform to the restrictions in the param, e.g. name/span."""
 
 def agent_run_factory(agent_getter: AgentGetterProtocol):
 
-    def agent_run_impl(ctx: ToolCallContext, task: str, name: Optional[str], agent_t: AgentThread) -> None:
+    def agent_run_impl(
+        param: AgentGetterParam, 
+        task: str, 
+        agent_t: AgentThread, 
+        ) -> None:
         """Worker body: never raises, so background threads always signal completion."""
         try:
-            param = AgentGetterParam(tool_context = ctx, name = name)
             with agent_getter(param) as agent:
                 agent_t.agent = agent
-                agent_t.born.set()
-                agent_t.result = agent.instruct(task, _emit_event = False).execute(context = ctx.value)
+                agent_t.result = agent.instruct(task, _emit_event = False).execute(context = param.tool_context.value)
         except CancelledError as e:
             agent_t.result = Result.Err(ErrorInfo(error=e.reason, details=e.reason))
         except BaseException as e:
             agent_t.result = Result.Err(ErrorInfo(error=str(e), details=repr(e)))
         finally:
-            agent_t.born.set()
             agent_t.finished.set()
     
     def agent_thread_run(ctx: ToolCallContext, task: str, name: Optional[str] = None) -> str:
         identifier = uuid.uuid4().hex[:8]
         agent_t = AgentThread()
         AgentPool.of(ctx.agent).add(identifier, agent_t)
+        param = AgentGetterParam(tool_context = ctx, name = name, span = ctx.agent.span.snapshot())
         Thread(
-            target=agent_run_impl, args=(ctx, task, name, agent_t),
+            target=agent_run_impl, args=(param, task, agent_t),
             name=f"subagent-{identifier}", daemon=True,
         ).start()
-        agent_t.born.wait()  # pin the child's span
         return identifier
     
     def agent_wait_impl(ctx: ToolCallContext, identifier: str, timeout_seconds: Optional[int]) -> Result[str, ErrorInfo] | AgentWaitTimeout:

@@ -161,6 +161,7 @@ class Agent(
         copy_toolbox: bool = True,
         copy_command: bool = True,
         copy_conversation: bool = False,
+        span_snapshot: Optional[SpanSnapshot] = None,
         ) -> "Agent[T.Uninit]":
         """
         Create a new agent that inherits the configuration and state from the parent agent.
@@ -176,7 +177,7 @@ class Agent(
             api_call_semaphore=parent_agent.api_call_semaphore,
             extension_loader=parent_agent.extension_loader,
             cancel_event=parent_agent.cancel_event.derive(),
-            span=SpanContext(parent=parent_agent.span),
+            span=SpanContext(parent=parent_agent.span if span_snapshot is None else span_snapshot),
         )
         # share one client (and its connection pool) once built
         new_agent._openai_client = parent_agent._openai_client

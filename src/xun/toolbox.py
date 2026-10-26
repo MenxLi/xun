@@ -103,14 +103,16 @@ class ToolBox:
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
         The sub-agents can be customized by providing an agent_getter function.
-        The getter receives an AgentGetterParam and is supposed to commit to it (e.g. name).
+        The getter receives an AgentGetterParam and is supposed to commit to it (e.g. name, span).
         the agent at the `max_depth` generation is born with sub-agent tools disabled.
         """
         if agent_getter is None:
             def _agent_getter(param: AgentGetterParam) -> "Agent[_Uninit]":
                 from .agent import Agent    # avoid circular import
                 ctx = param.tool_context
-                agent = Agent.inherit(ctx.agent).system(get_subagent_prompt())
+                agent = Agent.inherit(
+                    ctx.agent, span_snapshot=param.span
+                    ).system(get_subagent_prompt())
                 if param.name:
                     agent.name = param.name
                 return agent
