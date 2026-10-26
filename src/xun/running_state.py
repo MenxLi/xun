@@ -56,9 +56,9 @@ class AgentRunningStateMixin(AgentRunningStateProtocol):
         """True while an execution (model loop or tracked command) is active on this agent."""
         return self._running
 
-    def cancel(self) -> bool:
+    def cancel(self, *, force = False) -> bool:
         """Signal cancellation; returns False if the agent is idle (event left unset)."""
-        if not self._running:
+        if not self._running and not force:
             return False
         self.cancel_event.event.set()
         return True

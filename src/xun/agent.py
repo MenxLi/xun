@@ -301,6 +301,7 @@ class Agent(
             return self._cast_self(_Final)
         self.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=self))
         self.display.unbind(self)
+        self.cancel(force=True)
         self.display_event(AgentUnbindEvent())
         return self._cast_self(_Final)
 
