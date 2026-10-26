@@ -86,11 +86,13 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
     for tool_id, tr in tool_results:
         agent.conversation.add_tool_result(tool_id, tr)
 
-    agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(
+    after_exec_arg = HookArgs.AfterExecutionStepArgs(
         agent=agent,
-    ))
+        should_continue=bool(tool_results)
+    )
+    agent.hooks.after_execution_step.invoke(after_exec_arg)
 
-    return bool(tool_results), message.content or ""
+    return after_exec_arg.should_continue, message.content or ""
 
 
 def _run_model_call(params: ExecutionLoopParams, remaining_iterations: int) -> ChatCompletionMessageWithReasoning:

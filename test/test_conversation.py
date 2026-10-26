@@ -34,7 +34,7 @@ class ConversationImageInputTest(unittest.TestCase):
         self.assertEqual(conversation.messages, [])
 
         conversation.add_tool_result("call_1", Result.Ok("OK"))
-        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
+        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent, should_continue=True))
 
         self.assertEqual([message.role for message in conversation.messages], ["tool", "user"])
         parts = cast(list[dict[str, Any]], conversation.messages[-1].completion_param()["content"])
@@ -54,7 +54,7 @@ class ConversationImageInputTest(unittest.TestCase):
 
         def sent_image() -> Image.Image:
             conversation.add_tool_result("call_1", Result.Ok("OK"))
-            agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
+            agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent, should_continue=True))
             parts = cast(list[dict[str, Any]], conversation.messages[-1].completion_param()["content"])
             url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
             return Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1])))

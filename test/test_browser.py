@@ -102,7 +102,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         self.assertEqual(result, {"page_id": "page-1", "width": 20, "height": 10, "path": None})
         self.assertEqual(conversation.messages, [])
         conversation.add_tool_result("call-1", Result.Ok(result))
-        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent))
+        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent, should_continue=True))
         self.assertEqual([message.role for message in conversation.messages], ["tool", "user"])
 
     def test_screenshot_modes_are_mutually_exclusive(self) -> None:

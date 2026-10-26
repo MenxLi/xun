@@ -112,6 +112,7 @@ class HookArgs:
     @dataclass
     class AfterExecutionStepArgs:
         agent: "Agent[Agent.T.Init]"
+        should_continue: bool
 
     @dataclass
     class AfterInitializeArgs:
