@@ -18,11 +18,11 @@ from typing import Any
 import rich
 
 from xun import Command, ExtensionContext, Result, ToolBox, ToolCallContext, tool_attr, extension_attr
-from xun.error_catch import except_safe
-from xun.toolcall import Function
+from xun.core.error_catch import except_safe
+from xun.core.toolcall import Function
 from xun.tools.cmd import truncate_output
 from xun.tools.common import defer_tool_image
-from xun.types import ErrorInfo
+from xun.core.types import ErrorInfo
 
 from .client import MANAGER, McpError
 

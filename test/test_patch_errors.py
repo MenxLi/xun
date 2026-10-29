@@ -10,7 +10,7 @@ from unittest.mock import patch
 from xun.tools.common import Policy, get_policy
 from xun.tools.fs import fs_write_file
 from xun.tools.patch import _run_git_apply, apply_patch
-from xun.workspace import DeferredTempDirectory
+from xun.core.workspace import DeferredTempDirectory
 from test.test_patch import EXPECTED, ORIGINAL, PatchTestBase, SAMPLE_PATCH, make_ctx
 
 

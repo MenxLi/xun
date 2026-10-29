@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, Literal, Sequence
-from ..toolcall import ToolCallContext
+from ..core.toolcall import ToolCallContext
 from .common import resolve_path, get_policy
 
 # Shell metacharacters: shlex tokenises these into standalone (or run-together)
@@ -28,7 +28,9 @@ def agent_risk_assess(
     workdir: Path,
     extra_allowed_paths: Sequence[Path] = (),
     ) -> RiskAssessResult:
-    from .. import Agent, NullDisplay, ToolBox
+    from ..core.agent import Agent
+    from ..core.null_display import NullDisplay
+    from ..core.toolbox import ToolBox
     from .fs import fs_read_file, fs_list, fs_glob_files, fs_grep_files
     base = Agent(
         name="Command Risk Assessment", 

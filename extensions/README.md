@@ -27,7 +27,7 @@ def setup_extension(ctx: ExtensionContext) -> None:
 
 Typical effects, all through `ctx.agent`:
 
-- **Hooks**: `ctx.agent.hooks.<event>.add(...)` (see `src/xun/hooks.py`)
+- **Hooks**: `ctx.agent.hooks.<event>.add(...)` (see `src/xun/core/hooks.py`)
 - **Tools**: register functions on `ctx.agent.toolbox` (`@tool_attr(override=True)` replaces a built-in)
 - **Config**: mutate `ctx.agent.config` (setup runs before model auto-detect)
 - **Settings**: `ctx.settings` — the extension's bag from `config.json`, keyed by name: `{ "extension_settings": { "my_ext": { ... } } }`
@@ -77,4 +77,4 @@ See `stat/` for a full example.
 - Import or setup failure only warns: a broken extension never blocks startup or the others.
 - Opt out with `enable_extensions: false` in `$XUN_HOME/config.json` (internal helper agents set this automatically).
 
-`skills/` is an optional bundled extension for `SKILL.md` bundles — copy it in and `pip install pyyaml`. Implementation: [`src/xun/extension.py`](../src/xun/extension.py); any `.py` alongside this README is a working example.
+`skills/` is an optional bundled extension for `SKILL.md` bundles — copy it in and `pip install pyyaml`. Implementation: [`src/xun/core/extension.py`](../src/xun/core/extension.py); any `.py` alongside this README is a working example.

@@ -17,10 +17,10 @@ from pydantic import ValidationError
 
 from xun import (Agent, CancelledError, ErrorInfo, ExtensionContext, NullDisplay, Result,
                 ToolBox, ToolResultType)
-from xun.display_event import ErrorEvent, HTMLInfoEvent
-from xun.extension import Extension
-from xun.hooks import HookArgs
-from xun.workspace import Workspace
+from xun.core.display_event import ErrorEvent, HTMLInfoEvent
+from xun.core.extension import Extension
+from xun.core.hooks import HookArgs
+from xun.core.workspace import Workspace
 
 from . import budget, cli
 from .db import (DATA_VERSION, TOKEN, TOOLCALL, BudgetRow, ToolCallRow, TokenRow, default_db_path,

@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
-from xun.agent import Agent
-from xun.agent_state import StateRuntimeEntry
+from xun.core.agent import Agent
+from xun.core.agent_state import StateRuntimeEntry
 
 try:
     import yaml

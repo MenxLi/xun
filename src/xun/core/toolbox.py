@@ -4,7 +4,6 @@ if TYPE_CHECKING:
     from .agent import Agent, _Uninit
 from typing import Callable
 import fnmatch
-from .tools import *
 from .prompt import get_subagent_prompt
 from .agent_state import RuntimeEntry
 from .types import ModelCapabilityType, ToolResultType
@@ -14,19 +13,10 @@ from .agent_factory import AgentGetterProtocol, AgentGetterParam, agent_run_fact
 from .config import DEFAULTS
 import rich
 
+STANDARD_TOOL_SET_OPTIONS = Literal["system", "framework", "fs", "patch", "cmd", "search", "browser", "diagnostic"]
+
 class ToolBox:
 
-    STANDARD_TOOL_SET_OPTIONS = Literal["system", "framework", "fs", "patch", "cmd", "search", "browser", "diagnostic"]
-    STANDARD_TOOL_FACTORIES: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
-        "system": expose_system_tools,
-        "framework": expose_framework_tools,
-        "fs": expose_fs_tools,
-        "patch": expose_patch_tools,
-        "cmd": expose_cmd_tools,
-        "search": expose_search_tools,
-        "browser": expose_browser_tools,
-        "diagnostic": expose_diagnostic_tools,
-    }
     SUBAGENT_DEPTH_FLAG = "__subagent_depth"
     SUBAGENT_TOOLS = ("agent_run", "agent_spawn", "agent_wait", "agent_list")
 
@@ -44,15 +34,31 @@ class ToolBox:
         """
         Register standard tools provided by the system.
         Call this method to quickly set up a toolbox with a wide range of capabilities for your agent.
-        For toolset names, see ToolBox.STANDARD_TOOL_FACTORIES
+        Tool sets: system, framework, fs, patch, cmd, search, browser, diagnostic.
         """
+        # deferred: builtin tools live outside core (xun.tools)
+        from ..tools import (
+            expose_browser_tools, expose_cmd_tools, expose_diagnostic_tools,
+            expose_framework_tools, expose_fs_tools, expose_patch_tools,
+            expose_search_tools, expose_system_tools,
+        )
+        factories: dict[STANDARD_TOOL_SET_OPTIONS, Callable[[], list[Callable]]] = {
+            "system": expose_system_tools,
+            "framework": expose_framework_tools,
+            "fs": expose_fs_tools,
+            "patch": expose_patch_tools,
+            "cmd": expose_cmd_tools,
+            "search": expose_search_tools,
+            "browser": expose_browser_tools,
+            "diagnostic": expose_diagnostic_tools,
+        }
         if not tool_set:
-            tool_set = tuple(self.STANDARD_TOOL_FACTORIES.keys())
+            tool_set = tuple(factories.keys())
         for tool_name in tool_set:
-            assert tool_name in self.STANDARD_TOOL_FACTORIES, \
+            assert tool_name in factories, \
                 f"Unknown standard tool set: {tool_name}. " \
-                f"Available sets: {list(self.STANDARD_TOOL_FACTORIES.keys())}"
-            factory = self.STANDARD_TOOL_FACTORIES[tool_name]
+                f"Available sets: {list(factories.keys())}"
+            factory = factories[tool_name]
             self.register(*factory())
         return self
 

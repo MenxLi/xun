@@ -15,16 +15,16 @@ from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field, TypeAdapter
 import rich
 
-from ..display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
-from ..tracing import SpanSnapshot
-from ..types import CancelledError, Result
-from .steering import SteeringStore, UserInstruction
+from ..core.display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
+from ..core.tracing import SpanSnapshot
+from ..core.types import CancelledError, Result
+from ..core.steering import SteeringStore, UserInstruction
 from .web_file import build_file_router
 from .web_serve import ServeManager, build_serve_router
-from ..hooks import HookArgs
+from ..core.hooks import HookArgs
 
 if TYPE_CHECKING:
-    from ..agent import Agent
+    from ..core.agent import Agent
 
 
 class ChatMessage(BaseModel):
@@ -268,7 +268,7 @@ class WebDisplay(DisplayAbstract):
         self._accepted_client_ids.add(client_id)
 
     def _submit(self, message: WebMessage) -> None:
-        from ..agent import Agent
+        from ..core.agent import Agent
         if isinstance(message, ChatMessage):
             agent = self._agent(message.agent_id)
             content = message.content.strip()
@@ -415,7 +415,7 @@ class WebDisplay(DisplayAbstract):
 
         @router.post("/api/steering/{agent_id}")
         async def add_steering(agent_id: str, message: SteeringMessage) -> dict[str, Any]:
-            from ..agent import Agent
+            from ..core.agent import Agent
             agent = self._agent(agent_id)
             content, images = _steering_input(message)
             if images and Agent.is_initialized(agent) and not self._supports_vision(agent):

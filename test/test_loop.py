@@ -5,10 +5,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay
-from xun.display_abstract import DisplayAbstract, DisplayEvent
-from xun.hooks import HookArgs
-from xun.loop import _execute_step
-from xun.workspace import Workspace
+from xun.core.display_abstract import DisplayAbstract, DisplayEvent
+from xun.core.hooks import HookArgs
+from xun.core.loop import _execute_step
+from xun.core.workspace import Workspace
 
 
 class _PromptDisplay(DisplayAbstract):
@@ -50,7 +50,7 @@ class CompletionRetryTest(unittest.TestCase):
         self.display.answers = list(answers)
         self.agent.config.auto_confirm = auto_confirm
         params = HookArgs.BeforeExecutionArgs(agent=self.agent, schema=None, max_iterations=1)
-        with patch("xun.loop.time.sleep") as sleep:
+        with patch("xun.core.loop.time.sleep") as sleep:
             with self.assertRaises(RuntimeError) as raised:
                 _execute_step(params, 1)
         return raised.exception, [call.args[0] for call in sleep.call_args_list]

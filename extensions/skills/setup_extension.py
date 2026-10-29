@@ -7,7 +7,7 @@ command plus the `list_skills` / `activate_skill` / `read_skill_file` /
 automatically on the next message.
 """
 from xun import Agent, Command, ExtensionContext, ToolCallContext, extension_attr
-from xun.display_abstract import ShowExtensionsEvent
+from xun.core.display_abstract import ShowExtensionsEvent
 
 from .catalog import ensure_fresh, require, roots, session
 from .tools import activate_skill

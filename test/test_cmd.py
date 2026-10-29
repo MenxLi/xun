@@ -10,16 +10,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay, ToolBox
-from xun.toolcall import ToolCallContext
-from xun.agent_state import AgentState
+from xun.core.toolcall import ToolCallContext
+from xun.core.agent_state import AgentState
 from xun.tools.cmd import (
     CmdExecResult, CommandPool, CommandResult, bash, bash_spawn, bash_kill, bash_running, bash_wait,
     expose_cmd_tools, run_command, truncate_output,
 )
 from xun.tools.cmd_policy import RiskAssessResult
 from xun.tools.cmd_policy import _confirmation_policy, _parse_command_spec
-from xun.types import CancelledError
-from xun.workspace import DeferredTempDirectory, Workspace
+from xun.core.types import CancelledError
+from xun.core.workspace import DeferredTempDirectory, Workspace
 
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
@@ -471,7 +471,7 @@ class CmdExecutionTest(unittest.TestCase):
                 self.agent.cancel_event.event.clear()
 
     def test_tools_register_valid_schemas(self) -> None:
-        from xun.toolcall import Function
+        from xun.core.toolcall import Function
         tools = expose_cmd_tools()
         self.assertEqual([tool.__name__ for tool in tools], [
             "bash", "bash_spawn", "bash_wait", "bash_running", "bash_kill",

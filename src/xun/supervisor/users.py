@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import get_home_dir
+from ..core.config import get_home_dir
 
 
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")

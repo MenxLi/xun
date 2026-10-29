@@ -13,7 +13,7 @@ from .types import CancelledError
 from .agent_lifecycle import T, LifecycleT, _Uninit, _Init, _Final, _LT
 from .agent_state import AgentState
 from .display_abstract import *
-from .displays.null_display import NullDisplay
+from .null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
 from .slot_semaphore import SlotSemaphore
 from .conversation import Conversation

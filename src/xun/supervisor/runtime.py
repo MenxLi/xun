@@ -20,8 +20,8 @@ from docker.errors import NotFound
 from docker.models.containers import Container as DockerContainer
 from rich.console import Console
 
-from ..config import HOME_COPY_INCLUDE
-from ..util import resolve_environment
+from ..core.config import HOME_COPY_INCLUDE
+from ..core.util import resolve_environment
 from .users import User
 
 _console = Console(stderr=True)

@@ -5,14 +5,14 @@ from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, HookArgs, NullDisplay
-from xun.agent import AGENTS_SECTION, T
-from xun.command import Command, CommandRegistry
-from xun.workspace import Workspace
-from xun.conversation_message import SystemPrompt
-from xun.display_abstract import ShowToolsEvent
-from xun.store import Store
-from xun.toolbox import ToolBox
-from xun.toolcall import tool_attr
+from xun.core.agent import AGENTS_SECTION, T
+from xun.core.command import Command, CommandRegistry
+from xun.core.workspace import Workspace
+from xun.core.conversation_message import SystemPrompt
+from xun.core.display_abstract import ShowToolsEvent
+from xun.core.store import Store
+from xun.core.toolbox import ToolBox
+from xun.core.toolcall import tool_attr
 
 
 class _CapturingAgent:
@@ -155,7 +155,7 @@ class HistoryCommandTest(unittest.TestCase):
             save = commands.get("save")
             load = commands.get("load")
             assert save is not None and load is not None
-            with patch("xun.store.Store", side_effect=lambda: Store(Path(history))):
+            with patch("xun.core.store.Store", side_effect=lambda: Store(Path(history))):
                 save.invoke(agent)
                 instructions.write_text("New instructions.", encoding="utf-8")
                 load.invoke(agent, ["latest"])
@@ -169,7 +169,7 @@ class HistoryCommandTest(unittest.TestCase):
             agent = Agent(display=NullDisplay(), workspace=Workspace(workdir=Path(directory))).initialize()
             agent.conversation.add_user_message("saved message")
             commands = CommandRegistry().with_fs_extra_defaults()
-            with patch("xun.store.Store", side_effect=lambda: Store(Path(history))):
+            with patch("xun.core.store.Store", side_effect=lambda: Store(Path(history))):
                 commands.get("save").invoke(agent)
                 agent.conversation.clear()
                 commands.get("load").invoke(agent, ["latest"])

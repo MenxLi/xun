@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 
 if TYPE_CHECKING:
-    from ..agent import Agent
+    from ..core.agent import Agent
 
 AgentGetter = Callable[[str], "Agent[Agent.T.Any]"]
 """Resolves an agent identifier to an Agent, raising HTTPException(404) when unknown."""

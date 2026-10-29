@@ -9,12 +9,12 @@ from unittest.mock import patch
 from .setup_extension import setup_extension
 from .tools import activate_skill, read_skill_file
 from xun import Agent, Command, NullDisplay, ToolBox
-from xun.conversation_message import SystemPrompt
-from xun.display_abstract import ShowExtensionsEvent
-from xun.display_event import InfoEvent
-from xun.hooks import HookArgs
-from xun.toolcall import ToolCallContext
-from xun.workspace import Workspace
+from xun.core.conversation_message import SystemPrompt
+from xun.core.display_abstract import ShowExtensionsEvent
+from xun.core.display_event import InfoEvent
+from xun.core.hooks import HookArgs
+from xun.core.toolcall import ToolCallContext
+from xun.core.workspace import Workspace
 
 
 class SkillsTestBase(unittest.TestCase):

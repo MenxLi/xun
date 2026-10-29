@@ -6,17 +6,17 @@ from tempfile import TemporaryDirectory
 from typing import cast
 from unittest.mock import patch
 from xun import Agent, NullDisplay
-from xun.agent import AGENTS_SECTION
-from xun.conversation_message import SystemPrompt
-from xun.display_abstract import (
+from xun.core.agent import AGENTS_SECTION
+from xun.core.conversation_message import SystemPrompt
+from xun.core.display_abstract import (
     AgentRunningEndEvent,
     AgentRunningStartEvent,
     ConfirmEvent,
     DisplayAbstract,
     DisplayEvent,
 )
-from xun.types import CancelledError
-from xun.workspace import Workspace
+from xun.core.types import CancelledError
+from xun.core.workspace import Workspace
 
 
 class _RecordingDisplay(DisplayAbstract):
@@ -93,7 +93,7 @@ class AgentLifecycleTest(unittest.TestCase):
             path.write_text("After execution.", encoding="utf-8")
             return "done"
 
-        with patch("xun.agent.execution_loop", side_effect=execute_with_edit):
+        with patch("xun.core.agent.execution_loop", side_effect=execute_with_edit):
             self.assertEqual(agent.execute().unwrap(), "done")
         prompt = agent.conversation.messages[0]
         assert isinstance(prompt, SystemPrompt)
@@ -103,7 +103,7 @@ class AgentLifecycleTest(unittest.TestCase):
             path.unlink()
             raise RuntimeError("execution failed")
 
-        with patch("xun.agent.execution_loop", side_effect=execute_with_error):
+        with patch("xun.core.agent.execution_loop", side_effect=execute_with_error):
             self.assertTrue(agent.execute().is_err())
         self.assertNotIn(AGENTS_SECTION, prompt.persist_sections)
 

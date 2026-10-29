@@ -241,7 +241,7 @@ The config supports `${XUN_...}` placeholders which are substituted from environ
 | `load_project_instructions` | — | Automatically load `AGENTS.md` from the working directory into the system prompt. |
 | `extension_settings` | — | Per-extension settings, keyed by extension name; each extension reads its own through `ctx.settings` (see Extensions). |
 
-More configuration options are available; see the source code of `AgentConfig` at [src/xun/config.py](src/xun/config.py).
+More configuration options are available; see the source code of `AgentConfig` at [src/xun/core/config.py](src/xun/core/config.py).
 
 ## Extensions
 

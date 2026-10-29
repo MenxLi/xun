@@ -6,10 +6,10 @@ from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, JsonEntry, NullDisplay, ToolBox, CommandRegistry
-from xun.display_abstract import ShowExtensionsEvent
-from xun.extension import default_loader, ExtensionInfo, ExtensionStatus
-from xun.workspace import Workspace
-import xun.extension as ext_mod
+from xun.core.display_abstract import ShowExtensionsEvent
+from xun.core.extension import default_loader, ExtensionInfo, ExtensionStatus
+from xun.core.workspace import Workspace
+import xun.core.extension as ext_mod
 
 
 def _write(path: Path, content: str) -> None:
@@ -245,7 +245,7 @@ def setup_extension(ctx):
         # tool re-registration on replay is silently skipped, init succeeds...
         self.assertIn("ext_tool", [t.name for t in child.toolbox.list_tools()])
         # ...while hooks (not inherited) arrive only via replay
-        from xun.hooks import HookArgs
+        from xun.core.hooks import HookArgs
         child.hooks.before_tool_call.invoke(HookArgs.BeforeToolCallArgs(agent=child, tool_calls=[]))
         self.assertEqual(_json_value(child, "hits"), [1])
 

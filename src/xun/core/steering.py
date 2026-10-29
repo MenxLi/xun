@@ -1,8 +1,7 @@
 """Buffer for user instructions injected while an agent is running.
 
-The web display's ``after_execution_step`` flush hook is the sole consumer:
-routes only enqueue (while the agent runs); idle input goes through the
-normal message path instead.
+Enqueue anytime; drain between execution steps via the
+`after_execution_step` hook.
 """
 
 from __future__ import annotations
@@ -14,10 +13,10 @@ from typing import TYPE_CHECKING, Sequence
 
 from PIL.Image import Image
 
-from ..agent_state import StateRuntimeEntry
+from .agent_state import StateRuntimeEntry
 
 if TYPE_CHECKING:
-    from ..agent import Agent
+    from .agent import Agent
 
 @dataclass
 class UserInstruction:

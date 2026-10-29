@@ -20,8 +20,8 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.shortcuts import choice as prompt_choice
 
 if TYPE_CHECKING:
-    from ..agent import Agent
-    from ..agent_lifecycle import T
+    from ..core.agent import Agent
+    from ..core.agent_lifecycle import T
 
 
 CommandProvider = Callable[[], Iterable[tuple[str, str]]]

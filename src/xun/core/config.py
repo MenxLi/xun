@@ -13,7 +13,7 @@ from string import Template
 from .types import ModelCapabilityType, JsonType
 
 
-ASSET_DIR = Path(__file__).parent / "assets"
+ASSET_DIR = Path(__file__).parent.parent / "assets"
 
 def xun_version() -> str | None:
     """Installed release version of xun, or None when running without package metadata."""

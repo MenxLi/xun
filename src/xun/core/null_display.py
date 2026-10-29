@@ -1,4 +1,4 @@
-from ..display_abstract import DisplayAbstract, DisplayEvent
+from .display_abstract import DisplayAbstract, DisplayEvent
 
 class NullDisplay(DisplayAbstract):
     """A display that swallows all events and cannot prompt the user.

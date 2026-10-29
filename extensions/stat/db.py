@@ -14,8 +14,8 @@ from urllib.request import pathname2url
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from xun.config import get_internal_env
-from xun.extension import extension_data_dir
+from xun.core.config import get_internal_env
+from xun.core.extension import extension_data_dir
 
 
 class Row(BaseModel):

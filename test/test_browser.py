@@ -9,12 +9,12 @@ from unittest.mock import MagicMock, call, patch
 
 from PIL import Image
 
-from xun.conversation import Conversation
-from xun.hooks import HookArgs, Hooks
-from xun.agent_state import AgentState
-from xun.toolcall import ToolCallContext
+from xun.core.conversation import Conversation
+from xun.core.hooks import HookArgs, Hooks
+from xun.core.agent_state import AgentState
+from xun.core.toolcall import ToolCallContext
 from xun.tools.browser import BrowserPage, BrowserRuntime, ScreenshotCapture, check_url, expose_browser_tools
-from xun.types import Result
+from xun.core.types import Result
 from test.test_patch import make_ctx
 
 

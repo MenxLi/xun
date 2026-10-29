@@ -5,7 +5,7 @@ from typing import Callable
 
 from .common import get_policy, resolve_path
 from .fs import ask_for_write_permission
-from ..toolcall import ToolCallContext
+from ..core.toolcall import ToolCallContext
 
 
 def _run_git_apply(directory: Path, patch: str, *options: str) -> str:

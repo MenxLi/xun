@@ -26,7 +26,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount
 from starlette.types import Message
 
-from ..config import ASSET_DIR
+from ..core.config import ASSET_DIR
 from .web_display import WebDisplay
 
 

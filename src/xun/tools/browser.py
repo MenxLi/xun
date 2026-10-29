@@ -13,7 +13,7 @@ from typing import Literal, cast
 from urllib.parse import unquote, urlparse
 from typing_extensions import NotRequired, TypedDict
 
-from ..types import TypeVar
+from ..core.types import TypeVar
 
 import html_to_markdown
 from PIL import Image as PILImage
@@ -30,10 +30,10 @@ from playwright.sync_api import (
     sync_playwright,
 )
 
-from ..hooks import HookArgs
-from ..agent_state import RuntimeEntry
-from ..toolcall import ToolCallContext as Context, tool_attr
-from ..types import JsonType
+from ..core.hooks import HookArgs
+from ..core.agent_state import RuntimeEntry
+from ..core.toolcall import ToolCallContext as Context, tool_attr
+from ..core.types import JsonType
 from .common import defer_tool_image, resolve_path
 
 

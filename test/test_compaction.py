@@ -5,12 +5,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from xun import Agent, NullDisplay
-from xun.conversation import Conversation
-from xun.conversation_message import COMPACTION_NOTICE, RawOpenAIMessage, SystemPrompt
-from xun.types import Result
-from xun.compact import AutoCompactor, CompactionCounter, CompactorAbstract, SummaryCompactResult, compact_conversation
-from xun.hooks import HookArgs, Hooks
-from xun.workspace import Workspace
+from xun.core.conversation import Conversation
+from xun.core.conversation_message import COMPACTION_NOTICE, RawOpenAIMessage, SystemPrompt
+from xun.core.types import Result
+from xun.core.compact import AutoCompactor, CompactionCounter, CompactorAbstract, SummaryCompactResult, compact_conversation
+from xun.core.hooks import HookArgs, Hooks
+from xun.core.workspace import Workspace
 
 
 KEEP_RECENT = 16
@@ -217,7 +217,7 @@ class AutoCompactionTest(unittest.TestCase):
         for disable, tokens in ((True, 9_999_999), (False, 5_000)):
             agent = self._agent(100_000, tokens)
             agent.config.auto_compact.enabled = not disable
-            with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+            with patch("xun.core.compact.compact_conversation", self._summary(agent)) as compact_conversation:
                 AutoCompactor().auto_compact(agent)
             compact_conversation.assert_not_called()
 
@@ -225,7 +225,7 @@ class AutoCompactionTest(unittest.TestCase):
         # the tool chain's reclaim fraction is large enough that the estimated token
         # count falls below the threshold: the cheap pass alone suffices
         agent = self._agent(100_000, 105_000)
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+        with patch("xun.core.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             AutoCompactor().auto_compact(agent)
         self.assertEqual(agent.conversation.compaction_counter.tool_rounds, 1)
         compact_conversation.assert_not_called()
@@ -233,7 +233,7 @@ class AutoCompactionTest(unittest.TestCase):
     def test_escalates_when_reclaim_leaves_estimate_over_threshold(self) -> None:
         # huge stale count vs. tiny threshold: even a big reclaim cannot get under it
         agent = self._agent(1_000, 9_999_999)
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+        with patch("xun.core.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             AutoCompactor().auto_compact(agent)
         self.assertEqual(compact_conversation.call_count, 3)
         agent.display_error.assert_called_once()
@@ -242,7 +242,7 @@ class AutoCompactionTest(unittest.TestCase):
     def test_escalates_after_enough_cheap_rounds(self) -> None:
         agent = self._agent(100_000, 105_000)
         compactor = AutoCompactor()
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+        with patch("xun.core.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             for _ in range(compactor.escalation_rounds):
                 compactor.auto_compact(agent)
         compact_conversation.assert_called()
@@ -252,14 +252,14 @@ class AutoCompactionTest(unittest.TestCase):
     def test_escalates_immediately_when_cheap_pass_reclaims_nothing(self) -> None:
         agent = self._agent(1_000, 9_999_999)
         agent.conversation.messages = agent.conversation.messages[:4]  # below keep_max, nothing to reclaim
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+        with patch("xun.core.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             AutoCompactor().auto_compact(agent)
         # zero reclaim keeps the estimate over threshold, but the first summary fixes it
         self.assertEqual(compact_conversation.call_count, 1)
 
     def test_no_retrigger_while_token_count_unknown(self) -> None:
         agent = self._agent(1_000, None)
-        with patch("xun.compact.compact_conversation", self._summary(agent)) as compact_conversation:
+        with patch("xun.core.compact.compact_conversation", self._summary(agent)) as compact_conversation:
             AutoCompactor().auto_compact(agent)
         compact_conversation.assert_not_called()
 
@@ -267,7 +267,7 @@ class AutoCompactionTest(unittest.TestCase):
         agent = self._agent(1_000, 9_999_999)
         agent.conversation.compaction_counter.tool_rounds = AutoCompactor().escalation_rounds - 1
         failed = MagicMock(side_effect=RuntimeError("summary failed"))
-        with patch("xun.compact.compact_conversation", failed):
+        with patch("xun.core.compact.compact_conversation", failed):
             AutoCompactor().auto_compact(agent)
 
         agent.display_error.assert_called_once_with("Auto-compaction failed: summary failed")
@@ -363,7 +363,7 @@ class SummarizerConfigTest(unittest.TestCase):
             seen["display"] = summarizer.display
             return "SUMMARY"
 
-        with patch("xun.agent.execution_loop", fake_execution_loop):
+        with patch("xun.core.agent.execution_loop", fake_execution_loop):
             result = compact_conversation(parent)
 
         self.assertTrue(result.compacted)

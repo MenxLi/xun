@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 
 from xun import Agent, Command, ExtensionContext, HookArgs, extension_attr
-from xun.display_event import HTMLInfoEvent
+from xun.core.display_event import HTMLInfoEvent
 
 from . import budget, cli
 from .cli import build_parser

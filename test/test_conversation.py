@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from xun.conversation import Conversation
-from xun.conversation_message import UserMessage
-from xun.display_abstract import UserMessageEvent
+from xun.core.conversation import Conversation
+from xun.core.conversation_message import UserMessage
+from xun.core.display_abstract import UserMessageEvent
 from xun.entrypoint import MessageInstruction, input_to_instruction
-from xun.hooks import HookArgs, Hooks
-from xun.toolcall import ToolCallContext
+from xun.core.hooks import HookArgs, Hooks
+from xun.core.toolcall import ToolCallContext
 from xun.tools.fs import fs_request_image
-from xun.types import Result
+from xun.core.types import Result
 
 
 class ConversationImageInputTest(unittest.TestCase):

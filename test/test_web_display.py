@@ -16,22 +16,22 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
-from xun.agent import Agent, T
-from xun.agent_state import AgentState
-from xun.tracing import SpanContext, SpanSnapshot
-from xun.command import Command, CommandRegistry
-from xun.config import AgentConfig, AutoCompactionConfig, ModelConfig, ProviderConfig
-from xun.conversation import Conversation
-from xun.display_abstract import (
+from xun.core.agent import Agent, T
+from xun.core.agent_state import AgentState
+from xun.core.tracing import SpanContext, SpanSnapshot
+from xun.core.command import Command, CommandRegistry
+from xun.core.config import AgentConfig, AutoCompactionConfig, ModelConfig, ProviderConfig
+from xun.core.conversation import Conversation
+from xun.core.display_abstract import (
     AgentDisplayMixin, AgentInfo, DisplayAbstract, UserCommandEvent, UserMessageEvent,
 )
-from xun.running_state import AgentRunningStateMixin, ChainedEvent
-from xun.hooks import HookArgs, Hooks
+from xun.core.running_state import AgentRunningStateMixin, ChainedEvent
+from xun.core.hooks import HookArgs, Hooks
 from xun.displays import WebDisplay, WebDisplayService
 from xun.displays.web_serve import MAX_SERVE_SERVERS
-from xun.displays.null_display import NullDisplay
-from xun.types import CancelledError, ErrorInfo, Result
-from xun.workspace import Workspace
+from xun.core.null_display import NullDisplay
+from xun.core.types import CancelledError, ErrorInfo, Result
+from xun.core.workspace import Workspace
 
 
 class _Execution:

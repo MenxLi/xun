@@ -2,7 +2,7 @@ import json
 import unittest
 from typing import Optional, Union
 
-from xun.toolcall import Function, ToolCallContext
+from xun.core.toolcall import Function, ToolCallContext
 
 
 def _sample_tool(

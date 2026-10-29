@@ -15,9 +15,9 @@ import uuid
 
 from typing_extensions import TypedDict
 
-from ..agent_state import RuntimeEntry
-from ..toolcall import ToolCallContext
-from ..types import CancelledError
+from ..core.agent_state import RuntimeEntry
+from ..core.toolcall import ToolCallContext
+from ..core.types import CancelledError
 from .cmd_policy import authorize_command
 
 _POOL_CREATION_LOCK = Lock()

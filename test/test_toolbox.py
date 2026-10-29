@@ -1,6 +1,6 @@
 import unittest
 
-from xun.toolbox import ToolBox
+from xun.core.toolbox import ToolBox
 
 
 class ToolBoxCloneTest(unittest.TestCase):

@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 from xun.tools.common import Policy
 from xun.tools.patch import apply_patch
-from xun.toolbox import ToolBox
-from xun.toolcall import ToolCallContext
-from xun.workspace import Workspace
+from xun.core.toolbox import ToolBox
+from xun.core.toolcall import ToolCallContext
+from xun.core.workspace import Workspace
 
 SAMPLE_PATCH = """\
 diff --git a/hello.py b/hello.py

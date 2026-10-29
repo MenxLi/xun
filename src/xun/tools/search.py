@@ -25,11 +25,11 @@ from urllib.parse import urlparse
 import json_repair
 from pydantic import BaseModel, Field, ValidationError
 
-from ..hooks import HookArgs
-from ..toolcall import ToolCallContext
+from ..core.hooks import HookArgs
+from ..core.toolcall import ToolCallContext
 
 if TYPE_CHECKING:
-    from ..agent import Agent
+    from ..core.agent import Agent
 
 SEARCH_MAX_ITERATIONS = 24
 SEARCH_MAX_RESULTS_LIMIT = 20
@@ -167,8 +167,8 @@ def web_search(ctx: ToolCallContext, query: str, max_results: int = 5) -> WebSea
     Input: query (search keywords) and max_results (upper bound on results).
     Output: query, engine used, ordered results (title/url/snippet), notes.
     """
-    from ..agent import Agent  # avoid circular import
-    from ..toolbox import ToolBox
+    from ..core.agent import Agent  # avoid circular import
+    from ..core.toolbox import ToolBox
     from .system import system_info, system_time
 
     query = query.strip()
@@ -243,9 +243,9 @@ def expose_search_tools() -> list[Callable]:
 
 
 if __name__ == "__main__":
-    from ..agent import Agent
+    from ..core.agent import Agent
     from ..displays.display import Display
-    from ..toolcall import ToolCallContext
+    from ..core.toolcall import ToolCallContext
 
     query = input("Enter your search query: ")
     host = Agent(display=Display()).initialize()

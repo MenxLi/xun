@@ -6,20 +6,20 @@ import docker
 from docker.errors import NotFound
 from pydantic import BaseModel
 
-from .display_abstract import DisplayAbstract
-from .config import get_home_dir, HOME_COPY_INCLUDE
+from .core.display_abstract import DisplayAbstract
+from .core.config import get_home_dir, HOME_COPY_INCLUDE
 from .displays.display import Display
 from .displays.web_display import WebDisplay
 from .displays.web_service import WebDisplayService
-from .toolbox import ToolBox
-from .agent import Agent
-from .prompt import get_system_prompt
-from .command import Command
-from .types import CancelledError, Result
-from .workspace import Workspace
+from .core.toolbox import ToolBox
+from .core.agent import Agent
+from .core.prompt import get_system_prompt
+from .core.command import Command
+from .core.types import CancelledError, Result
+from .core.workspace import Workspace
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
-from .util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
+from .core.util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
 
 from dotenv import load_dotenv
 load_dotenv()

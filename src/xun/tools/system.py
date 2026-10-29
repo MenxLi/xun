@@ -6,8 +6,8 @@ import time
 import platform
 from datetime import datetime
 from typing import Callable
-from ..toolcall import ToolCallContext
-from ..toolcall import tool_attr
+from ..core.toolcall import ToolCallContext
+from ..core.toolcall import tool_attr
 
 def _iana_timezone() -> str:
     """Best-effort IANA timezone name (e.g. 'Asia/Shanghai') resolved from /etc/localtime."""

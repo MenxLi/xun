@@ -3,7 +3,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
-from xun.slot_semaphore import SlotSemaphore, _Slot
+from xun.core.slot_semaphore import SlotSemaphore, _Slot
 
 POLL = 0.01
 GRACE = 0.15

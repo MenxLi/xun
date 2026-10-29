@@ -10,8 +10,8 @@ from rich.table import Table
 from .runtime import DockerManager, instance_id, start_shell
 from .service import Multiplexer, Supervisor
 from .users import UserStore
-from ..config import get_home_dir
-from ..util import CONTAINER_ENV_PATTERNS, parse_env_option
+from ..core.config import get_home_dir
+from ..core.util import CONTAINER_ENV_PATTERNS, parse_env_option
 
 
 def _parse_port_range(value: str) -> range:

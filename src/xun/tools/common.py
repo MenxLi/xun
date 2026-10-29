@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from typing import Sequence, TYPE_CHECKING
 from PIL.Image import Image
 
-from ..hooks import HookArgs
-from ..agent_state import StateRuntimeEntry
-from ..toolcall import ToolCallContext as Context
-from ..util import image_to_url
-from ..workspace import ResolvedPath
+from ..core.hooks import HookArgs
+from ..core.agent_state import StateRuntimeEntry
+from ..core.toolcall import ToolCallContext as Context
+from ..core.util import image_to_url
+from ..core.workspace import ResolvedPath
 
 if TYPE_CHECKING:
-    from ..agent import Agent
-    from ..command import Command
+    from ..core.agent import Agent
+    from ..core.command import Command
 
 def resolve_path(ctx: Context, path: str | Path, raise_on_invalid: bool = True) -> ResolvedPath:
     """ Resolve a path relative to the agent's workspace (workdir / tempdir scope). """
@@ -202,7 +202,7 @@ def get_policy_from_agent(agent: Agent[Agent.T.Init]) -> Policy:
     return agent.state.get_entry("__builtin_tool_policy", Policy)
 
 def default_tool_commands() -> list[Command]:
-    from ..command import Command, CommandRegistry
+    from ..core.command import Command, CommandRegistry
 
     _policy = get_policy_from_agent     # shorthand
 

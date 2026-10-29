@@ -3,7 +3,7 @@ import py_compile
 import shutil
 import subprocess
 from typing import Callable, Literal
-from ..toolcall import ToolCallContext
+from ..core.toolcall import ToolCallContext
 from .common import resolve_path
 
 LANGUAGE = Literal["python", "json", "bash"]

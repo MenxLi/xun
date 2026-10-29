@@ -11,11 +11,11 @@ import rich.markdown
 import rich.markup
 import rich.text
 
-from ..display_abstract import *
+from ..core.display_abstract import *
 from .cli_session import CliSession, CommandProvider
 if TYPE_CHECKING:
-    from ..agent import Agent
-    from ..agent_lifecycle import T
+    from ..core.agent import Agent
+    from ..core.agent_lifecycle import T
 
 class Display(DisplayAbstract):
     def __init__(self, event_buffer_size: int = 1000):

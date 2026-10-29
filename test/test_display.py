@@ -12,7 +12,7 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output.vt100 import Vt100_Output
 import rich.console
 
-from xun.display_abstract import (
+from xun.core.display_abstract import (
     AgentBindEvent,
     AgentInfo,
     AgentRunningEndEvent,
@@ -26,7 +26,7 @@ from xun.display_abstract import (
     ToolResultEvent,
     UserMessageEvent,
 )
-from xun.tracing import SpanSnapshot
+from xun.core.tracing import SpanSnapshot
 from xun.displays.cli_session import (
     _ActivePrompt,
     CliCompleter,

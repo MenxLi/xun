@@ -13,7 +13,7 @@ from docker.errors import NotFound
 from xun.supervisor.runtime import DockerManager, ManagedContainer
 from xun.supervisor.service import Multiplexer, Supervisor
 from xun.supervisor.users import User, UserStore
-from xun.util import resolve_environment, parse_env_option
+from xun.core.util import resolve_environment, parse_env_option
 
 
 class EnvOptionTest(unittest.TestCase):
