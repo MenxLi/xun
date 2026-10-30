@@ -2,10 +2,11 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 from xun import Agent, JsonEntry, NullDisplay, ToolBox, CommandRegistry
+from xun.session import register_default_commands
 from xun.core.display_abstract import ShowExtensionsEvent
 from xun.core.extension import default_loader, ExtensionInfo, ExtensionStatus
 from xun.core.workspace import Workspace
@@ -17,7 +18,7 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content)
 
 
-def _json_value(agent: Agent, key: str):
+def _json_value(agent: "Agent[Agent.T.Any]", key: str) -> Any:
     entry = agent.state[key]
     assert isinstance(entry, JsonEntry)
     return entry.value
@@ -152,6 +153,7 @@ def setup_extension(ctx): pass
         self.assertEqual(default_loader.imported(), [])
         info = {i.name: i for i in default_loader.infos()}["bad_ver"]
         self.assertEqual(info.status, ExtensionStatus.FAILED)
+        assert info.reason is not None
         self.assertIn("data_version", info.reason)
 
 
@@ -180,6 +182,7 @@ class ExtensionStatusTest(_ExtensionsTestBase):
         self._new_agent().initialize()
         info = self._infos()["bad"]
         self.assertEqual(info.status, ExtensionStatus.FAILED)
+        assert info.reason is not None
         self.assertIn("boom", info.reason)
         self._write_ext("good", "def setup_extension(ctx): pass\n")
         ext_mod.default_loader.clear_scan_cache()
@@ -191,6 +194,7 @@ class ExtensionStatusTest(_ExtensionsTestBase):
         self._write_ext("boom", "raise RuntimeError('kaboom')\n")
         infos = self._infos()
         self.assertEqual(infos["noentry"].status, ExtensionStatus.FAILED)
+        assert infos["noentry"].reason is not None and infos["boom"].reason is not None
         self.assertIn("setup_extension", infos["noentry"].reason)
         self.assertEqual(infos["boom"].status, ExtensionStatus.FAILED)
         self.assertIn("kaboom", infos["boom"].reason)
@@ -276,7 +280,9 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
 
     def _run_command(self) -> ShowExtensionsEvent:
         agent = self._CapturingAgent()
-        CommandRegistry().with_defaults().get("extensions").invoke(cast("Agent[Agent.T.Init]", agent))
+        extensions_command = register_default_commands(CommandRegistry()).get("extensions")
+        assert extensions_command is not None
+        extensions_command.invoke(cast("Agent[Agent.T.Init]", agent))
         self.assertEqual(len(agent.events), 1)
         event = agent.events[0]
         self.assertIsInstance(event, ShowExtensionsEvent)
@@ -296,7 +302,7 @@ class ExtensionsCommandTest(_ExtensionsTestBase):
         self.assertEqual(self._run_command().model_dump(), {"title": "Extensions", "extensions": []})
 
     def test_command_registered_by_default(self) -> None:
-        self.assertIsNotNone(CommandRegistry().with_defaults().get("extensions"))
+        self.assertIsNotNone(register_default_commands(CommandRegistry()).get("extensions"))
 
 
 GATED = """
@@ -372,7 +378,9 @@ class ExtensionCliTest(_ExtensionsTestBase):
     def _dispatch(self, *argv: str) -> int:
         with self.assertRaises(SystemExit) as caught:
             ext_mod.main_extension(list(argv))
-        return caught.exception.code
+        code = caught.exception.code
+        assert isinstance(code, int)
+        return code
 
     def test_parser_and_handler_dispatch(self) -> None:
         self._write_ext("cliext", CLIWIRE)

@@ -457,8 +457,7 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
         upstream_app.router.add_route("*", "/{path:.*}", upstream)
         self.upstream = TestServer(upstream_app)
         await self.upstream.start_server()
-        upstream_port = self.upstream.port
-        assert isinstance(upstream_port, int)
+        upstream_port = self._upstream_port()
 
         supervisor = Mock()
         supervisor.active = {"alice": ManagedContainer("container", upstream_port, "token")}
@@ -475,6 +474,10 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
         await self.client.close()
         await self.upstream.close()
 
+    def _upstream_port(self) -> int:
+        assert isinstance(self.upstream.port, int)
+        return self.upstream.port
+
     async def test_proxies_http_without_removing_base_path(self) -> None:
         response = await self.client.get("/alice/api/value?x=1")
         self.assertEqual(response.status, 200)
@@ -484,7 +487,8 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(missing.status, 404)
 
     async def test_paused_frontend_returns_unavailable_html(self) -> None:
-        self.supervisor.active["alice"] = ManagedContainer("container", self.upstream.port, "token", paused=True)
+        port = self._upstream_port()
+        self.supervisor.active["alice"] = ManagedContainer("container", port, "token", paused=True)
 
         for path in ("/alice", "/alice/chat/", "/alice/login", "/alice/docs/"):
             response = await self.client.get(path)
@@ -495,7 +499,8 @@ class MultiplexerTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("contact the administrator", text)
 
     async def test_paused_child_routes_return_plain_503(self) -> None:
-        self.supervisor.active["alice"] = ManagedContainer("container", self.upstream.port, "token", paused=True)
+        port = self._upstream_port()
+        self.supervisor.active["alice"] = ManagedContainer("container", port, "token", paused=True)
 
         response = await self.client.get("/alice/api/sessions")
         self.assertEqual(response.status, 503)

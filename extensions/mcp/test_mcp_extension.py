@@ -3,10 +3,14 @@ import sys
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock, patch
 
 from extensions.mcp.client import MAX_MESSAGE_SIZE, Manager, McpError, StdioServer
 from extensions.mcp.setup_extension import setup_extension
+
+if TYPE_CHECKING:
+    from xun import Agent
 
 
 SERVER = '''import json, sys
@@ -126,6 +130,7 @@ class ManagerRecoveryTest(unittest.TestCase):
 
             self.assertEqual(manager.restart("image", config), [{"name": "screenshot"}])
             self.assertIsNot(manager._servers["image"], second)
+            assert second._proc is not None
             self.assertIsNotNone(second._proc.returncode)
         finally:
             manager.shutdown()
@@ -162,22 +167,23 @@ class McpCommandTest(unittest.TestCase):
             self.assertNotIn("mcp_restart", names)
             self.assertIn("mcp_refresh", names)
             command = agent.command.get("mcp")
-            self.assertIsNotNone(command)
+            assert command is not None
+            invoker = cast("Agent[Agent.T.Init]", agent)  # the command surface only needs the agent's data
 
             manager.status.side_effect = {"image": "failed", "other": "connected"}.get
-            command.invoke(agent, ["status"])
+            command.invoke(invoker, ["status"])
             info.assert_called_with("image: failed\nother: connected")
-            command.invoke(agent, ["status", "image"])
+            command.invoke(invoker, ["status", "image"])
             info.assert_called_with("image: failed")
             manager.restart.assert_not_called()
 
             manager.restart.return_value = [{"name": "screenshot"}]
-            command.invoke(agent, ["restart", "image"])
+            command.invoke(invoker, ["restart", "image"])
             manager.restart.assert_called_once_with("image", {"command": "unused"})
             info.assert_called_with("image: restarted (added 1, replaced 0, removed 0)")
             self.assertIn("mcp_image__screenshot",
                           [tool.name for tool in agent.toolbox.list_tools()])
 
-            command.invoke(agent, ["restart", "missing"])
+            command.invoke(invoker, ["restart", "missing"])
             error.assert_called_once()
             manager.restart.assert_called_once()

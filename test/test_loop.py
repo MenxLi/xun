@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay
@@ -46,10 +47,10 @@ class CompletionRetryTest(unittest.TestCase):
         self.attempts += 1
         raise RuntimeError("provider unavailable")
 
-    def _run(self, answers: list[str] = (), auto_confirm: bool = False) -> tuple[Exception, list[float]]:
+    def _run(self, answers: list[str] = [], auto_confirm: bool = False) -> tuple[Exception, list[float]]:
         self.display.answers = list(answers)
         self.agent.config.auto_confirm = auto_confirm
-        params = HookArgs.BeforeExecutionArgs(agent=self.agent, schema=None, max_iterations=1)
+        params = HookArgs.BeforeExecutionArgs(agent=cast("Agent[Agent.T.Init]", self.agent), schema=None, max_iterations=1)
         with patch("xun.core.loop.time.sleep") as sleep:
             with self.assertRaises(RuntimeError) as raised:
                 _execute_step(params, 1)

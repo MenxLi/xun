@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from xun import Agent, NullDisplay
 from xun.core.conversation import Conversation
-from xun.core.conversation_message import COMPACTION_NOTICE, RawOpenAIMessage, SystemPrompt
+from xun.core.conversation_message import COMPACTION_NOTICE, RawOpenAIMessage, SystemPrompt, UserMessage
 from xun.core.types import Result
 from xun.core.compact import AutoCompactor, CompactionCounter, CompactorAbstract, SummaryCompactResult, compact_conversation
 from xun.core.hooks import HookArgs, Hooks
@@ -44,7 +44,7 @@ class ConversationCompactTest(unittest.TestCase):
         self.assertEqual([m.role for m in conversation.messages], ["system", "user"])
         # the raw summary is stored; the compaction wrapper applies at completion_param time
         system_message = conversation.messages[0]
-        self.assertIsInstance(system_message, SystemPrompt)
+        assert isinstance(system_message, SystemPrompt)
         self.assertEqual(system_message.content, "SUMMARY")
         self.assertTrue(system_message.is_compressed)
         # summary supersedes cheap rounds: tool count resets, summary count advances
@@ -86,8 +86,10 @@ class ConversationCompactTest(unittest.TestCase):
 
         self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=1).compacted)
         self.assertEqual([m.role for m in conversation.messages], ["system", "user", "developer", "user"])
-        self.assertFalse(conversation.messages[1].is_synthetic)
-        self.assertTrue(conversation.messages[3].is_synthetic)
+        human, trailing = conversation.messages[1], conversation.messages[3]
+        assert isinstance(human, UserMessage) and isinstance(trailing, UserMessage)
+        self.assertFalse(human.is_synthetic)
+        self.assertTrue(trailing.is_synthetic)
         # the notice marks the condensation gap right after the anchor
         notice = conversation.messages[2]
         self.assertIsInstance(notice, RawOpenAIMessage)
@@ -120,7 +122,9 @@ class ConversationCompactTest(unittest.TestCase):
             # the human anchor is carried across the window cut, leaving a gap that
             # exactly one fresh notice marks, directly after the anchor
             self.assertEqual([m.role for m in conversation.messages[:3]], ["system", "user", "developer"])
-            self.assertFalse(conversation.messages[1].is_synthetic)
+            anchor = conversation.messages[1]
+            assert isinstance(anchor, UserMessage)
+            self.assertFalse(anchor.is_synthetic)
             self.assertEqual([m.role for m in conversation.messages if m.role == "developer"], ["developer"])
 
     def test_notice_only_when_gap_is_real(self) -> None:
@@ -137,7 +141,9 @@ class ConversationCompactTest(unittest.TestCase):
         # cut = len - keep_recent = anchor + 1 (assistant: self-contained, no advance)
         self.assertTrue(conversation.compact(lambda messages: "S", keep_recent=2).compacted)
         self.assertEqual([m.role for m in conversation.messages], ["system", "user", "assistant", "assistant"])
-        self.assertEqual(conversation.messages[1].text, "human task")
+        anchor = conversation.messages[1]
+        assert isinstance(anchor, UserMessage)
+        self.assertEqual(anchor.text, "human task")
 
     def test_nothing_to_condense_leaves_history_untouched(self) -> None:
         conversation = Conversation()

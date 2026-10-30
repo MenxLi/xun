@@ -1,10 +1,9 @@
 import argparse, shlex, sys, hashlib, tempfile, uuid
 from contextlib import contextmanager, nullcontext, suppress
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 import docker
 from docker.errors import NotFound
-from pydantic import BaseModel
 
 from .core.display_abstract import DisplayAbstract
 from .core.config import get_home_dir, HOME_COPY_INCLUDE
@@ -15,66 +14,15 @@ from .core.toolbox import ToolBox
 from .core.agent import Agent
 from .core.prompt import get_system_prompt
 from .core.command import Command
-from .core.types import CancelledError, Result
+from .core.types import CancelledError
 from .core.workspace import Workspace
+from .session import Instruction, execute_instruction, input_to_instruction, parse_message_input, register_default_commands
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
 from .core.util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
 
 from dotenv import load_dotenv
 load_dotenv()
-
-
-IMAGE_PREFIX = "image:"
-
-
-class MessageInstruction(BaseModel):
-    content: str
-    images: list[str] = []
-
-class CommandInstruction(BaseModel):
-    command: str
-    args: Optional[str] = None
-
-Instruction = MessageInstruction | CommandInstruction
-
-
-def _parse_image_block(block: str) -> list[str] | None:
-    images: list[str] = []
-    try:
-        tokens = shlex.split(block)
-    except ValueError:
-        return None
-    for token in tokens:
-        if token.startswith(IMAGE_PREFIX) and len(token) > len(IMAGE_PREFIX):
-            images.append(token[len(IMAGE_PREFIX):])
-        else:
-            return None
-    return images or None
-
-
-def _parse_message_input(raw_input: str) -> MessageInstruction:
-    content = raw_input.strip()
-    if not content.startswith("["):
-        return MessageInstruction(content=raw_input)
-    block_end = content.find("]")
-    if block_end < 0:
-        raise ValueError("Invalid input syntax: missing closing ']'.")
-    images = _parse_image_block(content[1:block_end].strip())
-    if images is None:
-        return MessageInstruction(content=raw_input)
-    return MessageInstruction(content=content[block_end + 1:].strip(), images=images)
-
-def input_to_instruction(raw_input: str) -> Instruction:
-    if raw_input.startswith("/"):
-        raw_command = raw_input[1:].strip()
-        parts = raw_command.split(maxsplit=1)
-        command = parts[0] if parts else ""
-        args = parts[1] if len(parts) > 1 else None
-        return CommandInstruction(command=command, args=args)
-    if raw_input.startswith("\\/"):
-        raw_input = raw_input[1:]
-    return _parse_message_input(raw_input)
 
 
 def get_instruction(
@@ -111,33 +59,12 @@ def setup_agent(
     if default_system_prompt:
         agent.system(get_system_prompt())
     if default_commands:
-        agent.command.with_defaults().with_fs_extra_defaults()
+        register_default_commands(agent.command, fs_extra=True)
         if default_tools:
             agent.command.register(*default_tool_commands())
     # initialize last: after_initialize hooks observe the fully configured agent
     return agent.initialize()
 
-
-def _report_execution(agent: "Agent[Agent.T.Init]", result: "Result") -> None:
-    if result.is_err():
-        agent.display_error(f"Error executing instruction: {result.unwrap_err().error}")
-
-def _execute_instruction(inst: Instruction, agent: "Agent[Agent.T.Init]"):
-    match inst:
-        case CommandInstruction():
-            result = agent.execute_command(inst.command, inst.args)
-            if result.is_err():
-                agent.display_error(f"Error executing command: {result.unwrap_err().error}")
-            if inst.command == "retry":
-                _report_execution(agent, agent.execute())
-
-        case MessageInstruction():
-            try:
-                _report_execution(agent, agent.instruct(inst.content, images=inst.images).execute())
-            except ValueError as e:
-                agent.display_error(f"Error executing instruction: {e}")
-        case _:
-            agent.display_error(f"Invalid instruction: {inst}")
 
 def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
     if isinstance(agent.display, Display):
@@ -155,7 +82,7 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
 
     while True:
         try:
-            _execute_instruction(inst, agent)
+            execute_instruction(agent, inst)
         except (KeyboardInterrupt, CancelledError) as e:
             # remove last message if from user, to allow retry
             agent.conversation.pop_last_message_if_user()
@@ -230,8 +157,8 @@ def web_session(
 
 
 def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):
-    inst = input_to_instruction(instruction)
-    _execute_instruction(inst, agent)
+    execute_instruction(agent, input_to_instruction(instruction))
+
 
 def cli_commands() -> list[Command]:
     def _long_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
@@ -245,8 +172,7 @@ def cli_commands() -> list[Command]:
             lines.append(line)
         text = "\n".join(lines)
         if text.strip():
-            inst = _parse_message_input(text)
-            _execute_instruction(inst, agent)
+            execute_instruction(agent, parse_message_input(text))
 
     return [
         Command(

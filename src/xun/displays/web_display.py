@@ -17,8 +17,8 @@ import rich
 
 from ..core.display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
 from ..core.tracing import SpanSnapshot
-from ..core.types import CancelledError, Result
-from ..core.steering import SteeringStore, UserInstruction
+from ..core.types import CancelledError
+from ..session import SteeringStore, UserInstruction, install_steering, run_command, run_message
 from .web_file import build_file_router
 from .web_serve import ServeManager, build_serve_router
 from ..core.hooks import HookArgs
@@ -199,24 +199,13 @@ class WebDisplay(DisplayAbstract):
                 agent_all = set(self.event_store.agent_ids())
                 for agent_id in agent_all - set(self.agents.keys()):
                     self.clear_events(agent_id)
-            elif args.command.name == "retry":
-                args.agent.execute()
         agent.hooks.after_command.add(after_command)
 
-        def flush_steering(args: HookArgs.AfterExecutionStepArgs) -> None:
-            items = SteeringStore.of(args.agent).take()
-            if not items:
-                return
-            for _, instruction in items:
-                args.agent.instruct(instruction.content, images=instruction.images or None)
-            # keep the loop alive so the model sees the injected instructions even on the last step
-            args.should_continue = True
-            self._broadcast({
-                "type": "steering_consumed",
-                "agent_id": args.agent.identifier,
-                "keys": [key for key, _ in items],
-            })
-        agent.hooks.after_execution_step.add(flush_steering)
+        install_steering(agent, on_consumed=lambda keys: self._broadcast({
+            "type": "steering_consumed",
+            "agent_id": agent.identifier,
+            "keys": list(keys),
+        }))
 
     def on_event(self, event: DisplayEvent) -> None:
         payload = event.to_json()
@@ -308,25 +297,10 @@ class WebDisplay(DisplayAbstract):
             pass
 
     def _execute_message(self, agent: "Agent[Agent.T.Init]", content: str, images: list[str]) -> None:
-        try:
-            def run() -> None:
-                result = agent.instruct(content, images=images or None).execute()
-                if isinstance(result, Result) and result.is_err():
-                    error = result.unwrap_err()
-                    agent.display_error(f"Error executing instruction: {error.error}")
-
-            self._track(agent, run)
-        except Exception as exc:
-            agent.display_error(f"Error executing instruction: {exc}")
+        self._track(agent, lambda: run_message(agent, content, images))
 
     def _execute_command(self, agent: "Agent[Agent.T.Init]", name: str, arguments: Optional[str]) -> None:
-        def run() -> None:
-            result = agent.execute_command(name, arguments)
-            if isinstance(result, Result) and result.is_err():
-                error = result.unwrap_err()
-                agent.display_error(f"Error executing command: {error.error}")
-
-        self._track(agent, run)
+        self._track(agent, lambda: run_command(agent, name, arguments))
 
     def _broadcast(self, payload: dict[str, Any]) -> None:
         loop = self._loop

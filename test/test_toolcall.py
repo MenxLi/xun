@@ -1,6 +1,6 @@
 import json
 import unittest
-from typing import Optional, Union
+from typing import Any, Optional, Union, cast
 
 from xun.core.toolcall import Function, ToolCallContext
 
@@ -21,7 +21,7 @@ class ToolCallSequenceArgsTest(unittest.TestCase):
         self.context = ToolCallContext._dummy()
 
     def call(self, args: dict) -> str:
-        return self.function.call(json.dumps(args), self.context)
+        return str(self.function.call(json.dumps(args), self.context))
 
     def test_list_accepts_all_argument_formats(self) -> None:
         for args in (["A", "B"], '["A", "B"]', "A, B"):
@@ -47,9 +47,9 @@ class ToolCallSequenceArgsTest(unittest.TestCase):
             self.call({"choices": ["A"], "count": "3"})
 
     def test_schema_unaffected_by_coercion(self) -> None:
-        schema = self.function.tool_schema["function"]["parameters"]["properties"]
-        self.assertEqual(schema["choices"]["type"], "array")
-        self.assertEqual(schema["count"]["type"], "integer")
+        schema = cast("dict[str, Any]", self.function.tool_schema)["function"]["parameters"]["properties"]
+        self.assertEqual(cast("dict[str, Any]", schema["choices"])["type"], "array")
+        self.assertEqual(cast("dict[str, Any]", schema["count"])["type"], "integer")
 
 
 if __name__ == "__main__":

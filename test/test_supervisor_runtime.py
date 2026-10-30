@@ -2,6 +2,7 @@ import tarfile
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 from unittest.mock import Mock, patch
 
 from xun.supervisor import runtime
@@ -47,7 +48,7 @@ class ContainerRuntimeTest(unittest.TestCase):
 
 
 class StartShellTest(unittest.TestCase):
-    def _shell(self, status: str = "running", **kwargs: object):
+    def _shell(self, status: str = "running", **kwargs: Any):
         def docker(*args: str) -> str:
             if args[0] == "inspect":
                 return status

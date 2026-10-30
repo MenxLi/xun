@@ -39,15 +39,15 @@ class AbstractMessage(ToJson, ABC):
 
 
 @dataclass
-class RawOpenAIMessage[M: chat.chat_completion_message_param.ChatCompletionMessageParam](AbstractMessage):
+class RawOpenAIMessage(AbstractMessage):
     """Assistant messages, kept as raw OpenAI message params."""
-    raw: M
+    raw: chat.chat_completion_message_param.ChatCompletionMessageParam
 
     @property
     def role(self) -> str:
         return self.raw.get("role", "unknown")
 
-    def completion_param(self) -> M:
+    def completion_param(self) -> chat.chat_completion_message_param.ChatCompletionMessageParam:
         return self.raw
 
     def to_json(self) -> dict:

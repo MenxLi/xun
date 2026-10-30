@@ -82,8 +82,8 @@ class _Agent(AgentDisplayMixin, AgentRunningStateMixin):
     def execute(self) -> None:
         self.instruction_called.set()
 
-    def cancel(self) -> bool:
-        if not super().cancel():
+    def cancel(self, *, force=False) -> bool:
+        if not super().cancel(force=force):
             return False
         self.cancel_called.set()
         return True
@@ -695,8 +695,9 @@ class WebDisplayTest(unittest.TestCase):
         return False
 
     def test_command_execution_is_tracked_and_cancellable(self) -> None:
-        def slow_command(agent: _Agent, _args) -> None:
-            if not agent.cancel_called.wait(2):
+        def slow_command(agent: "Agent[T.Init]", _args: list[str]) -> None:
+            test_agent = cast("_Agent", agent)
+            if not test_agent.cancel_called.wait(2):
                 raise RuntimeError("cancel was never delivered")
             raise CancelledError()
 

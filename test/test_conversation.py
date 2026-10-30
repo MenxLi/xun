@@ -8,11 +8,10 @@ from typing import Any, cast
 from unittest.mock import patch
 
 from PIL import Image
-
+from xun.core.agent import Agent
 from xun.core.conversation import Conversation
 from xun.core.conversation_message import UserMessage
 from xun.core.display_abstract import UserMessageEvent
-from xun.entrypoint import MessageInstruction, input_to_instruction
 from xun.core.hooks import HookArgs, Hooks
 from xun.core.toolcall import ToolCallContext
 from xun.tools.fs import fs_request_image
@@ -23,7 +22,7 @@ class ConversationImageInputTest(unittest.TestCase):
     def test_request_image_follows_tool_result(self) -> None:
         conversation = Conversation()
         agent = SimpleNamespace(hooks=Hooks(), conversation=conversation)
-        context = ToolCallContext(agent, "request_image", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "request_image", None)
         output = BytesIO()
         Image.new("RGB", (2, 2), "blue").save(output, format="PNG")
         response = SimpleNamespace(content=output.getvalue(), raise_for_status=lambda: None)
@@ -34,10 +33,11 @@ class ConversationImageInputTest(unittest.TestCase):
         self.assertEqual(conversation.messages, [])
 
         conversation.add_tool_result("call_1", Result.Ok("OK"))
-        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent, should_continue=True))
+        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=cast("Agent[Agent.T.Init]", agent), should_continue=True))
 
         self.assertEqual([message.role for message in conversation.messages], ["tool", "user"])
-        parts = cast(list[dict[str, Any]], conversation.messages[-1].completion_param()["content"])
+        param = cast(dict[str, Any], conversation.messages[-1].completion_param())
+        parts = cast(list[dict[str, Any]], param["content"])
         url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
         # The processed image (not the original URL) is attached as a data URL.
         self.assertTrue(url.startswith("data:image/png;base64,"))
@@ -47,15 +47,16 @@ class ConversationImageInputTest(unittest.TestCase):
     def test_request_image_crop(self) -> None:
         conversation = Conversation()
         agent = SimpleNamespace(hooks=Hooks(), conversation=conversation)
-        context = ToolCallContext(agent, "request_image", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "request_image", None)
         output = BytesIO()
         Image.new("RGB", (100, 100), "blue").save(output, format="PNG")
         response = SimpleNamespace(content=output.getvalue(), raise_for_status=lambda: None)
 
         def sent_image() -> Image.Image:
             conversation.add_tool_result("call_1", Result.Ok("OK"))
-            agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent, should_continue=True))
-            parts = cast(list[dict[str, Any]], conversation.messages[-1].completion_param()["content"])
+            agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=cast("Agent[Agent.T.Init]", agent), should_continue=True))
+            param = cast(dict[str, Any], conversation.messages[-1].completion_param())
+            parts = cast(list[dict[str, Any]], param["content"])
             url = next(p["image_url"]["url"] for p in parts if p["type"] == "image_url")
             return Image.open(BytesIO(base64.b64decode(url.split(",", 1)[1])))
 
@@ -151,29 +152,6 @@ class ConversationImageInputTest(unittest.TestCase):
             UserMessage(text="describe this", images=["https://example.com/cat.png"]),
         )
         self.assertEqual(conversation.messages, [])
-
-
-class DisplayMessageInputTest(unittest.TestCase):
-    def test_input_to_instruction_parses_images(self) -> None:
-        instruction = input_to_instruction(
-            "[image:https://example.com/cat.png image:https://example.com/dog.png] compare them"
-        )
-
-        self.assertEqual(
-            instruction,
-            MessageInstruction(
-                content="compare them",
-                images=["https://example.com/cat.png", "https://example.com/dog.png"],
-            ),
-        )
-
-    def test_input_to_instruction_keeps_plain_text_when_not_image_syntax(self) -> None:
-        instruction = input_to_instruction("[note:todo] compare them")
-
-        self.assertEqual(
-            instruction,
-            MessageInstruction(content="[note:todo] compare them"),
-        )
 
 
 if __name__ == "__main__":

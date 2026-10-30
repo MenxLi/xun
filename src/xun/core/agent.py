@@ -104,11 +104,12 @@ class Agent(
     def openai_client(self, client: OpenAI) -> None:
         self._openai_client = client
 
-    def initialize(self: Agent[T.Uninit]) -> Agent[T.Init]:
+    def initialize(self: Agent[T.Alive]) -> Agent[T.Init]:
         """
         Initialize the agent, cannot be called on a finalized agent. 
         Returns a Agent[T.Init]
 
+        Idempotent: an already-initialized agent is returned as-is.
         Must rebind (shadow) on call for proper type-level state, e.g.
         ```python
         agent = Agent()
@@ -120,12 +121,14 @@ class Agent(
         if self._lifecycle.v == T.Init.v:
             return cast(Agent[T.Init], self)
 
-        self.extension_loader.apply(self)
+        # past the guards above the agent is necessarily uninitialized
+        uninit_self = cast("Agent[T.Uninit]", self)
+        self.extension_loader.apply(uninit_self)
 
         if self.config.model.name == "":
             self.config.model._assign_primary_model(self.openai_client)
 
-        _warn_auto_confirm_once(self)
+        _warn_auto_confirm_once(uninit_self)
 
         self.display.bind(self)
         self.display_event(AgentBindEvent())
@@ -275,8 +278,9 @@ class Agent(
         )
         self.hooks.before_command.invoke(hook_args)
         with self.run_scope():
-            command.invoke(self, hook_args.arguments)
+            result = command.invoke(self, hook_args.arguments)
         self.hooks.after_command.invoke(hook_args)
+        return result
 
     def __enter__(self: "Agent[T.Uninit]") -> "Agent[T.Init]":
         # any state: entering an already-initialized agent (e.g. a configured one returned

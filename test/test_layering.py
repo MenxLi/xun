@@ -27,22 +27,25 @@ def imported_names(node: ast.AST) -> list[str]:
     return []
 
 
-def outside_core(mod: str) -> bool:
-    return mod == "xun" or (mod.startswith("xun.") and not mod.startswith("xun.core"))
+def outside(mod: str, allowed: tuple[str, ...]) -> bool:
+    """True for xun-package modules not under any allowed prefix (incl. `xun` itself)."""
+    if not (mod == "xun" or mod.startswith("xun.")):
+        return False
+    return not any(mod == p or mod.startswith(p + ".") for p in allowed)
 
 
-def escapes_core(node: ast.Import | ast.ImportFrom, pkg: tuple[str, ...]) -> str | None:
-    """Why this import leaves `xun.core`, or None if it stays. `pkg` is the
-    module's enclosing package chain, e.g. ("xun", "core", "tools")."""
+def escapes(node: ast.Import | ast.ImportFrom, pkg: tuple[str, ...], allowed: tuple[str, ...]) -> str | None:
+    """Why this import leaves the allowed area, or None if it stays.
+    `pkg` is the module's enclosing package chain, e.g. ("xun", "core", "tools")."""
     if isinstance(node, ast.Import):
-        offenders = [n for n in imported_names(node) if outside_core(n)]
+        offenders = [n for n in imported_names(node) if outside(n, allowed)]
         return f"import {', '.join(offenders)}" if offenders else None
     if node.level:
         base = pkg[: len(pkg) - node.level + 1]
         resolved = ".".join(base + ((node.module,) if node.module else ()))
     else:
         resolved = node.module or ""
-    return ast.unparse(node) if outside_core(resolved) else None
+    return ast.unparse(node) if outside(resolved, allowed) else None
 
 
 class CoreLayeringTest(unittest.TestCase):
@@ -57,7 +60,7 @@ class CoreLayeringTest(unittest.TestCase):
             pkg = ("xun", "core") + path.relative_to(CORE_DIR).parts[:-1]
             with self.subTest(path=str(path.relative_to(CORE_DIR))):
                 for node in module_level_imports(ast.parse(path.read_text(encoding="utf-8"))):
-                    self.assertIsNone(escapes_core(node, pkg), "module-level import escapes xun.core")
+                    self.assertIsNone(escapes(node, pkg, ("xun.core",)), "module-level import escapes xun.core")
 
     def test_core_is_ui_dependency_free(self):
         for path in self._core_files():
@@ -78,7 +81,19 @@ class CoreLayeringTest(unittest.TestCase):
         self.assertEqual(len(nodes), 2)
         for node in nodes:
             with self.subTest(node=ast.unparse(node)):
-                self.assertIsNotNone(escapes_core(node, ("xun", "core")))
+                self.assertIsNotNone(escapes(node, ("xun", "core"), ("xun.core",)))
+
+    def test_session_imports_stay_inside_core(self):
+        # the session layer may use xun.core (and itself); presenting layers are off-limits
+        session_dir = CORE_DIR.parent / "session"
+        files = sorted(session_dir.rglob("*.py"))
+        self.assertTrue(files, f"no session files found under {session_dir}")
+        for path in files:
+            pkg = ("xun", "session") + path.relative_to(session_dir).parts[:-1]
+            with self.subTest(path=str(path.relative_to(CORE_DIR.parent))):
+                for node in module_level_imports(ast.parse(path.read_text(encoding="utf-8"))):
+                    self.assertIsNone(escapes(node, pkg, ("xun.core", "xun.session")),
+                                      "session import leaves core/session")
 
 
 if __name__ == "__main__":

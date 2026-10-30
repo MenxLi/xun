@@ -21,10 +21,10 @@ from xun.core.workspace import Workspace
 
 class _RecordingDisplay(DisplayAbstract):
     def __init__(self) -> None:
-        self.events: list[DisplayEvent] = []
+        self.received: list[DisplayEvent] = []
 
     def on_event(self, event: DisplayEvent) -> None:
-        self.events.append(event)
+        self.received.append(event)
 
     def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
         return "No"
@@ -175,7 +175,7 @@ class AgentLifecycleTest(unittest.TestCase):
                 self.assertTrue(agent.is_running)
 
         running_events = [
-            event.payload for event in display.events
+            event.payload for event in display.received
             if isinstance(event.payload, (AgentRunningStartEvent, AgentRunningEndEvent))
         ]
         self.assertEqual(
@@ -188,7 +188,7 @@ class AgentLifecycleTest(unittest.TestCase):
             with agent.run_scope():
                 raise RuntimeError("failed")
 
-        self.assertIsInstance(display.events[-1].payload, AgentRunningEndEvent)
+        self.assertIsInstance(display.received[-1].payload, AgentRunningEndEvent)
         self.assertFalse(agent.is_running)
 
     def test_confirmation_events_from_auto_confirm_and_user_choice(self) -> None:
@@ -198,14 +198,14 @@ class AgentLifecycleTest(unittest.TestCase):
         agent = cast("Agent[Agent.T.Init]", agent)  # gated helpers need Init; runtime path is state-agnostic
 
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"], default="Yes").choice, "Yes")
-        self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
-        self.assertEqual(display.events[-1].payload.source, "auto")
+        self.assertIsInstance(display.received[-1].payload, ConfirmEvent)
+        self.assertEqual(display.received[-1].payload.source, "auto")
 
         agent.config.auto_confirm = False
         self.assertEqual(agent.get_choice("Proceed?", ["Yes", "No"]).choice, "No")
-        self.assertIsInstance(display.events[-1].payload, ConfirmEvent)
-        self.assertEqual(display.events[-1].payload.source, "user")
-        self.assertEqual(display.events[-1].payload.choices, ["Yes", "No"])
+        self.assertIsInstance(display.received[-1].payload, ConfirmEvent)
+        self.assertEqual(display.received[-1].payload.source, "user")
+        self.assertEqual(display.received[-1].payload.choices, ["Yes", "No"])
 
 
 if __name__ == "__main__":

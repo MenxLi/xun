@@ -7,6 +7,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay, ToolBox
@@ -24,7 +25,7 @@ from xun.core.workspace import DeferredTempDirectory, Workspace
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
     def assertConfirmationRequired(self, command: str, expected: bool) -> None:
-        ctx = ToolCallContext(SimpleNamespace(state=AgentState()), "bash", None)
+        ctx = ToolCallContext(cast("Agent[Agent.T.Init]", SimpleNamespace(state=AgentState())), "bash", None)
         policy = _confirmation_policy(ctx, _parse_command_spec(command))
         self.assertIs(policy.requires_confirmation, expected, command)
 
@@ -458,6 +459,7 @@ class CmdExecutionTest(unittest.TestCase):
                 bash_spawn(self.ctx, "echo no")
         self.assertEqual(bash_running(self.ctx), [])
         tempdir = self.agent.workspace.tempdir.exist_path
+        assert tempdir is not None
         self.assertEqual(list(tempdir.glob("bash_*")), [])
 
     def test_blocking_timeout_and_cancellation_terminate_command(self) -> None:

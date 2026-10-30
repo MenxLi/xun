@@ -7,9 +7,14 @@ from unittest.mock import Mock, patch
 from xun.entrypoint import main_container, main_serve, web_session
 
 
+class _Workspace:
+    def __init__(self, workdir: Path) -> None:
+        self.workdir = workdir
+
+
 class _Agent:
     def __init__(self, workdir: Path) -> None:
-        self.workspace = type("Workspace", (), {"workdir": workdir})()
+        self.workspace = _Workspace(workdir)
         self.command = Mock()
         self.finalized = False
 

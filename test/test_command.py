@@ -1,12 +1,13 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 from xun import Agent, HookArgs, NullDisplay
 from xun.core.agent import AGENTS_SECTION, T
 from xun.core.command import Command, CommandRegistry
+from xun.session import register_default_commands
 from xun.core.workspace import Workspace
 from xun.core.conversation_message import SystemPrompt
 from xun.core.display_abstract import ShowToolsEvent
@@ -33,7 +34,9 @@ class ToolsCommandTest(unittest.TestCase):
 
         agent = _CapturingAgent(ToolBox().register(inspect_image))
 
-        CommandRegistry().with_defaults().get("tools").invoke(cast("Agent[T.Init]", agent))
+        tools_command = register_default_commands(CommandRegistry()).get("tools")
+        assert tools_command is not None
+        tools_command.invoke(cast("Agent[T.Init]", agent))
 
         self.assertEqual(len(agent.events), 1)
         event = agent.events[0]
@@ -50,7 +53,9 @@ class ToolsCommandTest(unittest.TestCase):
     def test_emits_empty_tool_list(self) -> None:
         agent = _CapturingAgent(ToolBox())
 
-        CommandRegistry().with_defaults().get("tools").invoke(cast("Agent[T.Init]", agent))
+        tools_command = register_default_commands(CommandRegistry()).get("tools")
+        assert tools_command is not None
+        tools_command.invoke(cast("Agent[T.Init]", agent))
 
         self.assertEqual(agent.events, [ShowToolsEvent(tools=[])])
 
@@ -120,7 +125,7 @@ class CommandHookTest(unittest.TestCase):
         agent = self._new_agent().initialize()
         fired: list[str] = []
 
-        def boom(a: Agent, args: list[str]) -> None:
+        def boom(a: "Agent[T.Init]", args: list[str]) -> None:
             raise RuntimeError("handler failed")
 
         agent.command.register(Command(name="boom", handler=boom, description="fails"))
@@ -151,11 +156,11 @@ class HistoryCommandTest(unittest.TestCase):
             instructions = workdir / "AGENTS.md"
             instructions.write_text("Old instructions.", encoding="utf-8")
             agent = Agent(display=NullDisplay(), workspace=Workspace(workdir=workdir)).initialize()
-            commands = CommandRegistry().with_fs_extra_defaults()
+            commands = register_default_commands(CommandRegistry(), fs_extra=True)
             save = commands.get("save")
             load = commands.get("load")
             assert save is not None and load is not None
-            with patch("xun.core.store.Store", side_effect=lambda: Store(Path(history))):
+            with patch("xun.session.commands.Store", side_effect=lambda: Store(Path(history))):
                 save.invoke(agent)
                 instructions.write_text("New instructions.", encoding="utf-8")
                 load.invoke(agent, ["latest"])
@@ -168,12 +173,16 @@ class HistoryCommandTest(unittest.TestCase):
         with TemporaryDirectory() as directory, TemporaryDirectory() as history:
             agent = Agent(display=NullDisplay(), workspace=Workspace(workdir=Path(directory))).initialize()
             agent.conversation.add_user_message("saved message")
-            commands = CommandRegistry().with_fs_extra_defaults()
-            with patch("xun.core.store.Store", side_effect=lambda: Store(Path(history))):
-                commands.get("save").invoke(agent)
+            commands = register_default_commands(CommandRegistry(), fs_extra=True)
+            save = commands.get("save")
+            load = commands.get("load")
+            assert save is not None and load is not None
+            with patch("xun.session.commands.Store", side_effect=lambda: Store(Path(history))):
+                save.invoke(agent)
                 agent.conversation.clear()
-                commands.get("load").invoke(agent, ["latest"])
-            self.assertEqual(agent.conversation.messages[-1].completion_param()["content"], "saved message")
+                load.invoke(agent, ["latest"])
+            param = cast(dict[str, Any], agent.conversation.messages[-1].completion_param())
+            self.assertEqual(param["content"], "saved message")
 
 
 if __name__ == "__main__":

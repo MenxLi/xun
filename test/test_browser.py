@@ -5,11 +5,13 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, call, patch
 
 from PIL import Image
 
 from xun.core.conversation import Conversation
+from xun.core.agent import Agent
 from xun.core.hooks import HookArgs, Hooks
 from xun.core.agent_state import AgentState
 from xun.core.toolcall import ToolCallContext
@@ -66,7 +68,7 @@ class BrowserRuntimeTest(unittest.TestCase):
 
     def test_agent_registers_one_session_cleanup_hook(self) -> None:
         agent = SimpleNamespace(identifier="agent-1", state=AgentState(), hooks=Hooks())
-        context = ToolCallContext(agent, "browser_page", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "browser_page", None)
         browser_page = expose_browser_tools()[0]
 
         with (
@@ -75,7 +77,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         ):
             browser_page(context, "list")
             browser_page(context, "list")
-            agent.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=agent))
+            agent.hooks.before_finalize.invoke(HookArgs.BeforeFinalizeArgs(agent=cast("Agent[Agent.T.Init]", agent)))
 
         close_session.assert_called_once_with("agent-1")
 
@@ -89,7 +91,7 @@ class BrowserRuntimeTest(unittest.TestCase):
             hooks=Hooks(),
             conversation=conversation,
         )
-        context = ToolCallContext(agent, "browser_screenshot", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "browser_screenshot", None)
         browser_screenshot = expose_browser_tools()[-1]
 
         with patch.object(
@@ -102,7 +104,7 @@ class BrowserRuntimeTest(unittest.TestCase):
         self.assertEqual(result, {"page_id": "page-1", "width": 20, "height": 10, "path": None})
         self.assertEqual(conversation.messages, [])
         conversation.add_tool_result("call-1", Result.Ok(result))
-        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=agent, should_continue=True))
+        agent.hooks.after_execution_step.invoke(HookArgs.AfterExecutionStepArgs(agent=cast("Agent[Agent.T.Init]", agent), should_continue=True))
         self.assertEqual([message.role for message in conversation.messages], ["tool", "user"])
 
     def test_screenshot_modes_are_mutually_exclusive(self) -> None:
@@ -123,7 +125,7 @@ class BrowserRuntimeTest(unittest.TestCase):
 
     def test_resize_has_dedicated_tool(self) -> None:
         agent = SimpleNamespace(identifier="agent-1", state=AgentState(), hooks=Hooks())
-        context = ToolCallContext(agent, "browser_resize", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "browser_resize", None)
         browser_resize = expose_browser_tools()[1]
 
         with patch.object(BrowserRuntime, "resize", return_value={}) as resize:
@@ -167,7 +169,7 @@ class BrowserRuntimeTest(unittest.TestCase):
 
     def test_page_reload_targets_active_page(self) -> None:
         agent = SimpleNamespace(identifier="agent-1", state=AgentState(), hooks=Hooks())
-        context = ToolCallContext(agent, "browser_page", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "browser_page", None)
         browser_page = expose_browser_tools()[0]
 
         with patch.object(BrowserRuntime, "reload", return_value={}) as reload:
@@ -177,7 +179,7 @@ class BrowserRuntimeTest(unittest.TestCase):
 
     def test_evaluate_tool_defaults_and_passes_timeout(self) -> None:
         agent = SimpleNamespace(identifier="agent-1", state=AgentState(), hooks=Hooks())
-        context = ToolCallContext(agent, "browser_evaluate", None)
+        context = ToolCallContext(cast("Agent[Agent.T.Init]", agent), "browser_evaluate", None)
         browser_evaluate = expose_browser_tools()[4]
 
         with patch.object(BrowserRuntime, "evaluate", return_value=None) as evaluate:

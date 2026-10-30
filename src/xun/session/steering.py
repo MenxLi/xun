@@ -1,7 +1,10 @@
-"""Buffer for user instructions injected while an agent is running.
+"""Steering: user instructions injected while an agent is running.
 
-Enqueue anytime; drain between execution steps via the
-`after_execution_step` hook.
+`SteeringStore` is the thread-safe buffer (drained between execution
+steps); `install_steering` installs the consumption policy so every
+presenting layer shares it. The store itself is created lazily through
+`AgentState.get_entry`, so a plain `Agent` supports steering without
+any setup call.
 """
 
 from __future__ import annotations
@@ -9,19 +12,22 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Callable, Sequence
 
 from PIL.Image import Image
 
-from .agent_state import StateRuntimeEntry
+from ..core.agent_state import StateRuntimeEntry
+from ..core.hooks import HookArgs
 
 if TYPE_CHECKING:
-    from .agent import Agent
+    from ..core.agent import Agent
+
 
 @dataclass
 class UserInstruction:
     content: str
     images: Sequence[str | Image]
+
 
 @dataclass
 class SteeringStore(StateRuntimeEntry):
@@ -63,3 +69,17 @@ class SteeringStore(StateRuntimeEntry):
             all_items = self.buffer
             self.buffer = []
             return all_items
+
+
+def install_steering(agent: "Agent[Agent.T.Any]", on_consumed: Callable[[Sequence[str]], None] = lambda _keys: None) -> None:
+    def flush(args: HookArgs.AfterExecutionStepArgs) -> None:
+        items = SteeringStore.of(args.agent).take()
+        if not items:
+            return
+        for _, instruction in items:
+            args.agent.instruct(instruction.content, images=instruction.images or None)
+        # keep the loop alive so the model sees the injected instructions even on the last step
+        args.should_continue = True
+        on_consumed([key for key, _ in items])
+
+    agent.hooks.after_execution_step.add(flush)
