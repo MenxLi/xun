@@ -19,6 +19,7 @@ from .instruction import (
     run_message,
 )
 from .steering import SteeringStore, UserInstruction, install_steering
+from .storage import AgentStore, DBEventStore
 
 __all__ = [
     "CommandInstruction",
@@ -33,4 +34,6 @@ __all__ = [
     "SteeringStore",
     "UserInstruction",
     "install_steering",
+    "AgentStore",
+    "DBEventStore",
 ]

@@ -31,7 +31,7 @@ def get_home_dir() -> Path:
         return Path.cwd() / f".xun"
 
 HOME_COPY_INCLUDE = {"config.json", "extensions", "skills"}
-"""What to copy from the host home dir into a container; skips x/ and conversation/."""
+"""What to copy from the host home dir into a container; skips x/ and sessions/."""
 
 def get_internal_env(key: str) -> str | None:
     return os.environ.get(f"_XUN_{key}")

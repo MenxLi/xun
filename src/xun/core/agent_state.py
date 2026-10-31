@@ -89,6 +89,12 @@ class AgentState(ToJson, FromJson):
             return None
         return self._entries.setdefault(key, or_else())
 
+    def load_persist(self, data: JsonType) -> None:
+        """Restore serialized persist entries onto this live state; runtime entries are kept."""
+        restored = AgentState.from_json(data)
+        self._entries = {k: e for k, e in self._entries.items() if isinstance(e, StateRuntimeEntry)}
+        self._entries.update(restored._entries)
+
     def to_json(self) -> dict[str, JsonType]:
         """Serialize the persist entries; runtime entries are skipped."""
         return {

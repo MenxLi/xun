@@ -44,6 +44,11 @@ class DeferredTempDirectory:
                 return self._dir
             else:
                 return self._temp_dir and Path(self._temp_dir.name)
+
+    @property
+    def external_path(self) -> Optional[Path]:
+        """The externally provided directory, if any (vs. the lazily created one)."""
+        return self._dir
     
     @staticmethod
     def _destroy(this_ref: "weakref.ref"):
@@ -82,6 +87,23 @@ class Workspace:
             assert self.workdir.is_dir(), f"Workdir path {self.workdir} must be a directory."
         else:
             self.workdir.mkdir(parents=False, exist_ok=True)
+
+    def to_json(self) -> dict:
+        """The persistent footprint; a lazily created temp dir is process-local and not worth saving."""
+        return {
+            "workdir": str(self.workdir),
+            "tempdir": str(p) if (p := self.tempdir.external_path) is not None else None,
+        }
+
+    @classmethod
+    def from_json(cls, data: dict) -> "Workspace":
+        """Rebuild from `to_json` data; a stale temp dir degrades to a fresh lazy one."""
+        temp = data.get("tempdir")
+        p = Path(temp) if temp else None
+        return cls(
+            workdir=Path(data["workdir"]),
+            tempdir=DeferredTempDirectory(p) if p is not None and p.is_dir() else DeferredTempDirectory(),
+        )
 
     def resolve(self, path: str | Path, raise_on_invalid: bool = True) -> ResolvedPath:
         """Resolve `path` against the workdir and classify which owned area it falls in."""

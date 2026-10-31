@@ -17,7 +17,6 @@ from ..core.compact import compact_conversation
 from ..core.conversation_message import UserMessage
 from ..core.display_abstract import ShowExtensionsEvent, ShowHistoryEvent, ShowToolsEvent
 from ..core.prompt import get_handoff_prompt
-from ..core.store import Store
 
 if TYPE_CHECKING:
     from ..core.agent import Agent
@@ -156,48 +155,6 @@ def default_commands() -> list[Command]:
 
 
 def default_commands_with_fs() -> list[Command]:
-    def _save_handler(agent: "Agent[Agent.T.Init]") -> None:
-        """Save current conversation history (experimental)."""
-        store = Store()
-        aim_dir = store.next_history_store()
-        aim_dir.mkdir()
-        agent.conversation.dump(aim_dir / "conversation.json")
-        agent.display_info(f"Dumped to {aim_dir}")
-
-    def _load_handler(agent: "Agent[Agent.T.Init]", idx: list[str]) -> None:
-        """Load conversation history from save storage (experimental).
-        It supports loading by index or the latest conversation. 
-        e.g. 
-            load latest
-            load 3
-        """
-        store = Store()
-        if not idx:
-            agent.display_error("Please provide an index or 'latest' to load history.")
-            return
-        target = idx[0]
-        if target.isdigit():
-            aim_dir = store.get_history_store(target)
-            if not aim_dir:
-                agent.display_error(f"History {target} not found.")
-                return
-        elif target == "latest":
-            latest_dir = store.latest_history_store()
-            if latest_dir is None:
-                agent.display_info("No history found.")
-                return
-            aim_dir = latest_dir
-        else:
-            agent.display_error(f"Invalid index '{target}'. Use a number or 'latest'.")
-            return
-        conv_file = aim_dir / "conversation.json"
-        if not conv_file.exists():
-            agent.display_error(f"No conversation history found in {conv_file}.")
-            return
-        agent.conversation.load(conv_file)
-        agent.sync_project_instructions()
-        agent.display_info(f"Loaded from {aim_dir}")
-    
     def _render_handler(agent: "Agent[Agent.T.Init]", arguments: list[str]) -> None:
         """Render conversation history as HTML and save to a file.
         Usage: 
@@ -235,8 +192,6 @@ def default_commands_with_fs() -> list[Command]:
 
     return [
         Command(name="render", handler=_render_handler),
-        Command(name="save", handler=_save_handler),
-        Command(name="load", handler=_load_handler),
         Command(name="handoff", handler=_handoff)
     ]
 

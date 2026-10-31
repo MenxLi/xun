@@ -1,17 +1,14 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, cast
-from unittest.mock import patch
+from typing import cast
 
 from xun import Agent, HookArgs, NullDisplay
-from xun.core.agent import AGENTS_SECTION, T
+from xun.core.agent import T
 from xun.core.command import Command, CommandRegistry
 from xun.session import register_default_commands
 from xun.core.workspace import Workspace
-from xun.core.conversation_message import SystemPrompt
 from xun.core.display_abstract import ShowToolsEvent
-from xun.core.store import Store
 from xun.core.toolbox import ToolBox
 from xun.core.toolcall import tool_attr
 
@@ -147,42 +144,6 @@ class CommandHookTest(unittest.TestCase):
 
         self.assertTrue(res.is_err())
         self.assertEqual(fired, [])
-
-
-class HistoryCommandTest(unittest.TestCase):
-    def test_load_refreshes_agents_md_from_current_workdir(self) -> None:
-        with TemporaryDirectory() as directory, TemporaryDirectory() as history:
-            workdir = Path(directory)
-            instructions = workdir / "AGENTS.md"
-            instructions.write_text("Old instructions.", encoding="utf-8")
-            agent = Agent(display=NullDisplay(), workspace=Workspace(workdir=workdir)).initialize()
-            commands = register_default_commands(CommandRegistry(), fs_extra=True)
-            save = commands.get("save")
-            load = commands.get("load")
-            assert save is not None and load is not None
-            with patch("xun.session.commands.Store", side_effect=lambda: Store(Path(history))):
-                save.invoke(agent)
-                instructions.write_text("New instructions.", encoding="utf-8")
-                load.invoke(agent, ["latest"])
-            prompt = agent.conversation.messages[0]
-            assert isinstance(prompt, SystemPrompt)
-            self.assertIn("New instructions.", prompt.persist_sections[AGENTS_SECTION])
-            self.assertNotIn("Old instructions.", prompt.persist_sections[AGENTS_SECTION])
-
-    def test_save_and_load_round_trip(self) -> None:
-        with TemporaryDirectory() as directory, TemporaryDirectory() as history:
-            agent = Agent(display=NullDisplay(), workspace=Workspace(workdir=Path(directory))).initialize()
-            agent.conversation.add_user_message("saved message")
-            commands = register_default_commands(CommandRegistry(), fs_extra=True)
-            save = commands.get("save")
-            load = commands.get("load")
-            assert save is not None and load is not None
-            with patch("xun.session.commands.Store", side_effect=lambda: Store(Path(history))):
-                save.invoke(agent)
-                agent.conversation.clear()
-                load.invoke(agent, ["latest"])
-            param = cast(dict[str, Any], agent.conversation.messages[-1].completion_param())
-            self.assertEqual(param["content"], "saved message")
 
 
 if __name__ == "__main__":
