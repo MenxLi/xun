@@ -111,7 +111,7 @@ class WebSessionTest(unittest.TestCase):
         self.assertEqual(initial_slot.parent.parent, initial.directory)
         self.assertTrue(initial.directory.exists())  # teardown keeps every session
 
-    def test_stored_sessions_are_remounted_on_restart(self) -> None:
+    def test_stored_sessions_are_remounted_without_a_fresh_one(self) -> None:
         with patch("xun.entrypoint.WebDisplayService", _Service), \
                 patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
             web_session(manage_sessions=True)
@@ -121,13 +121,23 @@ class WebSessionTest(unittest.TestCase):
             web_session(manage_sessions=True)
             second = _Service.instances[-1]
 
-        fresh = second.mounts[-1]
-        self.assertEqual([s.mount_path for s in second.mounts], [restored.mount_path, fresh.mount_path])
-        self.assertNotEqual(fresh.mount_path, restored.mount_path)  # restored first, fresh last
+        self.assertEqual([s.mount_path for s in second.mounts], [restored.mount_path])  # nothing new on top
         self.assertEqual([agent.workspace.workdir.parent.parent for agent in self.agents[1:]],
-                         [restored.directory, fresh.directory])
+                         [restored.directory])
         self.assertEqual(second.mounts[0].name, restored.name)  # name survives via session.json
         self.assertTrue(all(agent.finalized for agent in self.agents))
+
+    def test_fresh_session_when_nothing_is_stored(self) -> None:
+        with patch("xun.entrypoint.WebDisplayService", _Service), \
+                patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
+            web_session(manage_sessions=True)
+            _Service.instances[0].mounts[0].destroy()  # the user removes the only session
+
+            web_session(manage_sessions=True)
+            second = _Service.instances[-1]
+
+        self.assertEqual(len(second.mounts), 1)
+        self.assertIsInstance(second.mounts[0], DurableSession)  # a fresh one takes over
 
     def test_session_management_can_be_disabled(self) -> None:
         with patch("xun.entrypoint.WebDisplayService", _Service), \

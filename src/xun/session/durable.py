@@ -20,7 +20,7 @@ import re
 import secrets
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Callable
 
 from ..core.config import get_home_dir
 from ..core.display_abstract import DisplayAbstract
@@ -32,10 +32,7 @@ if TYPE_CHECKING:
 
 _SAFE_ID = re.compile(r"[\w.-]+\Z", re.ASCII)  # a single, traversal-free path segment
 
-D = TypeVar("D", bound=DisplayAbstract)  # the session's display type
-
-
-class DurableSession(Generic[D]):
+class DurableSession[D: DisplayAbstract]:
     """Durable session root managing agents, their workspaces, 
     and the display name and event store."""
 
@@ -120,26 +117,24 @@ class DurableSession(Generic[D]):
                 entries[slot.name] = store
         return entries
 
-    @classmethod
-    def discover(
-        cls,
-        *,
-        display_factory: Callable[[DBEventStore], D],
+    @staticmethod
+    def discover[DT: DisplayAbstract](
+        display_factory: Callable[[DBEventStore], DT],
         home_dir: Path | None = None,
-    ) -> list["DurableSession[D]"]:
-        """All stored sessions under `<home>/sessions/`, with names restored
-        from `session.json` when present."""
+    ) -> list["DurableSession[DT]"]:
+        """Stored sessions under `<home>/sessions/`, with names restored from
+        `session.json`. A directory without it was skipped."""
         root = (home_dir or get_home_dir()) / "sessions"
-        sessions: list[DurableSession[D]] = []
+        sessions: list[DurableSession[DT]] = []
         for directory in sorted(root.glob("*")):
-            if not directory.is_dir() or not _SAFE_ID.fullmatch(directory.name):
+            meta = directory / "session.json"
+            if not directory.is_dir() or not _SAFE_ID.fullmatch(directory.name) or not meta.is_file():
                 continue
-            name: str | None = None
             try:
-                name = json.loads((directory / "session.json").read_text(encoding="utf-8"))["name"]
+                name: str | None = json.loads(meta.read_text(encoding="utf-8"))["name"]
             except (OSError, ValueError, KeyError):
-                pass  # missing or damaged metadata: fall back to the directory name
+                name = None  # damaged metadata: fall back to the directory name
             sessions.append(
-                cls(directory.name, name=name, home_dir=home_dir, display_factory=display_factory)
+                DurableSession(directory.name, name=name, home_dir=home_dir, display_factory=display_factory)
             )
         return sessions

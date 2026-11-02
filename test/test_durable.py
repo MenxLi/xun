@@ -51,6 +51,7 @@ class DurableSessionTest(unittest.TestCase):
 
     def test_discover_restores_names_and_restore_round_trip(self) -> None:
         with TemporaryDirectory() as home:
+            DurableSession("orphan", home_dir=Path(home), display_factory=DISPLAY)  # never closed: no session.json
             session = DurableSession("alpha", name="Research", home_dir=Path(home), display_factory=DISPLAY)
             agent = Agent(name="restorable", display=NullDisplay())
             session.attach(agent)

@@ -1,7 +1,7 @@
 import argparse, shlex, sys, hashlib, secrets
 from contextlib import suppress
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 import docker
 from docker.errors import NotFound
 
@@ -96,33 +96,33 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         inst = get_instruction(agent.display, agent=agent)
 
 
-def _web_display_factory(store: DBEventStore) -> WebDisplay:
+def _web_display_factory(store: DBEventStore | None = None) -> WebDisplay:
     return WebDisplay(expose_files=True, event_store=store)
 
 
 def _new_durable_session(
     session: DurableSession[WebDisplay] | None = None,
-    store: AgentStore | None = None,
+    stores: Iterable[AgentStore] = (),
 ) -> DurableSession[WebDisplay]:
-    """A durable session with one agent. With `session` and `store`, the saved
-    snapshot is restored into the discovered session instead of starting fresh."""
+    """Give a durable session its agents: restore each saved snapshot in
+    `stores`, or set up one fresh agent when none are given."""
     session = session or DurableSession(display_factory=_web_display_factory)
+    for store in stores or (None,):
+        def pre_init(agent: "Agent[Agent.T.Uninit]") -> None:
+            if store is not None:
+                store.load(agent)  # load before attach: the identifier lands in its own slot
+            session.attach(agent)
 
-    def pre_init(agent: "Agent[Agent.T.Uninit]") -> None:
-        if store is not None:
-            store.load(agent)  # load before attach: the identifier lands in its own slot
-        session.attach(agent)
-
-    setup_agent(default_tools=True, default_commands=True, display=session.display, pre_init=pre_init)
+        setup_agent(default_tools=True, default_commands=True, display=session.display, pre_init=pre_init)
     return session
 
 
-def _new_session(workdir: Path | None, *, mount_path: str | None = None) -> WebSession:
+def _new_session(workdir: Path | None) -> WebSession:
     """One service session: ephemeral under a fixed workdir, durable otherwise."""
     if workdir is not None:
-        display = WebDisplay(expose_files=True)
+        display = _web_display_factory()
         agent = setup_agent(default_tools=True, default_commands=True, display=display, workdir=workdir)
-        return SimpleSession(mount_path or f"/{secrets.token_hex(6)}", display, release=agent.finalize)
+        return SimpleSession(f"/{secrets.token_hex(6)}", display, release=agent.finalize)
     return _new_durable_session()
 
 
@@ -138,9 +138,9 @@ def web_session(
 ) -> None:
     """Run a web service with an optional initial agent and dynamic sessions.
 
-    Without a fixed workdir every session (the initial one included) persists
-    under `<home>/sessions/` and stored sessions are remounted on start; with
-    one, sessions are ephemeral.
+    Without a fixed workdir sessions persist under `<home>/sessions/` and are
+    remounted on start; a fresh session is created only when none are stored.
+    With a fixed workdir, sessions are ephemeral.
     """
     fixed_workdir = Path(workdir) if workdir is not None else None
     service = WebDisplayService(
@@ -153,17 +153,16 @@ def web_session(
     sessions: list[WebSession] = []
     try:
         if initial_agent:
-            if fixed_workdir is None:
-                # stored sessions return under their old paths, the fresh one mounts last
+            if fixed_workdir is not None:
+                sessions.append(_new_session(fixed_workdir))
+            else:
+                # stored sessions return under their old paths
                 for found in DurableSession.discover(display_factory=_web_display_factory):
-                    entries = found.entries()
-                    if not entries:
-                        found.close()  # nothing stored: release it, mount nothing
-                        continue
-                    sessions.append(_new_durable_session(found, next(iter(entries.values()))))
-            sessions.append(_new_session(fixed_workdir, mount_path="/"))
+                    sessions.append(_new_durable_session(found, found.entries().values()))
+                if not sessions:  # nothing to come back to: start fresh
+                    sessions.append(_new_durable_session())
         else:
-            sessions.append(SimpleSession("/", WebDisplay(expose_files=True)))
+            sessions.append(SimpleSession("/", _web_display_factory()))
         for session in sessions:
             service.mount(session)
         service.start(blocking=True)
