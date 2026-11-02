@@ -8,6 +8,7 @@ errors surface through `agent.display_error`.
 """
 
 from .commands import register_default_commands
+from .manager import SessionManager
 from .instruction import (
     CommandInstruction,
     Instruction,
@@ -31,6 +32,7 @@ __all__ = [
     "run_command",
     "run_message",
     "register_default_commands",
+    "SessionManager",
     "SteeringStore",
     "UserInstruction",
     "install_steering",
