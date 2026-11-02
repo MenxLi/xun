@@ -1,3 +1,4 @@
+import os
 import unittest
 import sys
 import uuid
@@ -5,7 +6,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
+from xun.displays import SimpleSession
 from xun.entrypoint import main_container, main_serve, web_session
+from xun.session import DurableSession
 
 
 class _Workspace:
@@ -19,7 +22,7 @@ class _Workspace:
 class _Agent:
     def __init__(self, workdir: Path | None) -> None:
         self.name = "fake"
-        self.workspace = _Workspace(workdir) if workdir is not None else None
+        self.workspace = _Workspace(workdir if workdir is not None else Path.cwd())
         self.command = Mock()
         self.conversation = Mock()
         self.state = Mock()
@@ -42,8 +45,8 @@ class _Service:
         self.stopped = False
         self.__class__.instances.append(self)
 
-    def mount(self, path, display, *, name=None):
-        self.mounts.append((path, display, name))
+    def mount(self, session):
+        self.mounts.append(session)
         return self
 
     def start(self, *, blocking=False):
@@ -57,6 +60,11 @@ class WebSessionTest(unittest.TestCase):
     def setUp(self) -> None:
         _Service.instances.clear()
         self.agents: list[_Agent] = []
+        self.home = TemporaryDirectory()
+        patcher = patch.dict(os.environ, {"XUN_HOME": self.home.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.home.cleanup)
 
     def setup_agent(self, **kwargs):
         workdir = kwargs.get("workdir")
@@ -74,7 +82,7 @@ class WebSessionTest(unittest.TestCase):
             service = _Service.instances[0]
             session = service.kwargs["session_factory"]()
 
-        self.assertIsNone(session.manager)
+        self.assertIsInstance(session, SimpleSession)
         self.assertEqual([agent.workspace.workdir for agent in self.agents], [Path(directory), Path(directory)])
         session.close()
         self.assertTrue(all(agent.finalized for agent in self.agents))
@@ -86,19 +94,40 @@ class WebSessionTest(unittest.TestCase):
                 patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
             web_session(manage_sessions=True)
             service = _Service.instances[0]
+            initial = service.mounts[0]
+            self.assertIsInstance(initial, DurableSession)
             session = service.kwargs["session_factory"]()
             workdir = self.agents[1].workspace.workdir
             self.assertTrue(workdir.is_dir())
-            self.assertEqual(workdir.parent.parent, session.manager.directory)
+            self.assertEqual(workdir.parent.parent, session.directory)
             session.close()
             self.assertTrue(self.agents[1].finalized)
             self.assertTrue(workdir.is_dir())  # close keeps the data
             session.destroy()
-            self.assertFalse(session.manager.directory.exists())
+            self.assertFalse(session.directory.exists())
 
-        initial_slot = self.agents[0].workspace.workdir  # initial session attaches its own manager
+        initial_slot = self.agents[0].workspace.workdir
         self.assertTrue(self.agents[0].finalized)  # initial closed by web_session teardown
-        self.assertNotEqual(initial_slot.parent.parent, session.manager.directory)
+        self.assertEqual(initial_slot.parent.parent, initial.directory)
+        self.assertTrue(initial.directory.exists())  # teardown keeps every session
+
+    def test_stored_sessions_are_remounted_on_restart(self) -> None:
+        with patch("xun.entrypoint.WebDisplayService", _Service), \
+                patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
+            web_session(manage_sessions=True)
+            first = _Service.instances[0]
+            restored = first.mounts[0]  # the initial session, closed by teardown
+
+            web_session(manage_sessions=True)
+            second = _Service.instances[-1]
+
+        fresh = second.mounts[-1]
+        self.assertEqual([s.mount_path for s in second.mounts], [restored.mount_path, fresh.mount_path])
+        self.assertNotEqual(fresh.mount_path, restored.mount_path)  # restored first, fresh last
+        self.assertEqual([agent.workspace.workdir.parent.parent for agent in self.agents[1:]],
+                         [restored.directory, fresh.directory])
+        self.assertEqual(second.mounts[0].name, restored.name)  # name survives via session.json
+        self.assertTrue(all(agent.finalized for agent in self.agents))
 
     def test_session_management_can_be_disabled(self) -> None:
         with patch("xun.entrypoint.WebDisplayService", _Service), \
@@ -117,7 +146,7 @@ class WebSessionTest(unittest.TestCase):
             session.destroy()
 
         self.assertEqual(len(self.agents), 1)
-        self.assertEqual(service.mounts[0][0], "/")
+        self.assertEqual(service.mounts[0].mount_path, "/")
         self.assertTrue(service.started)
         self.assertTrue(service.stopped)
 

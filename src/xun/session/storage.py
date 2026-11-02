@@ -1,11 +1,5 @@
 """Session persistence: agent snapshots and durable display events.
-
-Mechanism only: these classes raise, callers present. A snapshot is data,
-never an `Agent` construction: `save` dumps name, conversation, persist
-state, and workspace; `load` pours them back into an uninitialized agent.
-
-`DBEventStore` is the persistent event backend for displays: an independent
-replay channel, related to snapshots only through the agent identifier.
+Mechanism only.
 """
 
 from __future__ import annotations
@@ -140,6 +134,7 @@ class DBEventStore:
         self._lock = threading.Lock()
         self._manual = manual_commit
         self._max_events: int | None = None
+        self._closed = False
 
     def set_buffer_size(self, max_events: int | None) -> None:
         with self._lock:
@@ -198,6 +193,9 @@ class DBEventStore:
 
     def close(self) -> None:
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             self._conn.commit()
             self._conn.close()
 

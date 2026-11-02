@@ -27,7 +27,7 @@ from xun.core.display_abstract import (
 )
 from xun.core.running_state import AgentRunningStateMixin, ChainedEvent
 from xun.core.hooks import HookArgs, Hooks
-from xun.displays import WebDisplay, WebDisplayService
+from xun.displays import SimpleSession, WebDisplay, WebDisplayService
 from xun.displays.web_serve import MAX_SERVE_SERVERS
 from xun.core.null_display import NullDisplay
 from xun.core.types import CancelledError, ErrorInfo, Result
@@ -103,7 +103,7 @@ class WebDisplayTest(unittest.TestCase):
         self.display = WebDisplay(expose_files=True)
         self.agent.display = self.display
         self.display.bind(cast("Agent[T.Alive]", self.agent))
-        self.service = WebDisplayService(token="test-token").mount("/", self.display)
+        self.service = WebDisplayService(token="test-token").mount(SimpleSession("/", self.display))
         self.client = TestClient(self.service.app, base_url="http://testserver/session/")
         self.client.__enter__()
         self.client.headers["Authorization"] = "Bearer test-token"
@@ -139,7 +139,7 @@ class WebDisplayTest(unittest.TestCase):
     def test_file_routes_are_opt_in(self) -> None:
         display = WebDisplay()
         display.bind(cast("Agent[T.Alive]", self.agent))
-        service = WebDisplayService(token="test-token").mount("/", display)
+        service = WebDisplayService(token="test-token").mount(SimpleSession("/", display))
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
             self.assertEqual(client.get("/session/api/config").json(), {
@@ -159,7 +159,9 @@ class WebDisplayTest(unittest.TestCase):
         docs.mkdir()
         (assets / "index.html").write_text("<main>Xun chat</main>", encoding="utf-8")
         (docs / "index.html").write_text("<main>Xun docs</main>", encoding="utf-8")
-        service = WebDisplayService(token="test-token", assets_dir=assets, docs_dir=docs).mount("/", WebDisplay())
+        service = WebDisplayService(token="test-token", assets_dir=assets, docs_dir=docs).mount(
+            SimpleSession("/", WebDisplay())
+        )
 
         with TestClient(service.app, headers={"Authorization": "Bearer test-token"}) as client:
             self.assertEqual(client.get("/", follow_redirects=False).headers["location"], "/chat/")
@@ -758,7 +760,7 @@ class WebDisplayTest(unittest.TestCase):
     def test_authentication_base_path_and_capabilities(self) -> None:
         display = WebDisplay()
         display.bind(cast("Agent[T.Alive]", self.agent))
-        service = WebDisplayService(token="fixed-token").mount("/agents/research", display)
+        service = WebDisplayService(token="fixed-token").mount(SimpleSession("/agents/research", display))
         with TestClient(service.app) as client:
             self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 401)
             page = client.get("/chat/?session=/agents/research", follow_redirects=False)
@@ -807,7 +809,7 @@ class WebDisplayTest(unittest.TestCase):
                 pass
 
         generated = WebDisplay()
-        generated_service = WebDisplayService().mount("/", generated)
+        generated_service = WebDisplayService().mount(SimpleSession("/", generated))
         self.assertTrue(generated_service.token)
         self.assertIn("&token=", generated_service.access_url())
 
@@ -816,7 +818,7 @@ class WebDisplayTest(unittest.TestCase):
         docs.mkdir()
         (docs / "index.html").write_text("<main>Xun docs</main>", encoding="utf-8")
         service = WebDisplayService(token="fixed-token", base_path="/alpha", docs_dir=docs).mount(
-            "/", WebDisplay()
+            SimpleSession("/", WebDisplay())
         )
         parent = FastAPI()
         parent.mount("/outer", service.app)
@@ -870,7 +872,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_server_can_stop_and_restart(self) -> None:
         display = WebDisplay()
-        service = WebDisplayService(port=0).mount("/", display)
+        service = WebDisplayService(port=0).mount(SimpleSession("/", display))
         self.addCleanup(service.stop)
         service.start()
         first_port = service.port
@@ -892,8 +894,8 @@ class WebDisplayTest(unittest.TestCase):
         second_agent.display = second_display
         second_display.bind(cast("Agent[T.Alive]", second_agent))
         service = WebDisplayService(token="service-token")
-        service.mount("/coding", coding_display)
-        service.mount("/research", second_display)
+        service.mount(SimpleSession("/coding", coding_display))
+        service.mount(SimpleSession("/research", second_display))
 
         with TestClient(service.app) as client:
             client.get("/chat/?token=service-token", follow_redirects=False)
@@ -906,10 +908,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual([agent["identifier"] for agent in research.json()], ["agent-2"])
 
     def test_service_rejects_overlapping_mounts(self) -> None:
-        service = WebDisplayService().mount("/team", WebDisplay())
+        service = WebDisplayService().mount(SimpleSession("/team", WebDisplay()))
 
         with self.assertRaisesRegex(ValueError, "cannot overlap"):
-            service.mount("/team/research", WebDisplay())
+            service.mount(SimpleSession("/team/research", WebDisplay()))
 
     def test_service_manages_dynamic_sessions_and_reports_status(self) -> None:
         events: list[tuple[str, str]] = []
@@ -922,6 +924,7 @@ class WebDisplayTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.mount_path = "/sessions/new"
                 self.display = WebDisplay()
+                self.name = "new"
 
             def close(self) -> None:
                 events.append((self.mount_path, "close"))
@@ -930,7 +933,7 @@ class WebDisplayTest(unittest.TestCase):
                 events.append((self.mount_path, "destroy"))
 
         service = WebDisplayService(token="service-token", session_factory=NewSession)
-        service.mount("/sessions/main", main_display, name="Main session")
+        service.mount(SimpleSession("/sessions/main", main_display, name="Main session"))
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             listing = client.get("/api/sessions").json()
@@ -990,6 +993,7 @@ class WebDisplayTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.mount_path = "/managed"
                 self.display = WebDisplay()
+                self.name = "managed"
 
             def close(self) -> None:
                 events.append("close")
@@ -998,7 +1002,7 @@ class WebDisplayTest(unittest.TestCase):
                 events.append("destroy")
 
         service = WebDisplayService(token="service-token", session_factory=ManagedSession)
-        service.mount("/main", WebDisplay())
+        service.mount(SimpleSession("/main", WebDisplay()))
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             self.assertEqual(client.post("/api/sessions/create", json={}).status_code, 201)
             self.assertEqual(events, [])
@@ -1007,18 +1011,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual([session.path for session in service.list_sessions()], ["/main"])
 
     def test_service_creates_managed_session_alongside_root_display(self) -> None:
-        class NewSession:
-            mount_path = "/sessions/new"
-
-            def __init__(self) -> None:
-                self.display = WebDisplay()
-
-            def close(self) -> None: ...
-
-            def destroy(self) -> None: ...
-
-        service = WebDisplayService(token="service-token", session_factory=NewSession)
-        service.mount("/", WebDisplay())
+        service = WebDisplayService(
+            token="service-token", session_factory=lambda: SimpleSession("/sessions/new", WebDisplay())
+        )
+        service.mount(SimpleSession("/", WebDisplay()))
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             created = client.post("/api/sessions/create", json={"name": "New session"})
@@ -1037,7 +1033,7 @@ class WebDisplayTest(unittest.TestCase):
                 exits.append("exit")
 
         service = WebDisplayService(token="service-token", session_factory=new_session)
-        service.mount("/main", WebDisplay())
+        service.mount(SimpleSession("/main", WebDisplay()))
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             created = client.post("/api/sessions/create", json={})
             self.assertEqual(created.json()["path"], "/legacy")

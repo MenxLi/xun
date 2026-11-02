@@ -1,6 +1,5 @@
 import argparse, shlex, sys, hashlib, secrets
 from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 import docker
@@ -10,14 +9,15 @@ from .core.display_abstract import DisplayAbstract
 from .core.config import get_home_dir, HOME_COPY_INCLUDE
 from .displays.display import Display
 from .displays.web_display import WebDisplay
-from .displays.web_service import WebDisplayService, WebSession
+from .displays.web_service import SimpleSession, WebDisplayService, WebSession
 from .core.toolbox import ToolBox
 from .core.agent import Agent
 from .core.prompt import get_system_prompt
 from .core.command import Command
 from .core.types import CancelledError
 from .core.workspace import Workspace
-from .session import Instruction, SessionManager, execute_instruction, input_to_instruction, parse_message_input, register_default_commands
+from .session import (AgentStore, DBEventStore, Instruction, DurableSession, execute_instruction,
+                     input_to_instruction, parse_message_input, register_default_commands)
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
 from .core.util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
@@ -96,45 +96,34 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         inst = get_instruction(agent.display, agent=agent)
 
 
-@dataclass
-class _WebSession(WebSession):
-    """One web session: ephemeral without a manager (close == destroy),
-    persistent with one."""
-
-    mount_path: str
-    display: WebDisplay
-    agent: "Agent[Agent.T.Init] | None" = None
-    manager: SessionManager | None = None
-    _closed = False
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        if self.agent is not None:
-            self.agent.finalize()
-        if self.manager is not None:
-            self.manager.finalize()
-
-    def destroy(self) -> None:
-        # release without saving — the data is erased anyway
-        if not self._closed:
-            self._closed = True
-            if self.agent is not None:
-                self.agent.finalize()
-        if self.manager is not None:
-            self.manager.destroy()
+def _web_display_factory(store: DBEventStore) -> WebDisplay:
+    return WebDisplay(expose_files=True, event_store=store)
 
 
-def _new_web_session(workdir: Path | None) -> _WebSession:
+def _new_durable_session(
+    session: DurableSession[WebDisplay] | None = None,
+    store: AgentStore | None = None,
+) -> DurableSession[WebDisplay]:
+    """A durable session with one agent. With `session` and `store`, the saved
+    snapshot is restored into the discovered session instead of starting fresh."""
+    session = session or DurableSession(display_factory=_web_display_factory)
+
+    def pre_init(agent: "Agent[Agent.T.Uninit]") -> None:
+        if store is not None:
+            store.load(agent)  # load before attach: the identifier lands in its own slot
+        session.attach(agent)
+
+    setup_agent(default_tools=True, default_commands=True, display=session.display, pre_init=pre_init)
+    return session
+
+
+def _new_session(workdir: Path | None, *, mount_path: str | None = None) -> WebSession:
+    """One service session: ephemeral under a fixed workdir, durable otherwise."""
     if workdir is not None:
         display = WebDisplay(expose_files=True)
         agent = setup_agent(default_tools=True, default_commands=True, display=display, workdir=workdir)
-        return _WebSession(f"/{secrets.token_hex(6)}", display, agent)
-    manager = SessionManager()
-    display = WebDisplay(expose_files=True, event_store=manager.event_store())
-    agent = setup_agent(default_tools=True, default_commands=True, display=display, pre_init=manager.attach)
-    return _WebSession(f"/{manager.session_id}", display, agent, manager)
+        return SimpleSession(mount_path or f"/{secrets.token_hex(6)}", display, release=agent.finalize)
+    return _new_durable_session()
 
 
 def web_session(
@@ -150,26 +139,38 @@ def web_session(
     """Run a web service with an optional initial agent and dynamic sessions.
 
     Without a fixed workdir every session (the initial one included) persists
-    under `<home>/sessions/`; with one, sessions are ephemeral.
+    under `<home>/sessions/` and stored sessions are remounted on start; with
+    one, sessions are ephemeral.
     """
     fixed_workdir = Path(workdir) if workdir is not None else None
-    initial = (
-        _new_web_session(fixed_workdir) if initial_agent
-        else _WebSession("/", WebDisplay(expose_files=True))
-    )
     service = WebDisplayService(
         host=host,
         port=port,
         token=token,
         base_path=base_path,
-        session_factory=(lambda: _new_web_session(fixed_workdir)) if manage_sessions else None,
+        session_factory=(lambda: _new_session(fixed_workdir)) if manage_sessions else None,
     )
-    service.mount("/", initial.display)
+    sessions: list[WebSession] = []
     try:
+        if initial_agent:
+            if fixed_workdir is None:
+                # stored sessions return under their old paths, the fresh one mounts last
+                for found in DurableSession.discover(display_factory=_web_display_factory):
+                    entries = found.entries()
+                    if not entries:
+                        found.close()  # nothing stored: release it, mount nothing
+                        continue
+                    sessions.append(_new_durable_session(found, next(iter(entries.values()))))
+            sessions.append(_new_session(fixed_workdir, mount_path="/"))
+        else:
+            sessions.append(SimpleSession("/", WebDisplay(expose_files=True)))
+        for session in sessions:
+            service.mount(session)
         service.start(blocking=True)
     finally:
         service.stop()
-        initial.close()
+        for session in sessions:
+            session.close()
 
 
 def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):

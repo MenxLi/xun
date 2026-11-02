@@ -184,11 +184,17 @@ class SessionRename(BaseModel):
 
 
 class WebSession(Protocol):
-    """A factory-created session: the service mounts its display and calls
-    `destroy()` when the user removes it, `close()` when the service stops."""
+    """A mountable session: the service mounts its display under `mount_path`
+    and calls `destroy()` when the user removes it, `close()` when the service
+    stops. `DurableSession` satisfies this structurally."""
 
-    mount_path: str
-    display: WebDisplay
+    name: str
+
+    @property
+    def mount_path(self) -> str: ...
+
+    @property
+    def display(self) -> WebDisplay: ...
 
     def close(self) -> None: ...
 
@@ -199,29 +205,34 @@ SessionSource = Callable[[], "WebSession | AbstractContextManager[tuple[str, Web
 
 
 @dataclass
-class _CMWebSession:
-    """Adapts a legacy context manager to `WebSession`: close == destroy == exit."""
+class SimpleSession:
+    """Session over a ready-made display: close == destroy == `release()` once."""
 
     mount_path: str
     display: WebDisplay
-    stack: ExitStack
+    name: str = ""
+    release: Optional[Callable[[], object]] = None
     _closed = False
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            self.name = self.mount_path.rsplit("/", 1)[-1] or "Session"
 
     def close(self) -> None:
         if not self._closed:
             self._closed = True
-            self.stack.close()
+            if self.release is not None:
+                self.release()
 
     def destroy(self) -> None:
         self.close()
 
 
 @dataclass
-class _DisplaySession:
-    display: WebDisplay
-    name: str
+class _Mounted:
+    session: WebSession
     route: Mount
-    session: Optional[WebSession] = None
+    managed: bool = False  # factory-created: the service closes it on shutdown
 
 
 class WebDisplayService:
@@ -246,7 +257,7 @@ class WebDisplayService:
         self.session_path = f"{self.base_path}/session"
         self.sessions_api_path = f"{self.base_path}/api/sessions"
         self.login_path = f"{self.base_path}/login"
-        self._sessions: dict[str, _DisplaySession] = {}
+        self._sessions: dict[str, _Mounted] = {}
         self._session_factory = session_factory
         self._session_lock = threading.RLock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -324,14 +335,13 @@ class WebDisplayService:
                 raise HTTPException(405, "Session management is disabled")
             session = self._open_session(factory)
             try:
-                self.mount(session.mount_path, session.display, name=request.name)
+                if name := (request.name or "").strip():
+                    session.name = name
+                self.mount(session, managed=True)
             except BaseException:
                 session.destroy()
                 raise
-            mount_path = _normalize_path(session.mount_path)
-            with self._session_lock:
-                self._sessions[mount_path].session = session
-            return self._session_info(mount_path)
+            return self._session_info(_normalize_path(session.mount_path))
 
         @self.app.post(f"{self.sessions_api_path}/remove")
         async def remove_session(request: SessionRemove) -> dict[str, bool]:
@@ -411,17 +421,17 @@ class WebDisplayService:
         except BaseException:
             stack.close()
             raise
-        return _CMWebSession(mount_path, display, stack)
+        return SimpleSession(mount_path, display, release=stack.close)
 
-    def mount(self, path: str, display: WebDisplay, *, name: Optional[str] = None) -> WebDisplayService:
-        mount_path = _normalize_path(path)
+    def mount(self, session: WebSession, *, managed: bool = False) -> WebDisplayService:
+        mount_path = _normalize_path(session.mount_path)
+        display = session.display
         if "srv" in mount_path.split("/"):
             raise ValueError("Session paths cannot contain a 'srv' segment")  # see _TokenAuthMiddleware
-        session_name = (name or "").strip() or mount_path.rsplit("/", 1)[-1] or "Session"
         with self._session_lock:
             if mount_path in self._sessions:
                 raise ValueError(f"A display is already mounted at {mount_path or '/'}")
-            if any(session.display is display for session in self._sessions.values()):
+            if any(mounted.session.display is display for mounted in self._sessions.values()):
                 raise ValueError("A WebDisplay can only be mounted once")
             if any(
                 mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
@@ -445,21 +455,20 @@ class WebDisplayService:
             if mount_path and root_session is not None:
                 self.app.routes.remove(route)
                 self.app.routes.insert(self.app.routes.index(root_session.route), route)
-            self._sessions[mount_path] = _DisplaySession(display, session_name, route)
+            self._sessions[mount_path] = _Mounted(session, route, managed)
         return self
 
     def unmount(self, path: str) -> None:
         mount_path = _normalize_path(path)
         with self._session_lock:
-            session = self._sessions.pop(mount_path, None)
-            if session is None:
+            mounted = self._sessions.pop(mount_path, None)
+            if mounted is None:
                 raise HTTPException(404, "Session not found")
-            self.app.routes.remove(session.route)
+            self.app.routes.remove(mounted.route)
             if self._loop is not None:
-                asyncio.run_coroutine_threadsafe(session.display._close_clients(), self._loop)
-                session.display._detach()
-        if session.session is not None:
-            session.session.destroy()
+                asyncio.run_coroutine_threadsafe(mounted.session.display._close_clients(), self._loop)
+                mounted.session.display._detach()
+        mounted.session.destroy()
 
     def rename(self, path: str, name: str) -> SessionInfo:
         mount_path = _normalize_path(path)
@@ -467,10 +476,10 @@ class WebDisplayService:
         if not session_name:
             raise HTTPException(422, "Session name cannot be empty")
         with self._session_lock:
-            session = self._sessions.get(mount_path)
-            if session is None:
+            mounted = self._sessions.get(mount_path)
+            if mounted is None:
                 raise HTTPException(404, "Session not found")
-            session.name = session_name
+            mounted.session.name = session_name
             return self._session_info(mount_path)
 
     def list_sessions(self) -> list[SessionInfo]:
@@ -478,7 +487,7 @@ class WebDisplayService:
             return [self._session_info(path) for path in self._sessions]
 
     def _session_info(self, mount_path: str) -> SessionInfo:
-        session = self._sessions[mount_path]
+        session = self._sessions[mount_path].session
         agents = session.display.agents.values()
         if session.display._pending.list():
             status: SessionStatus = "waiting"
@@ -492,7 +501,7 @@ class WebDisplayService:
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
         loop = asyncio.get_running_loop()
         with self._session_lock:
-            displays = [session.display for session in self._sessions.values()]
+            displays = [mounted.session.display for mounted in self._sessions.values()]
             if any(display._loop is not None for display in displays):
                 raise RuntimeError("A mounted WebDisplay is already attached to a running app")
             for display in displays:
@@ -505,17 +514,17 @@ class WebDisplayService:
             sessions: list[WebSession] = []
             with self._session_lock:
                 self._loop = None
-                for session in self._sessions.values():
-                    session.display._detach()
-                for path, session in tuple(self._sessions.items()):
-                    if session.session is None:
+                for mounted in self._sessions.values():
+                    mounted.session.display._detach()
+                for path, mounted in tuple(self._sessions.items()):
+                    if not mounted.managed:
                         continue
                     self._sessions.pop(path)
-                    self.app.routes.remove(session.route)
-                    sessions.append(session.session)
+                    self.app.routes.remove(mounted.route)
+                    sessions.append(mounted.session)
             self._started.clear()
-            for managed in sessions:
-                managed.close()
+            for session in sessions:
+                session.close()
 
     def access_url(self, path: str = "", _map_0000: bool = False) -> str:
         mount_path = _normalize_path(path)
