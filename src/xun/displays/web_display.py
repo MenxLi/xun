@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 import rich
 
 from ..core.display_abstract import AgentInfo, DisplayAbstract, DisplayEvent, UserMessageEvent
+from ..core.display_store import EventStore
 from ..core.tracing import SpanSnapshot
 from ..core.types import CancelledError
 from ..session import SteeringStore, UserInstruction, install_steering, run_command, run_message
@@ -139,9 +140,12 @@ class WebDisplay(DisplayAbstract):
         self,
         expose_files: bool = False,
         event_buffer_size: int = 5000,
+        event_store: "EventStore | None" = None,
     ) -> None:
         super().__init__()
         self.expose_files = expose_files
+        if event_store is not None:
+            self.event_store = event_store
         self.with_buffer_size(event_buffer_size)
         self._pending = _PendingPrompts()
         self._clients: set[WebSocket] = set()

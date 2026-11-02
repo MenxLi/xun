@@ -11,7 +11,7 @@ import threading
 from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Literal, Optional
+from typing import Any, AsyncGenerator, Callable, cast, Literal, Optional, Protocol
 from urllib.parse import quote, urlencode, urlsplit
 
 import jinja2
@@ -183,12 +183,45 @@ class SessionRename(BaseModel):
     name: str = Field(max_length=80)
 
 
+class WebSession(Protocol):
+    """A factory-created session: the service mounts its display and calls
+    `destroy()` when the user removes it, `close()` when the service stops."""
+
+    mount_path: str
+    display: WebDisplay
+
+    def close(self) -> None: ...
+
+    def destroy(self) -> None: ...
+
+
+SessionSource = Callable[[], "WebSession | AbstractContextManager[tuple[str, WebDisplay]]"]
+
+
+@dataclass
+class _CMWebSession:
+    """Adapts a legacy context manager to `WebSession`: close == destroy == exit."""
+
+    mount_path: str
+    display: WebDisplay
+    stack: ExitStack
+    _closed = False
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self.stack.close()
+
+    def destroy(self) -> None:
+        self.close()
+
+
 @dataclass
 class _DisplaySession:
     display: WebDisplay
     name: str
     route: Mount
-    context: Optional[ExitStack] = None
+    session: Optional[WebSession] = None
 
 
 class WebDisplayService:
@@ -202,7 +235,7 @@ class WebDisplayService:
         base_path: str = "",
         assets_dir: Path = _DEFAULT_WEB_ASSETS,
         docs_dir: Path = _DEFAULT_DOCS_ASSETS,
-        session_manager: Optional[Callable[[], AbstractContextManager[tuple[str, WebDisplay]]]] = None,
+        session_factory: Optional[SessionSource] = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -214,7 +247,7 @@ class WebDisplayService:
         self.sessions_api_path = f"{self.base_path}/api/sessions"
         self.login_path = f"{self.base_path}/login"
         self._sessions: dict[str, _DisplaySession] = {}
-        self._session_manager = session_manager
+        self._session_factory = session_factory
         self._session_lock = threading.RLock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Optional[uvicorn.Server] = None
@@ -274,7 +307,7 @@ class WebDisplayService:
     def _configure_sessions(self) -> None:
         @self.app.get(self.sessions_api_path)
         async def sessions() -> SessionList:
-            return SessionList(sessions=self.list_sessions(), can_manage=self._session_manager is not None)
+            return SessionList(sessions=self.list_sessions(), can_manage=self._session_factory is not None)
 
         @self.app.get(f"{self.sessions_api_path}/{{session_path:path}}")
         async def session(session_path: str) -> SessionInfo:
@@ -286,24 +319,23 @@ class WebDisplayService:
 
         @self.app.post(f"{self.sessions_api_path}/create", status_code=201)
         async def create_session(request: SessionCreate) -> SessionInfo:
-            manager = self._session_manager
-            if manager is None:
+            factory = self._session_factory
+            if factory is None:
                 raise HTTPException(405, "Session management is disabled")
-            context = ExitStack()
+            session = self._open_session(factory)
             try:
-                raw_mount_path, display = context.enter_context(manager())
-                mount_path = _normalize_path(raw_mount_path)
-                self.mount(mount_path, display, name=request.name)
-                with self._session_lock:
-                    self._sessions[mount_path].context = context
+                self.mount(session.mount_path, session.display, name=request.name)
             except BaseException:
-                context.close()
+                session.destroy()
                 raise
+            mount_path = _normalize_path(session.mount_path)
+            with self._session_lock:
+                self._sessions[mount_path].session = session
             return self._session_info(mount_path)
 
         @self.app.post(f"{self.sessions_api_path}/remove")
         async def remove_session(request: SessionRemove) -> dict[str, bool]:
-            if self._session_manager is None:
+            if self._session_factory is None:
                 raise HTTPException(405, "Session management is disabled")
             if len(self._sessions) <= 1:
                 raise HTTPException(409, "The last session cannot be removed")
@@ -312,7 +344,7 @@ class WebDisplayService:
 
         @self.app.post(f"{self.sessions_api_path}/rename")
         async def rename_session(request: SessionRename) -> SessionInfo:
-            if self._session_manager is None:
+            if self._session_factory is None:
                 raise HTTPException(405, "Session management is disabled")
             return self.rename(request.path, request.name)
 
@@ -369,6 +401,18 @@ class WebDisplayService:
             status_code=status_code,
         )
 
+    def _open_session(self, factory: SessionSource) -> WebSession:
+        source = factory()
+        if not isinstance(source, AbstractContextManager):
+            return cast(WebSession, source)
+        stack = ExitStack()
+        try:
+            mount_path, display = stack.enter_context(source)
+        except BaseException:
+            stack.close()
+            raise
+        return _CMWebSession(mount_path, display, stack)
+
     def mount(self, path: str, display: WebDisplay, *, name: Optional[str] = None) -> WebDisplayService:
         mount_path = _normalize_path(path)
         if "srv" in mount_path.split("/"):
@@ -414,8 +458,8 @@ class WebDisplayService:
             if self._loop is not None:
                 asyncio.run_coroutine_threadsafe(session.display._close_clients(), self._loop)
                 session.display._detach()
-        if session.context is not None:
-            session.context.close()
+        if session.session is not None:
+            session.session.destroy()
 
     def rename(self, path: str, name: str) -> SessionInfo:
         mount_path = _normalize_path(path)
@@ -458,20 +502,20 @@ class WebDisplayService:
         try:
             yield
         finally:
-            contexts: list[ExitStack] = []
+            sessions: list[WebSession] = []
             with self._session_lock:
                 self._loop = None
                 for session in self._sessions.values():
                     session.display._detach()
                 for path, session in tuple(self._sessions.items()):
-                    if session.context is None:
+                    if session.session is None:
                         continue
                     self._sessions.pop(path)
                     self.app.routes.remove(session.route)
-                    contexts.append(session.context)
+                    sessions.append(session.session)
             self._started.clear()
-            for context in contexts:
-                context.close()
+            for managed in sessions:
+                managed.close()
 
     def access_url(self, path: str = "", _map_0000: bool = False) -> str:
         mount_path = _normalize_path(path)

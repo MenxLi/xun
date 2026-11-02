@@ -2,15 +2,15 @@
 
 A manager owns `<home>/sessions/<session_id>/`: the display event database
 plus one slot per agent (`<agent_id>/`) holding its snapshot and a managed
-workspace (`workspace/`, `tempdir/`). Use as a context manager around the
-session's lifetime: agents are saved on exit, and the event store closes
-there — finalize bound agents before exiting.
+workspace (`workspace/`, `tempdir/`). Agents save on every run end;
+`finalize()` and `destroy()` end the session by keeping or erasing it.
 """
 
 from __future__ import annotations
 
 import re
-import uuid
+import secrets
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,7 +28,7 @@ class SessionManager:
     """Owns one session directory and the save timing of its agents."""
 
     def __init__(self, session_id: str | None = None, *, home_dir: Path | None = None):
-        session_id = session_id or str(uuid.uuid4())
+        session_id = session_id or secrets.token_hex(6)  # git-style hex, plenty for a local namespace
         if not session_id.strip(".") or not _SAFE_ID.fullmatch(session_id):
             raise ValueError(f"Unsafe session id: {session_id!r}")
         self.session_id = session_id
@@ -40,22 +40,11 @@ class SessionManager:
     def directory(self) -> Path:
         return self._dir
 
-    def __enter__(self) -> "SessionManager":
-        self._dir.mkdir(parents=True, exist_ok=True)
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        try:
-            self.save_all()
-        finally:
-            if self._store is not None:
-                self._store.close()
-                self._store = None
-
     def event_store(self) -> DBEventStore:
-        """The session's event database; install with
-        `display.event_store = mgr.event_store()`, then set the buffer size."""
+        """The session's event database; pass it to `WebDisplay(event_store=...)`
+        so the display's buffer size applies to it."""
         if self._store is None:
+            self._dir.mkdir(parents=True, exist_ok=True)
             self._store = DBEventStore(self._dir / "events.db")
         return self._store
 
@@ -76,9 +65,21 @@ class SessionManager:
         agent.hooks.run_end.add(lambda args: store.save(args.agent))
         return store
 
-    def save_all(self) -> None:
+    def finalize(self) -> None:
+        """Save every attached agent and close the event store. Idempotent;
+        finalize the agents themselves first — their closing events belong in the store."""
         for agent, store in self._agents.values():
             store.save(agent)
+        if self._store is not None:
+            self._store.close()
+            self._store = None
+
+    def destroy(self) -> None:
+        """Discard the session: close the event store, erase the directory, skip saves."""
+        if self._store is not None:
+            self._store.close()
+            self._store = None
+        shutil.rmtree(self._dir, ignore_errors=True)
 
     def entries(self) -> dict[str, AgentStore]:
         """Snapshot slots present in this session, keyed by agent id."""
@@ -91,7 +92,7 @@ class SessionManager:
 
     @classmethod
     def discover(cls, *, home_dir: Path | None = None) -> list["SessionManager"]:
-        """All stored sessions under `<home>/sessions/` (empty names skipped)."""
+        """All stored sessions under `<home>/sessions/`."""
         root = (home_dir or get_home_dir()) / "sessions"
         return [
             cls(directory.name, home_dir=home_dir)

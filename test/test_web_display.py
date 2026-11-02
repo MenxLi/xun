@@ -912,21 +912,24 @@ class WebDisplayTest(unittest.TestCase):
             service.mount("/team/research", WebDisplay())
 
     def test_service_manages_dynamic_sessions_and_reports_status(self) -> None:
-        removed: list[tuple[str, WebDisplay]] = []
+        events: list[tuple[str, str]] = []
         main_agent = _Agent(self.root, "main-agent", "Main")
         main_display = WebDisplay()
         main_agent.display = main_display
         main_display.bind(cast("Agent[T.Alive]", main_agent))
 
-        @contextmanager
-        def new_session():
-            display = WebDisplay()
-            try:
-                yield "/sessions/new", display
-            finally:
-                removed.append(("/sessions/new", display))
+        class NewSession:
+            def __init__(self) -> None:
+                self.mount_path = "/sessions/new"
+                self.display = WebDisplay()
 
-        service = WebDisplayService(token="service-token", session_manager=new_session)
+            def close(self) -> None:
+                events.append((self.mount_path, "close"))
+
+            def destroy(self) -> None:
+                events.append((self.mount_path, "destroy"))
+
+        service = WebDisplayService(token="service-token", session_factory=NewSession)
         service.mount("/sessions/main", main_display, name="Main session")
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
@@ -978,33 +981,43 @@ class WebDisplayTest(unittest.TestCase):
             last = client.post("/api/sessions/remove", json={"path": "/sessions/main"})
             self.assertEqual(last.status_code, 409)
 
-        self.assertEqual([path for path, _display in removed], ["/sessions/new", "/sessions/new"])
+        self.assertEqual(events, [("/sessions/new", "destroy"), ("/sessions/new", "destroy")])
 
     def test_service_closes_managed_session_contexts_on_shutdown(self) -> None:
-        closed = threading.Event()
+        events: list[str] = []
 
-        @contextmanager
-        def new_session():
-            try:
-                yield "/managed", WebDisplay()
-            finally:
-                closed.set()
+        class ManagedSession:
+            def __init__(self) -> None:
+                self.mount_path = "/managed"
+                self.display = WebDisplay()
 
-        service = WebDisplayService(token="service-token", session_manager=new_session)
+            def close(self) -> None:
+                events.append("close")
+
+            def destroy(self) -> None:
+                events.append("destroy")
+
+        service = WebDisplayService(token="service-token", session_factory=ManagedSession)
         service.mount("/main", WebDisplay())
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             self.assertEqual(client.post("/api/sessions/create", json={}).status_code, 201)
-            self.assertFalse(closed.is_set())
+            self.assertEqual(events, [])
 
-        self.assertTrue(closed.is_set())
+        self.assertEqual(events, ["close"])  # shutdown closes, never destroys
         self.assertEqual([session.path for session in service.list_sessions()], ["/main"])
 
     def test_service_creates_managed_session_alongside_root_display(self) -> None:
-        @contextmanager
-        def new_session():
-            yield "/sessions/new", WebDisplay()
+        class NewSession:
+            mount_path = "/sessions/new"
 
-        service = WebDisplayService(token="service-token", session_manager=new_session)
+            def __init__(self) -> None:
+                self.display = WebDisplay()
+
+            def close(self) -> None: ...
+
+            def destroy(self) -> None: ...
+
+        service = WebDisplayService(token="service-token", session_factory=NewSession)
         service.mount("/", WebDisplay())
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
@@ -1012,6 +1025,26 @@ class WebDisplayTest(unittest.TestCase):
 
             self.assertEqual(created.status_code, 201)
             self.assertEqual(client.get("/session/sessions/new/api/config").status_code, 200)
+
+    def test_service_adapts_legacy_context_manager_factory(self) -> None:
+        exits: list[str] = []
+
+        @contextmanager
+        def new_session():
+            try:
+                yield "/legacy", WebDisplay()
+            finally:
+                exits.append("exit")
+
+        service = WebDisplayService(token="service-token", session_factory=new_session)
+        service.mount("/main", WebDisplay())
+        with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+            created = client.post("/api/sessions/create", json={})
+            self.assertEqual(created.json()["path"], "/legacy")
+            self.assertEqual(client.post("/api/sessions/remove", json={"path": "/legacy"}).status_code, 200)
+            self.assertEqual(exits, ["exit"])  # remove exits the context manager
+
+        self.assertEqual(exits, ["exit"])  # shutdown re-exits nothing already unmounted
 
     def test_session_management_is_disabled_without_manager(self) -> None:
         response = self.client.post("http://testserver/api/sessions/create", json={"name": "New session"})

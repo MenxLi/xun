@@ -1,5 +1,6 @@
-import argparse, shlex, sys, hashlib, tempfile, uuid
-from contextlib import contextmanager, nullcontext, suppress
+import argparse, shlex, sys, hashlib, secrets
+from contextlib import suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 import docker
@@ -9,14 +10,14 @@ from .core.display_abstract import DisplayAbstract
 from .core.config import get_home_dir, HOME_COPY_INCLUDE
 from .displays.display import Display
 from .displays.web_display import WebDisplay
-from .displays.web_service import WebDisplayService
+from .displays.web_service import WebDisplayService, WebSession
 from .core.toolbox import ToolBox
 from .core.agent import Agent
 from .core.prompt import get_system_prompt
 from .core.command import Command
 from .core.types import CancelledError
 from .core.workspace import Workspace
-from .session import Instruction, execute_instruction, input_to_instruction, parse_message_input, register_default_commands
+from .session import Instruction, SessionManager, execute_instruction, input_to_instruction, parse_message_input, register_default_commands
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
 from .core.util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
@@ -42,6 +43,7 @@ def setup_agent(
     default_commands: bool = True,
     display: DisplayAbstract | None = None,
     workdir: Path | str | None = None,
+    pre_init: Callable[["Agent[Agent.T.Uninit]"], object] | None = None,
     ) -> "Agent[Agent.T.Init]":
     """Quickly set up a CLI agent with builtins."""
     toolbox = ToolBox()
@@ -62,6 +64,8 @@ def setup_agent(
         register_default_commands(agent.command, fs_extra=True)
         if default_tools:
             agent.command.register(*default_tool_commands())
+    if pre_init is not None:
+        pre_init(agent)
     # initialize last: after_initialize hooks observe the fully configured agent
     return agent.initialize()
 
@@ -92,30 +96,46 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         inst = get_instruction(agent.display, agent=agent)
 
 
-@contextmanager
-def _web_display_session(
-    workdir: Path | None,
-    *,
-    mount_path: str,
-):
-    temporary_workspace = tempfile.TemporaryDirectory(suffix="-workspace") if workdir is None else None
-    session_workdir = Path(temporary_workspace.name) if temporary_workspace else workdir
-    try:
+@dataclass
+class _WebSession(WebSession):
+    """One web session: ephemeral without a manager (close == destroy),
+    persistent with one."""
+
+    mount_path: str
+    display: WebDisplay
+    agent: "Agent[Agent.T.Init] | None" = None
+    manager: SessionManager | None = None
+    _closed = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self.agent is not None:
+            self.agent.finalize()
+        if self.manager is not None:
+            self.manager.finalize()
+
+    def destroy(self) -> None:
+        # release without saving — the data is erased anyway
+        if not self._closed:
+            self._closed = True
+            if self.agent is not None:
+                self.agent.finalize()
+        if self.manager is not None:
+            self.manager.destroy()
+
+
+def _new_web_session(workdir: Path | None) -> _WebSession:
+    if workdir is not None:
         display = WebDisplay(expose_files=True)
-        agent = setup_agent(
-            name=f"agent-{hashlib.md5(str(session_workdir).encode()).hexdigest()[:8]}",
-            default_tools=True,
-            default_commands=True,
-            display=display,
-            workdir=session_workdir,
-        )
-        try:
-            yield mount_path, display
-        finally:
-            agent.finalize()
-    finally:
-        if temporary_workspace is not None:
-            temporary_workspace.cleanup()
+        agent = setup_agent(default_tools=True, default_commands=True, display=display, workdir=workdir)
+        return _WebSession(f"/{secrets.token_hex(6)}", display, agent)
+    manager = SessionManager()
+    display = WebDisplay(expose_files=True, event_store=manager.event_store())
+    agent = setup_agent(default_tools=True, default_commands=True, display=display, pre_init=manager.attach)
+    return _WebSession(f"/{manager.session_id}", display, agent, manager)
+
 
 def web_session(
     workdir: Path | str | None = None,
@@ -127,33 +147,29 @@ def web_session(
     manage_sessions: bool = True,
     initial_agent: bool = True,
 ) -> None:
-    """Run a web service with an optional initial agent and dynamic sessions."""
+    """Run a web service with an optional initial agent and dynamic sessions.
+
+    Without a fixed workdir every session (the initial one included) persists
+    under `<home>/sessions/`; with one, sessions are ephemeral.
+    """
     fixed_workdir = Path(workdir) if workdir is not None else None
-
-    def new_session():
-        mount_path = f"/{uuid.uuid4()}"
-        return _web_display_session(
-            fixed_workdir,
-            mount_path=mount_path,
-        )
-
-    initial_session = (
-        _web_display_session(fixed_workdir, mount_path="/")
-        if initial_agent
-        else nullcontext(("/", WebDisplay(expose_files=True)))
+    initial = (
+        _new_web_session(fixed_workdir) if initial_agent
+        else _WebSession("/", WebDisplay(expose_files=True))
     )
-    with initial_session as (mount_path, display):
-        service = WebDisplayService(
-            host=host,
-            port=port,
-            token=token,
-            base_path=base_path,
-            session_manager=new_session if manage_sessions else None,
-        ).mount(mount_path, display)
-        try:
-            service.start(blocking=True)
-        finally:
-            service.stop()
+    service = WebDisplayService(
+        host=host,
+        port=port,
+        token=token,
+        base_path=base_path,
+        session_factory=(lambda: _new_web_session(fixed_workdir)) if manage_sessions else None,
+    )
+    service.mount("/", initial.display)
+    try:
+        service.start(blocking=True)
+    finally:
+        service.stop()
+        initial.close()
 
 
 def non_interactive_session(agent: "Agent[Agent.T.Init]", instruction: str):

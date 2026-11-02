@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Sequence, Optional, Generic, TypeGuard, cast, overload
 from dataclasses import dataclass, field
 import shlex
+import secrets
 import uuid
 import weakref
 
@@ -56,7 +57,7 @@ class Agent(
     """class-level shorthand so callers can use `Agent[Agent.T.Init]`. """
 
     name: str = field(default_factory=lambda: f"agent-{str(uuid.uuid4())[:8]}")
-    identifier: str = field(default_factory=lambda: str(uuid.uuid4()))
+    identifier: str = field(default_factory=lambda: secrets.token_hex(8))
     display: DisplayAbstract = field(default_factory=NullDisplay)
     conversation: Conversation = field(default_factory=Conversation)
     toolbox: ToolBox = field(default_factory=ToolBox)
@@ -171,7 +172,7 @@ class Agent(
         The default behavior is mostly that of the default sub-agent getter
         """
         new_agent = Agent(
-            identifier=(new_id := str(uuid.uuid4())),
+            identifier=(new_id := secrets.token_hex(8)),
             name=f"{parent_agent.name}-child-{new_id[:8]}",
             display=parent_agent.display if share_display else NullDisplay(),
 
