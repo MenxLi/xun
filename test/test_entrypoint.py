@@ -99,7 +99,7 @@ class WebSessionTest(unittest.TestCase):
             session = service.kwargs["session_factory"]()
             workdir = self.agents[1].workspace.workdir
             self.assertTrue(workdir.is_dir())
-            self.assertEqual(workdir.parent.parent, session.directory)
+            self.assertEqual(workdir.parent, session.directory)
             session.close()
             self.assertTrue(self.agents[1].finalized)
             self.assertTrue(workdir.is_dir())  # close keeps the data
@@ -108,7 +108,7 @@ class WebSessionTest(unittest.TestCase):
 
         initial_slot = self.agents[0].workspace.workdir
         self.assertTrue(self.agents[0].finalized)  # initial closed by web_session teardown
-        self.assertEqual(initial_slot.parent.parent, initial.directory)
+        self.assertEqual(initial_slot.parent, initial.directory)
         self.assertTrue(initial.directory.exists())  # teardown keeps every session
 
     def test_stored_sessions_are_remounted_without_a_fresh_one(self) -> None:
@@ -122,7 +122,7 @@ class WebSessionTest(unittest.TestCase):
             second = _Service.instances[-1]
 
         self.assertEqual([s.mount_path for s in second.mounts], [restored.mount_path])  # nothing new on top
-        self.assertEqual([agent.workspace.workdir.parent.parent for agent in self.agents[1:]],
+        self.assertEqual([agent.workspace.workdir.parent for agent in self.agents[1:]],
                          [restored.directory])
         self.assertEqual(second.mounts[0].name, restored.name)  # name survives via session.json
         self.assertTrue(all(agent.finalized for agent in self.agents))

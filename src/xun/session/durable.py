@@ -3,10 +3,12 @@
     <session_id>/
         session.json    # session metadata (name)
         events.db       # session event store (owned by the session)
-        <agent_id>/     # one slot per attached agent
-            meta.json   # AgentSnapshot: state, conversation, workspace
-            workspace/  # the agent's workdir
-            tempdir/    # the agent's tempdir (recreated empty each load)
+        workspace/      # the session's workdir, shared by all its agents
+        tempdir/        # shared scratch area
+        agents/<agent_id>/
+            meta.json
+            conversation.json
+            state.json
 
 `DurableSession` *is* the session: it owns the display (built over the event
 store at construction), the name, and the mount path, and satisfies the
@@ -33,8 +35,8 @@ if TYPE_CHECKING:
 _SAFE_ID = re.compile(r"[\w.-]+\Z", re.ASCII)  # a single, traversal-free path segment
 
 class DurableSession[D: DisplayAbstract]:
-    """Durable session root managing agents, their workspaces, 
-    and the display name and event store."""
+    """Durable session root owning the session workspace, the agent
+    snapshots, and the display name and event store."""
 
     def __init__(
         self,
@@ -66,20 +68,20 @@ class DurableSession[D: DisplayAbstract]:
         return f"/{self.session_id}"
 
     def attach(self, agent: "Agent[Agent.T.Uninit]") -> AgentStore:
-        """Give `agent` a managed workspace and save it on every run end.
-        Call before `initialize()`; when restoring, load the snapshot first so
-        the identifier lands back in its own slot. Raises once the session ended."""
+        """Give `agent` the session's shared workspace and save it on every
+        run end. Call before `initialize()`; when restoring, load the snapshot
+        first so the identifier lands back in its own slot. Raises once the
+        session ended."""
         if self._ended:
             raise RuntimeError("Session already ended")
         if agent.identifier in self._agents:
             raise ValueError(f"Agent already attached: {agent.identifier}")
-        slot = self._dir / agent.identifier
-        workspace = slot / "workspace"
-        tempdir = slot / "tempdir"
-        workspace.mkdir(parents=True, exist_ok=True)
+        workspace = self._dir / "workspace"
+        tempdir = self._dir / "tempdir"
+        workspace.mkdir(exist_ok=True)
         tempdir.mkdir(exist_ok=True)
         agent.workspace = Workspace(workdir=workspace, tempdir=DeferredTempDirectory(tempdir))
-        store = AgentStore(slot)
+        store = AgentStore(self._dir / "agents" / agent.identifier)
         self._agents[agent.identifier] = (agent, store)
         # once the session has ended, a late save must not resurrect it
         agent.hooks.run_end.add(lambda args: None if self._ended else store.save(args.agent))
@@ -111,7 +113,7 @@ class DurableSession[D: DisplayAbstract]:
     def entries(self) -> dict[str, AgentStore]:
         """Snapshot slots present in this session, keyed by agent id."""
         entries: dict[str, AgentStore] = {}
-        for slot in sorted(self._dir.glob("*")):
+        for slot in sorted((self._dir / "agents").glob("*")):
             store = AgentStore(slot)
             if slot.is_dir() and store.exists():
                 entries[slot.name] = store
@@ -123,7 +125,8 @@ class DurableSession[D: DisplayAbstract]:
         home_dir: Path | None = None,
     ) -> list["DurableSession[DT]"]:
         """Stored sessions under `<home>/sessions/`, with names restored from
-        `session.json`. A directory without it was skipped."""
+        `session.json`. A directory without it is an interrupted-run orphan
+        and is skipped."""
         root = (home_dir or get_home_dir()) / "sessions"
         sessions: list[DurableSession[DT]] = []
         for directory in sorted(root.glob("*")):

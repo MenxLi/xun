@@ -15,11 +15,10 @@ class DurableSessionTest(unittest.TestCase):
             session = DurableSession("s1", home_dir=Path(home), display_factory=DISPLAY)
             agent = Agent(name="worker", display=NullDisplay())
             session.attach(agent)
-            slot = session.directory / agent.identifier
-            self.assertTrue((slot / "workspace").is_dir())
-            self.assertTrue((slot / "tempdir").is_dir())
-            self.assertEqual(agent.workspace.workdir, slot / "workspace")
-            self.assertIsNotNone(agent.workspace.tempdir.external_path)
+            slot = session.directory / "agents" / agent.identifier
+            self.assertEqual(agent.workspace.workdir, session.directory / "workspace")
+            self.assertTrue(agent.workspace.workdir.is_dir())
+            self.assertEqual(agent.workspace.tempdir.external_path, session.directory / "tempdir")
 
             agent = agent.initialize()
             agent.conversation.add_user_message("in run")
@@ -74,7 +73,7 @@ class DurableSessionTest(unittest.TestCase):
             self.assertEqual(restored.identifier, identifier)
             param = cast(dict, restored.conversation.messages[-1].completion_param())
             self.assertEqual(param["content"], "remember me")
-            self.assertEqual(restored.workspace.workdir, session2.directory / identifier / "workspace")
+            self.assertEqual(restored.workspace.workdir, session2.directory / "workspace")
 
             session2.destroy()
             self.assertEqual(
