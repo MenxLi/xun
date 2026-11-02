@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -41,6 +42,27 @@ def copy_directory(source: str, container: DockerContainer, target: str, include
                 tar.add(child, arcname=child.name)
         archive.seek(0)
         container.put_archive(target, archive)
+
+
+def sync_home(source: Path | None, target: Path) -> None:
+    """Replace the supervisor-managed files of a mounted user home.
+    Everything outside `HOME_COPY_INCLUDE` is user-owned and outlives every container."""
+    target.mkdir(parents=True, exist_ok=True)
+    for name in HOME_COPY_INCLUDE:
+        managed = target / name
+        if managed.is_symlink() or managed.is_file():
+            managed.unlink(missing_ok=True)
+        elif managed.is_dir():
+            shutil.rmtree(managed)
+    if source is None or not source.is_dir():
+        return
+    for child in source.iterdir():
+        if child.name not in HOME_COPY_INCLUDE:
+            continue
+        if child.is_dir():
+            shutil.copytree(child, target / child.name)  # copies through symlinks: the host extensions/ may be one
+        else:
+            shutil.copy2(child, target / child.name)
 
 
 def start_attached(container: DockerContainer, *, interactive: bool) -> None:
@@ -105,7 +127,8 @@ class DockerManager:
         excluded_ports: set[int] | None = None,
         env_patterns: list[str] | None = None,
         env_set: dict[str, str] | None = None,
-        copy_home_from: str | None = None,
+        copy_home_from: Path | str | None = None,
+        homes_dir: Path | None = None,  # per-user homes mounted in the container as /xun; None keeps data in its layer
         client: DockerClient | None = None,
     ) -> None:
         self.image = image
@@ -114,7 +137,8 @@ class DockerManager:
         self.used_ports = set(excluded_ports or ())
         self.env_patterns = list(env_patterns or ())
         self.env_set = dict(env_set or {})
-        self.copy_home_from = copy_home_from
+        self.copy_home_from = Path(copy_home_from) if copy_home_from else None
+        self.homes_dir = homes_dir
         self.client = client or docker.from_env()
 
     @property
@@ -165,6 +189,9 @@ class DockerManager:
         container: DockerContainer | None = None
         container_env = resolve_environment(self.env_patterns, self.env_set, exclude={"XUN_HOME", "_XUN_USERNAME"})
         container_env["_XUN_USERNAME"] = user.name
+        home = self.homes_dir / user.name if self.homes_dir is not None else None
+        if home is not None:
+            sync_home(self.copy_home_from, home)
         try:
             container = self.client.containers.create(
                 image=self.image,
@@ -175,6 +202,7 @@ class DockerManager:
                 name=name,
                 auto_remove=True,
                 ports={f"{port}/tcp": ("127.0.0.1", port)},
+                volumes={str(home): {"bind": "/xun", "mode": "rw"}} if home is not None else None,
                 environment=container_env,
                 labels={
                     "xunx.managed": "true",
@@ -183,8 +211,6 @@ class DockerManager:
                     "xunx.token": user.token,
                 },
             )
-            if self.copy_home_from is not None and Path(self.copy_home_from).is_dir():
-                copy_directory(self.copy_home_from, container, "/.xun", include=HOME_COPY_INCLUDE)
             container.start()
             if user.paused:
                 container.pause()

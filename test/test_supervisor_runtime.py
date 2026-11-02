@@ -1,3 +1,4 @@
+import shutil
 import tarfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from xun.supervisor import runtime
-from xun.supervisor.runtime import copy_directory, container_name, start_attached, start_shell
+from xun.supervisor.runtime import copy_directory, container_name, start_attached, start_shell, sync_home
 
 
 class ContainerRuntimeTest(unittest.TestCase):
@@ -45,6 +46,31 @@ class ContainerRuntimeTest(unittest.TestCase):
             copy_directory(directory, container, "/workspace")
 
         self.assertEqual(archived_names, ["hello.txt"])
+
+
+class SyncHomeTest(unittest.TestCase):
+    def test_managed_files_are_replaced_and_user_data_survives(self) -> None:
+        with TemporaryDirectory() as directory:
+            source, home = Path(directory, "src"), Path(directory, "home")
+            (source / "extensions" / "ext").mkdir(parents=True)
+            (source / "extensions" / "ext" / "setup_extension.py").write_text("new", encoding="utf-8")
+            (source / "config.json").write_text("{}", encoding="utf-8")
+            (home / "extensions" / "gone").mkdir(parents=True)  # removed on the host since last start
+            (home / "extensions" / "gone" / "stale.py").write_text("stale", encoding="utf-8")
+            (home / "sessions" / "s1").mkdir(parents=True)  # user-owned, untouched
+
+            sync_home(source, home)
+
+            self.assertEqual((home / "extensions" / "ext" / "setup_extension.py").read_text(), "new")
+            self.assertTrue((home / "config.json").is_file())
+            self.assertFalse((home / "extensions" / "gone").exists())
+            self.assertTrue((home / "sessions" / "s1").is_dir())
+
+            shutil.rmtree(source)  # next start: the host home is gone, managed files must not linger
+            sync_home(source, home)
+
+            self.assertFalse((home / "config.json").exists())
+            self.assertTrue((home / "sessions" / "s1").is_dir())
 
 
 class StartShellTest(unittest.TestCase):

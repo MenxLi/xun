@@ -94,7 +94,8 @@ def main() -> None:
                 excluded_ports={args.port},
                 env_patterns=CONTAINER_ENV_PATTERNS + env_patterns,
                 env_set=env_set,
-                copy_home_from=str(get_home_dir()),
+                copy_home_from=get_home_dir(),
+                homes_dir=get_home_dir() / "x" / "users",
             )
             supervisor = Supervisor(store, containers, args.interval)
             web.run_app(Multiplexer(supervisor).app(), host=args.host, port=args.port)
@@ -107,6 +108,7 @@ def main() -> None:
                 parser.error(f"user does not exist: {args.username}")
             else:
                 console.print(f"[green]Deleted user[/green] [cyan]{args.username}[/cyan]")
+                console.print(f"[dim]Home data stays under {get_home_dir() / 'x' / 'users' / args.username}.[/dim]")
         elif args.command == "user-list":
             users = store.list()
             if not users:
@@ -130,8 +132,8 @@ def main() -> None:
                 store.upgrade(name)
                 console.print(f"[green]Queued upgrade[/green] for [cyan]{name}[/cyan]")
             console.print(
-                "[dim]Containers are recreated on the next serve reconciliation, "
-                "discarding in-container data (workspace, saved conversations).[/dim]"
+                "[dim]Containers are recreated on the next serve reconciliation; "
+                "config, extensions and skills are re-synced, sessions and data are kept.[/dim]"
             )
         elif args.command == "shell":
             if store.get(args.username) is None:

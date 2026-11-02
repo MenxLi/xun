@@ -106,8 +106,8 @@ RUN pip install .
 
 ENV _XUN_INFO_TOOL_OVERRIDE=1
 
-# fixed xun home: xunc/xunx copy the host home in here at container creation (follows symlinks)
-ENV XUN_HOME=/.xun
+# fixed xun home: xunc copies the host home in here at creation, xunx bind-mounts a per-user home over it
+ENV XUN_HOME=/xun
 
-RUN mkdir -p /workspace /.xun
+RUN mkdir -p /workspace /xun
 WORKDIR /workspace

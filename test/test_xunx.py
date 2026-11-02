@@ -117,6 +117,7 @@ class DockerManagerTest(unittest.TestCase):
 
         self.assertEqual(container, ManagedContainer("container-id", 20001, "-user-token", 0))
         options = client.containers.create.call_args.kwargs
+        self.assertIsNone(options["volumes"])  # no homes_dir: everything stays in the container layer
         self.assertEqual(options["ports"], {"20001/tcp": ("127.0.0.1", 20001)})
         self.assertEqual(options["labels"]["xunx.token"], "-user-token")
         self.assertEqual(options["environment"]["XUN_OPENAI_API_KEY"], "secret")
@@ -130,6 +131,28 @@ class DockerManagerTest(unittest.TestCase):
             ],
         )
         sdk_container.start.assert_called_once_with()
+
+    def test_user_home_is_bind_mounted_and_synced(self) -> None:
+        client = Mock()
+        client.containers.create.return_value = Mock(id="container-id")
+        with TemporaryDirectory() as directory:
+            source, homes = Path(directory, "src"), Path(directory, "homes")
+            (source / "skills").mkdir(parents=True)
+            (source / "skills" / "a.md").write_text("a", encoding="utf-8")
+            manager = DockerManager(
+                image="xun",
+                port_range=range(20000, 20001),
+                instance="instance-id",
+                copy_home_from=str(source),
+                homes_dir=homes,
+                client=client,
+            )
+            with patch("xun.supervisor.runtime.secrets.choice", return_value=20000):
+                manager.start(User("alice", "token"))
+
+            options = client.containers.create.call_args.kwargs
+            self.assertEqual(options["volumes"], {str(homes / "alice"): {"bind": "/xun", "mode": "rw"}})
+            self.assertEqual((homes / "alice" / "skills" / "a.md").read_text(), "a")
 
     def test_explicit_env_assignment_overrides_forwarded_value(self) -> None:
         client = Mock()

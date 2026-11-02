@@ -276,7 +276,7 @@ def main_container():
     if args.copy and not requested_mount:
         parser.error("--copy requires a mount directory.")
     mount = str(Path(requested_mount).resolve()) if requested_mount else ""
-    envs = resolve_environment(env_kw, env_set, exclude={"XUN_HOME"})    # the image fixes XUN_HOME=/.xun
+    envs = resolve_environment(env_kw, env_set, exclude={"XUN_HOME"})    # the image fixes XUN_HOME=/xun
     name: str = args.name if args.name is not None else f"xun-{hashlib.md5((mount or args.image).encode()).hexdigest()[:8]}"
     exec_cmd = args.exec_cmd
     if exec_cmd is None:
@@ -300,7 +300,7 @@ def main_container():
         if args.copy:
             copy_directory(mount, container, "/workspace")
         if (home := get_home_dir()).is_dir():
-            copy_directory(str(home), container, "/.xun", include=HOME_COPY_INCLUDE)    # copy the host home in; start from an empty dir to skip
+            copy_directory(str(home), container, "/xun", include=HOME_COPY_INCLUDE)    # copy the host home in; start from an empty dir to skip
         start_attached(container, interactive=True)
     except BaseException:
         if container is not None:
