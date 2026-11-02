@@ -196,8 +196,21 @@ const view = computed(() => {
     return depth
   }
 
-  const rows: Row[] = [...kept.entries()]
-    .sort(([, a], [, b]) => a.start - b.start)
+  // pre-order the exec tree so a sub-agent row sits directly under its parent,
+  // not wherever its start time sorts it among siblings
+  const preorder: [string, ExecInfo][] = []
+  const visit = (id: string) => {
+    preorder.push([id, kept.get(id)!])
+    const kids = (childExecs.get(id) ?? []).filter(child => kept.has(child))
+    kids.sort((a, b) => kept.get(a)!.start - kept.get(b)!.start)
+    for (const child of kids) visit(child)
+  }
+  const roots = [...kept.entries()].filter(([, i]) => !i.parent || !kept.has(i.parent))
+  for (const [id] of roots.sort(([, a], [, b]) => a.start - b.start)) {
+    visit(id)
+  }
+
+  const rows: Row[] = preorder
     .map(([id, info]) => {
       const own = mine
         .filter(entry => entry.exec === id)
