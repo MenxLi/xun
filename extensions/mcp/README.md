@@ -9,10 +9,8 @@ because xun's own API is synchronous).
 
 ## Install
 
-Copy this directory to `$XUN_HOME/extensions/mcp/`. It needs a xun build that has
-`ToolBox.register_raw`, `ToolBox.pop`, `ToolBox.is_disabled` and
-`AgentConfig.extension_settings` — all on main after commit `2ef8fd369ce9` 
-(Will be ready on v1.3.0 release).
+Copy this directory to `$XUN_HOME/extensions/mcp/`. It requires xun >= 1.5.0
+(the version gate declared by its `@extension_attr`); older builds skip it with a warning.
 
 ## Configure
 

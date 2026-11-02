@@ -193,7 +193,7 @@ def mcp_refresh(ctx: ToolCallContext, server: str) -> Any:
     return {"server": server, "added": added, "replaced": replaced, "removed": removed}
 
 
-@extension_attr(api_min_version="1.4.4")
+@extension_attr(api_min_version="1.5.0")
 def setup_extension(ctx: ExtensionContext) -> None:
     box = ctx.agent.toolbox
     missing = [m for m in _REQUIRED_API if not hasattr(box, m)]
