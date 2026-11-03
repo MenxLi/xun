@@ -55,6 +55,8 @@ export default {
     running: 'Running',
     waiting: 'Waiting for input',
     renameSession: 'Rename session',
+    logout: 'Log out',
+    logoutConfirm: 'Log out of this workspace?',
     lastCannotRemove: 'The last session cannot be removed',
     removeSession: 'Remove session',
     removeConfirm: 'Remove {name}? This cannot be undone.',

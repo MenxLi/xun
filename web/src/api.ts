@@ -29,6 +29,12 @@ export function docsUrl(): string {
   return `${serviceRoot}/docs/`
 }
 
+// clears the auth cookie server-side; navigate there since fetch follows the redirect itself
+export async function logout(): Promise<void> {
+  await fetch(`${serviceRoot}/logout`, { method: 'POST' }).catch(() => null)
+  window.location.assign(`${serviceRoot}/login`)
+}
+
 interface ApiFailure extends Error {
   status?: number
   detail?: { code?: string; modified_at?: number }

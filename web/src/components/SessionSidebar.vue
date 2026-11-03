@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LoaderCircle, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
+import { LoaderCircle, LogOut, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
+import { logout } from '../api'
 import { useSettingsStore } from '../stores/settings'
 import type { SessionInfo } from '../types'
 
@@ -34,6 +35,7 @@ function setRenameInput(el: unknown, path: string) {
 }
 
 const removing = ref<SessionInfo | null>(null)
+const logoutOpen = ref(false)
 const activeSession = ref<SessionInfo | null>(null)
 const menuPosition = ref({ top: '0px', left: '0px' })
 
@@ -170,6 +172,12 @@ onBeforeUnmount(() => {
       </div>
     </nav>
 
+    <footer class="session-footer">
+      <button class="session-logout" type="button" :title="t('sessions.logout')" @click="logoutOpen = true">
+        <LogOut :size="14" /><span>{{ t('sessions.logout') }}</span>
+      </button>
+    </footer>
+
     <Teleport to="body">
       <div v-if="activeSession" class="action-menu" :style="menuPosition" @click.stop>
         <button @click="beginRename(activeSession)"><Pencil :size="14" /><span>{{ t('sessions.renameSession') }}</span></button>
@@ -181,6 +189,10 @@ onBeforeUnmount(() => {
       <i18n-t keypath="sessions.removeConfirm" scope="global" tag="p">
         <template #name><strong>{{ removing?.name }}</strong></template>
       </i18n-t>
+    </AppDialog>
+
+    <AppDialog :open="logoutOpen" :title="t('sessions.logout')" :confirm-label="t('sessions.logout')" @close="logoutOpen = false" @confirm="void logout()">
+      <p>{{ t('sessions.logoutConfirm') }}</p>
     </AppDialog>
   </aside>
 </template>

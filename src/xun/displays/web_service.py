@@ -57,6 +57,7 @@ class _TokenAuthMiddleware:
         self.docs_path = docs_path
         self.chat_path = f"{base_path}/chat"
         self.login_path = f"{base_path}/login"
+        self.logout_path = f"{base_path}/logout"
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -97,7 +98,7 @@ class _TokenAuthMiddleware:
             await self.app(scope, receive, log_non_success_response)
             return
 
-        if request_path == self.login_path:
+        if request_path in {self.login_path, self.logout_path}:
             await self.app(scope, receive, log_non_success_response)
             return
         query_token = connection.query_params.get("token")
@@ -257,6 +258,7 @@ class WebDisplayService:
         self.session_path = f"{self.base_path}/session"
         self.sessions_api_path = f"{self.base_path}/api/sessions"
         self.login_path = f"{self.base_path}/login"
+        self.logout_path = f"{self.base_path}/logout"
         self._sessions: dict[str, _Mounted] = {}
         self._session_factory = session_factory
         self._session_lock = threading.RLock()
@@ -382,6 +384,13 @@ class WebDisplayService:
                 secure=request.url.scheme == "https",
                 path=f"{root_path}{self.base_path}/" or "/",
             )
+            return response
+
+        @self.app.post(self.logout_path)
+        async def logout(request: Request) -> RedirectResponse:
+            root_path = request.scope.get("root_path", "").rstrip("/")
+            response = RedirectResponse(f"{root_path}{self.login_path}", status_code=303)
+            response.delete_cookie(_COOKIE_NAME, path=f"{root_path}{self.base_path}/" or "/")
             return response
 
     def _login_target(self, value: str) -> str:

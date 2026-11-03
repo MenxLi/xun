@@ -808,6 +808,12 @@ class WebDisplayTest(unittest.TestCase):
             with client.websocket_connect("/session/agents/research/ws"):
                 pass
 
+            logout = client.post("/logout", follow_redirects=False)
+            self.assertEqual(logout.status_code, 303)
+            self.assertEqual(logout.headers["location"], "/login")
+            self.assertIn("xun_web_token=", logout.headers["set-cookie"])
+            self.assertEqual(client.get("/session/agents/research/api/agents").status_code, 401)
+
         generated = WebDisplay()
         generated_service = WebDisplayService().mount(SimpleSession("/", generated))
         self.assertTrue(generated_service.token)

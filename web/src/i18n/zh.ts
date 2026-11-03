@@ -57,6 +57,8 @@ const zh: typeof en = {
     running: '运行中',
     waiting: '等待输入',
     renameSession: '重命名会话',
+    logout: '退出登录',
+    logoutConfirm: '确定要退出登录吗？',
     lastCannotRemove: '无法删除最后一个会话',
     removeSession: '删除会话',
     removeConfirm: '确定要删除 {name} 吗？此操作无法撤销。',
