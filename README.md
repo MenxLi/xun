@@ -3,7 +3,7 @@
 A mini LLM agent runtime for building agent systems.
 
 Main features include:
-- Lightweight and compact core codebase (~5000 lines in `src/xun/*.py`, with comprehensive type hints). 
+- Lightweight and compact core codebase (~5000 lines in `src/xun/core`, with comprehensive type hints). 
 - Ready-to-use components like predefined tools, commands, extensions, and CLI/web interfaces. 
 - Extensible architecture for customization. 
 

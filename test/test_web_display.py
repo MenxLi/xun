@@ -966,7 +966,7 @@ class WebDisplayTest(unittest.TestCase):
             )
             self.assertEqual(renamed.status_code, 200)
             self.assertEqual(renamed.json()["name"], "Investigation")
-            self.assertEqual(client.get("/api/sessions").json()["sessions"][1]["name"], "Investigation")
+            self.assertEqual(client.get("/api/sessions").json()["sessions"][0]["name"], "Investigation")  # newest first
             self.assertEqual(
                 client.post(
                     "/api/sessions/rename",

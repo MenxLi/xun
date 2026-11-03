@@ -484,7 +484,8 @@ class WebDisplayService:
 
     def list_sessions(self) -> list[SessionInfo]:
         with self._session_lock:
-            return [self._session_info(path) for path in self._sessions]
+            # newest first: mount order is birth order (restore sorts by created_at, create appends)
+            return [self._session_info(path) for path in reversed(self._sessions)]
 
     def _session_info(self, mount_path: str) -> SessionInfo:
         session = self._sessions[mount_path].session
