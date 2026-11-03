@@ -3,8 +3,10 @@ The bash command execution is highly un-controlled and nearly impossible to cont
 The code in this module are best-effort assessments of command risk and should not be relied upon for complete safety.
 """
 from dataclasses import dataclass, replace
+import os
 import shlex
 import shutil
+import subprocess
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, Literal, Sequence
@@ -18,6 +20,7 @@ COMMAND_CHAIN_OPERATORS = {";", "&&", "||", "|"}
 AUTO_APPROVED_SHELL_OPERATORS = COMMAND_CHAIN_OPERATORS | {"(", ")"}
 SAFE_REDIRECTION_TARGETS = {"/dev/null"}
 _HARMLESS_CD_FLAGS = {"--", "-P", "-L"}
+_SHELL_SYNTAX_TIMEOUT = 10.0
 
 class RiskAssessResult(BaseModel):
     policy: Literal['allow', 'unsure', 'reject']
@@ -275,23 +278,67 @@ def _extract_segments(argv: list[str]) -> tuple[CommandSegment, ...]:
     return tuple(segments)
 
 
+def _is_shell_script(command_line: str) -> bool:
+    """Multiline input is shell source: shlex cannot tell a heredoc body from
+    shell code, so deriving command heads from it invents executables."""
+    return "\n" in command_line or "\r" in command_line
+
+
+def _validate_shell_script(command_line: str) -> None:
+    """Reject multiline source the shell itself cannot parse. `-n` parses without
+    executing; same interpreter as `cmd.run_command`, so no side effects."""
+    shell = shutil.which("bash") or "/bin/sh"
+    try:
+        checked = subprocess.run(
+            [shell, "-n"],
+            input=command_line,
+            capture_output=True,
+            text=True,
+            timeout=_SHELL_SYNTAX_TIMEOUT,
+            env=os.environ | {"BASH_ENV": os.devnull, "ENV": os.devnull, "LC_ALL": "C"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return          # no shell available to ask: fall through to confirmation
+    message = checked.stderr.strip() or checked.stdout.strip()
+    if checked.returncode:
+        raise ValueError(f"Invalid shell script: {message[:2000]}")
+    # an unterminated heredoc: bash only warns and exits 0
+    if "here-document" in message and "delimited by end-of-file" in message:
+        raise ValueError(f"Invalid shell script: {message[:2000]}")
+
+
 def _parse_command_spec(command_line: str) -> CommandSpec:
     if not command_line.strip():
         raise ValueError("Command must not be empty.")
+
+    shell_script = _is_shell_script(command_line)
+    if shell_script:
+        _validate_shell_script(command_line)
 
     lexer = shlex.shlex(command_line, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     # to prevent pattern such as 'ls#foo; bash ./evil.sh'
     lexer.commenters = ""   
-    argv = list(lexer)
-    if not argv:
+    try:
+        argv = list(lexer)
+    except ValueError:
+        # a heredoc body is not balanced shell words; the shell already accepted it
+        if not shell_script:
+            raise
+        argv = []
+    if not argv and not shell_script:
         raise ValueError("Command must not be empty.")
 
-    commands = _extract_exes(argv)
-    if not commands:
-        raise ValueError("Command must contain an executable.")
-
-    segments = _extract_segments(argv)
+    if shell_script:
+        # assessed whole: no invented executables; risk assessment and
+        # confirmation still receive the complete unmodified source
+        commands: tuple[ExecutableSpec, ...] = ()
+        segments: tuple[CommandSegment, ...] = ()
+    else:
+        commands = _extract_exes(argv)
+        if not commands:
+            raise ValueError("Command must contain an executable.")
+        segments = _extract_segments(argv)
 
     return CommandSpec(
         command_line=command_line,

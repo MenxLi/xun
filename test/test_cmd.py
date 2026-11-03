@@ -155,6 +155,63 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
 
 
 @unittest.skipIf(os.name == "nt", "bash tools are not exposed on Windows")
+class CmdShellScriptTest(unittest.TestCase):
+    """Multiline input is shell source: word-splitting it invents commands that
+    were never there, so it is assessed whole and parsed by the shell first."""
+
+    def assertConfirmationRequired(self, command: str, expected: bool) -> None:
+        ctx = ToolCallContext(cast("Agent[Agent.T.Init]", SimpleNamespace(state=AgentState())), "bash", None)
+        policy = _confirmation_policy(ctx, _parse_command_spec(command))
+        self.assertIs(policy.requires_confirmation, expected, command)
+
+    def test_multiline_source_invents_no_executables(self) -> None:
+        for command in (
+            "python3 - <<'PY'\nprint('https://example.org/a')\nPY",   # the URL is data
+            "cat <<'TXT'\n# title\nid/name\nTXT",
+            "python3 - <<EOF\nimport openpyxl\nwb.save('out.xlsx')\nEOF",
+            "for f in *.csv; do\n  python conv.py $f\ndone",          # `for`/`do` are not programs
+        ):
+            with self.subTest(command=command):
+                spec = _parse_command_spec(command)
+                self.assertEqual(spec.commands, ())
+                self.assertEqual(spec.segments, ())
+                self.assertEqual(spec.command_line, command)   # assessed unmodified
+
+    def test_valid_multiline_source_is_accepted(self) -> None:
+        for command in (
+            'python3 - <<PY\nprint("ok")\nPY',
+            "cat <<'TXT'\nit's here\nTXT",                      # apostrophe is not an open quote
+            "printf x > out.txt\nprintf y >> out.txt",
+        ):
+            with self.subTest(command=command):
+                _parse_command_spec(command)                   # must not raise
+
+    def test_unparsable_multiline_source_is_rejected(self) -> None:
+        for command in (
+            "if [ 1 -eq 1 ]; then\n  echo hi\n",               # missing fi
+            'echo "unterminated\n',
+            "echo a | | cat\n",
+            "cat <<EOF\nhi\n",                                 # bash only warns, and exits 0
+        ):
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(ValueError, "Invalid shell script"):
+                    _parse_command_spec(command)
+
+    def test_multiline_source_still_requires_confirmation(self) -> None:
+        for command in (
+            "python3 - <<EOF\nimport json\nprint(1)\nEOF",
+            "python3 - <<EOF\nimport os\nEOF\nrm -rf ./zzz",
+            "cat > note.txt <<'TXT'\nhi\nTXT",
+            "ls\npwd",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, True)
+
+    def test_leading_cd_is_still_recovered_from_a_script(self) -> None:
+        self.assertEqual(_parse_command_spec("cd child && \\\n  ls\n").leading_cd_target, "child")
+
+
+@unittest.skipIf(os.name == "nt", "bash tools are not exposed on Windows")
 class CmdExecutionTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = TemporaryDirectory()
