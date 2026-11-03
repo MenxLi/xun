@@ -24,7 +24,7 @@ export const useSessionBuffersStore = defineStore('sessionBuffers', {
     buffers: { '/': createBuffer() } as Record<string, SessionBuffer>,
   }),
   getters: {
-    current: state => state.buffers[state.currentPath],
+    current: state => state.buffers[state.currentPath] ?? createBuffer(),
   },
   actions: {
     select(path: string) {
@@ -37,6 +37,8 @@ export const useSessionBuffersStore = defineStore('sessionBuffers', {
     },
     dispose() {
       Object.keys(this.buffers).forEach(path => this.discard(path))
+      this.currentPath = '/'
+      this.buffers = { '/': createBuffer() }
     },
   },
 })

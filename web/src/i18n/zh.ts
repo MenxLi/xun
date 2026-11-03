@@ -4,7 +4,6 @@ const zh: typeof en = {
   common: {
     cancel: '取消',
     close: '关闭',
-    rename: '重命名',
     remove: '删除',
     delete: '删除',
     kindFile: '文件',
@@ -53,7 +52,6 @@ const zh: typeof en = {
     newSession: '新建会话',
     closeSessions: '关闭会话列表',
     sessionName: '会话名称',
-    createSession: '创建会话',
     sessionActions: '会话操作',
     idle: '空闲',
     running: '运行中',

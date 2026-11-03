@@ -2,7 +2,6 @@ export default {
   common: {
     cancel: 'Cancel',
     close: 'Close',
-    rename: 'Rename',
     remove: 'Remove',
     delete: 'Delete',
     kindFile: 'file',
@@ -51,7 +50,6 @@ export default {
     newSession: 'New session',
     closeSessions: 'Close sessions',
     sessionName: 'Session name',
-    createSession: 'Create session',
     sessionActions: 'Session actions',
     idle: 'Idle',
     running: 'Running',

@@ -82,7 +82,7 @@ export function fullEventTime(event: { timestamp: number }): string {
 
 export const api = {
   sessions: () => request<SessionList>(sessionUrl()),
-  createSession: (name: string) => request<SessionInfo>(`${sessionUrl()}/create`, {
+  createSession: (name?: string) => request<SessionInfo>(`${sessionUrl()}/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: name || null }),

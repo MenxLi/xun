@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LoaderCircle, MessageSquare, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
+import { LoaderCircle, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
 import type { SessionInfo } from '../types'
 
@@ -14,42 +14,19 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   close: []
-  create: [name: string]
+  create: []
   rename: [session: SessionInfo, name: string]
   remove: [session: SessionInfo]
   select: [path: string]
 }>()
 
 const { t } = useI18n()
-const creating = ref(false)
-const name = ref('')
-const renaming = ref<SessionInfo | null>(null)
+const renamingPath = ref<string | null>(null)
 const renameName = ref('')
+const renameInput = ref<HTMLInputElement>()
 const removing = ref<SessionInfo | null>(null)
 const activeSession = ref<SessionInfo | null>(null)
 const menuPosition = ref({ top: '0px', left: '0px' })
-
-function submit() {
-  if (props.busy) return
-  emit('create', name.value.trim())
-}
-
-function cancelCreate() {
-  creating.value = false
-  name.value = ''
-}
-
-function confirmRemove(session: SessionInfo) {
-  closeMenu()
-  if (!props.busy && props.sessions.length > 1) removing.value = session
-}
-
-function beginRename(session: SessionInfo) {
-  closeMenu()
-  if (props.busy) return
-  renaming.value = session
-  renameName.value = session.name
-}
 
 function toggleMenu(session: SessionInfo, event: MouseEvent) {
   if (activeSession.value?.path === session.path) {
@@ -74,14 +51,34 @@ function closeMenu() {
   activeSession.value = null
 }
 
-function rename() {
+function beginRename(session: SessionInfo) {
+  closeMenu()
+  if (!props.canManage || props.busy) return
+  renamingPath.value = session.path
+  renameName.value = session.name
+  void nextTick(() => {
+    renameInput.value?.focus()
+    renameInput.value?.select()
+  })
+}
+
+function cancelRename() {
+  renamingPath.value = null
+  renameName.value = ''
+}
+
+function submitRename(session: SessionInfo) {
+  if (renamingPath.value !== session.path) return
   const nextName = renameName.value.trim()
-  if (!renaming.value || props.busy || !nextName) return
-  if (nextName === renaming.value.name) {
-    renaming.value = null
-    return
+  cancelRename()
+  if (nextName && nextName !== session.name) {
+    emit('rename', session, nextName)
   }
-  emit('rename', renaming.value, nextName)
+}
+
+function confirmRemove(session: SessionInfo) {
+  closeMenu()
+  if (!props.busy && props.sessions.length > 1) removing.value = session
 }
 
 function remove() {
@@ -89,13 +86,6 @@ function remove() {
   emit('remove', removing.value)
   removing.value = null
 }
-
-watch(() => props.busy, (busy, wasBusy) => {
-  if (wasBusy && !busy && !props.error) {
-    cancelCreate()
-    renaming.value = null
-  }
-})
 
 onMounted(() => {
   window.addEventListener('resize', closeMenu)
@@ -115,18 +105,15 @@ onBeforeUnmount(() => {
         <strong>{{ t('sessions.title') }}</strong>
       </div>
       <div class="session-header-actions">
-        <button v-if="canManage" class="icon-button" :title="t('sessions.newSession')" :disabled="busy" @click="creating = true"><Plus :size="17" /></button>
-        <button class="icon-button mobile-close" :title="t('sessions.closeSessions')" @click="emit('close')"><X :size="18" /></button>
+        <button v-if="canManage" class="icon-button" :title="t('sessions.newSession')" :disabled="busy" @click="emit('create')">
+          <LoaderCircle v-if="busy && !removing" :size="15" class="spinning" />
+          <Plus v-else :size="16" />
+        </button>
+        <button class="icon-button mobile-close" :title="t('sessions.closeSessions')" @click="emit('close')"><X :size="17" /></button>
       </div>
     </header>
 
-    <form v-if="creating" class="session-create" @submit.prevent="submit">
-      <input v-model="name" autofocus maxlength="80" :placeholder="t('sessions.sessionName')" :aria-label="t('sessions.sessionName')">
-      <button class="icon-button" type="submit" :title="t('sessions.createSession')" :disabled="busy"><LoaderCircle v-if="busy" :size="15" class="spinning" /><Plus v-else :size="16" /></button>
-      <button class="icon-button" type="button" :title="t('common.cancel')" :disabled="busy" @click="cancelCreate"><X :size="16" /></button>
-    </form>
-
-    <div v-if="error && !renaming" class="session-error">{{ error }}</div>
+    <div v-if="error" class="session-error">{{ error }}</div>
     <nav class="session-list" :aria-label="t('sessions.title')" @scroll="closeMenu">
       <div
         v-for="session in sessions"
@@ -134,16 +121,34 @@ onBeforeUnmount(() => {
         class="session-row"
         :class="{ active: session.path === currentPath }"
       >
-        <button class="session-select" type="button" :aria-current="session.path === currentPath ? 'page' : undefined" @click="emit('select', session.path)">
-          <MessageSquare :size="14" />
-          <span class="session-copy">
-            <strong>{{ session.name }}</strong>
-            <small><i class="session-status" :class="session.status" />{{ t(`sessions.${session.status}`) }}</small>
-          </span>
-        </button>
-        <div v-if="canManage" class="session-actions" :class="{ open: activeSession?.path === session.path }" @click.stop>
-          <button class="icon-button" type="button" :title="t('sessions.sessionActions')" :disabled="busy" :aria-expanded="activeSession?.path === session.path" @click="toggleMenu(session, $event)"><MoreHorizontal :size="15" /></button>
+        <div v-if="renamingPath === session.path" class="session-select session-inline-edit">
+          <i class="session-status" :class="session.status" />
+          <input
+            ref="renameInput"
+            v-model="renameName"
+            maxlength="80"
+            :aria-label="t('sessions.sessionName')"
+            @keydown.enter.prevent="submitRename(session)"
+            @keydown.esc.prevent.stop="cancelRename"
+            @blur="submitRename(session)"
+          >
         </div>
+        <template v-else>
+          <button
+            class="session-select"
+            type="button"
+            :title="`${session.name} · ${t(`sessions.${session.status}`)}`"
+            :aria-current="session.path === currentPath ? 'page' : undefined"
+            @click="emit('select', session.path)"
+            @dblclick="beginRename(session)"
+          >
+            <i class="session-status" :class="session.status" :aria-label="t(`sessions.${session.status}`)" />
+            <span class="session-name">{{ session.name }}</span>
+          </button>
+          <div v-if="canManage" class="session-actions" :class="{ open: activeSession?.path === session.path }" @click.stop>
+            <button class="icon-button" type="button" :title="t('sessions.sessionActions')" :disabled="busy" :aria-expanded="activeSession?.path === session.path" @click="toggleMenu(session, $event)"><MoreHorizontal :size="14" /></button>
+          </div>
+        </template>
       </div>
     </nav>
 
@@ -153,13 +158,6 @@ onBeforeUnmount(() => {
         <button class="danger" :title="sessions.length === 1 ? t('sessions.lastCannotRemove') : undefined" :disabled="busy || sessions.length === 1" @click="confirmRemove(activeSession)"><Trash2 :size="14" /><span>{{ t('sessions.removeSession') }}</span></button>
       </div>
     </Teleport>
-
-    <AppDialog :open="renaming !== null" :title="t('sessions.renameSession')" :confirm-label="t('common.rename')" :busy="busy" :error="error" @close="renaming = null" @confirm="rename">
-      <label class="dialog-field">
-        <span>{{ t('sessions.sessionName') }}</span>
-        <input v-model="renameName" autofocus required maxlength="80">
-      </label>
-    </AppDialog>
 
     <AppDialog :open="removing !== null" :title="t('sessions.removeSession')" :confirm-label="t('common.remove')" danger :busy="busy" @close="removing = null" @confirm="remove">
       <i18n-t keypath="sessions.removeConfirm" scope="global" tag="p">

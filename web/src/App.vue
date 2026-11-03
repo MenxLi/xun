@@ -214,11 +214,11 @@ async function loadSessions() {
   }
 }
 
-async function createSession(name: string) {
+async function createSession() {
   sessionBusy.value = true
   sessionError.value = ''
   try {
-    const session = await api.createSession(name)
+    const session = await api.createSession()
     await loadSessions()
     switchSession(session.path)
   } catch (error) {
@@ -228,16 +228,38 @@ async function createSession(name: string) {
   }
 }
 
-async function renameSession(session: SessionInfo, name: string) {
-  sessionBusy.value = true
-  sessionError.value = ''
+const MAX_AUTO_SESSION_NAME = 28
+
+function isDefaultSessionName(session: SessionInfo): boolean {
+  return session.name === (session.path.replace(/^\//, '') || 'Session')
+}
+
+function toSessionTitle(content: string): string {
+  const normalized = content.trim().replace(/\s+/g, ' ')
+  const chars = Array.from(normalized)
+  return chars.length > MAX_AUTO_SESSION_NAME
+    ? `${chars.slice(0, MAX_AUTO_SESSION_NAME).join('')}…`
+    : normalized
+}
+
+function maybeAutoRenameSession(sessionPath: string, content: string) {
+  if (!canManageSessions.value) return
+  const session = sessions.value.find(item => item.path === sessionPath)
+  const title = toSessionTitle(content)
+  if (!session || !title || !isDefaultSessionName(session)) return
+  void renameSession(session, title, true)
+}
+
+async function renameSession(session: SessionInfo, name: string, silent = false) {
+  const previous = session.name
+  sessions.value = sessions.value.map(item => item.path === session.path ? { ...item, name } : item)
+  if (!silent) sessionError.value = ''
   try {
     const renamed = await api.renameSession(session.path, name)
     sessions.value = sessions.value.map(item => item.path === renamed.path ? renamed : item)
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : t('sessions.renameError')
-  } finally {
-    sessionBusy.value = false
+    sessions.value = sessions.value.map(item => item.path === session.path ? { ...item, name: previous } : item)
+    if (!silent) sessionError.value = error instanceof Error ? error.message : t('sessions.renameError')
   }
 }
 
@@ -453,6 +475,9 @@ function acceptSubmission(clientId: string) {
   pendingSubmission = null
   sending.value = false
   consumeComposer(submission.input, submission.imageUrls)
+  if (submission.payload.type === 'message') {
+    void maybeAutoRenameSession(submission.sessionPath, submission.payload.content)
+  }
 }
 
 // Clear the composer for a submitted input/images pair, keeping anything the
