@@ -86,6 +86,8 @@ def main() -> None:
         if args.command == "serve":
             if args.interval <= 0:
                 parser.error("--interval must be greater than zero")
+            home_dir = get_home_dir()
+            console.print(f"[dim]xun home: {home_dir}; user homes under {home_dir / 'x' / 'users'}[/dim]")
             env_patterns, env_set = parse_env_option(args.env)
             containers = DockerManager(
                 image=args.image,
@@ -94,8 +96,8 @@ def main() -> None:
                 excluded_ports={args.port},
                 env_patterns=CONTAINER_ENV_PATTERNS + env_patterns,
                 env_set=env_set,
-                copy_home_from=get_home_dir(),
-                homes_dir=get_home_dir() / "x" / "users",
+                copy_home_from=home_dir,
+                homes_dir=home_dir / "x" / "users",
             )
             supervisor = Supervisor(store, containers, args.interval)
             web.run_app(Multiplexer(supervisor).app(), host=args.host, port=args.port)

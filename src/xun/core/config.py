@@ -3,7 +3,7 @@ import json
 import os
 import functools
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 import openai
 from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
@@ -14,6 +14,10 @@ from .types import ModelCapabilityType, JsonType
 
 
 ASSET_DIR = Path(__file__).parent.parent / "assets"
+
+# The `.env` of the working directory, at import: `DEFAULTS` below and every `get_home_dir()` call
+# read the environment. dotenv's own default search starts at this file...
+load_dotenv(find_dotenv(usecwd=True))
 
 def xun_version() -> str | None:
     """Installed release version of xun, or None when running without package metadata."""
@@ -206,7 +210,6 @@ def _load_config_file(config_path: Path) -> AgentConfig:
 
 @functools.lru_cache(maxsize=1)
 def _load_config(_cache_id: str | None = None) -> AgentConfig:
-    load_dotenv()
     home_dir = get_home_dir()
     config_path = home_dir / "config.json"
 

@@ -22,9 +22,6 @@ from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
 from .core.util import CONTAINER_ENV_PATTERNS, resolve_environment, parse_env_option
 
-from dotenv import load_dotenv
-load_dotenv()
-
 
 def get_instruction(
     display: DisplayAbstract | None = None,
