@@ -27,6 +27,12 @@ const { t } = useI18n()
 const renamingPath = ref<string | null>(null)
 const renameName = ref('')
 const renameInput = ref<HTMLInputElement>()
+
+// v-for string refs bind as arrays, so the inline-edit input uses a function ref
+function setRenameInput(el: unknown, path: string) {
+  if (el && path === renamingPath.value) renameInput.value = el as HTMLInputElement
+}
+
 const removing = ref<SessionInfo | null>(null)
 const activeSession = ref<SessionInfo | null>(null)
 const menuPosition = ref({ top: '0px', left: '0px' })
@@ -136,7 +142,7 @@ onBeforeUnmount(() => {
         <div v-if="renamingPath === session.path" class="session-select session-inline-edit">
           <i class="session-status" :class="session.status" />
           <input
-            ref="renameInput"
+            :ref="(el) => setRenameInput(el, session.path)"
             v-model="renameName"
             maxlength="80"
             :aria-label="t('sessions.sessionName')"
