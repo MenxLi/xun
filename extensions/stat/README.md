@@ -49,7 +49,7 @@ xune stat budget clear [--user NAME]
 
 `xune <extension>` is the core runner: it loads the extension and dispatches to the
 `(parser, handler)` its `@extension_attr(cli=...)` declares. The db resolves like
-the agent's does (`$XUN_HOME`, else `cwd/.xun`), so run it from the agent's directory.
+the agent's does (`$XUN_HOME`, else `~/.xun`), so it finds the agent's data from any directory.
 
 Counts accept a `K`/`M`/`B` suffix (`--day 50K`), and `none` removes a ceiling. `budget set` leaves periods it is not given untouched; the current user comes from `_XUN_USERNAME`. Budgets are `token_cost` units, not tokens.
 

@@ -4,8 +4,8 @@
     xune stat budget set --user alice --day 50K --month 1M
     xune stat budget show
 
-The db is `default_db_path()` — `$XUN_HOME` else `cwd/.xun` — the same resolution
-the agent uses, so run this where the agent runs.
+The db is `default_db_path()` — `$XUN_HOME` else `~/.xun` — the same resolution
+the agent uses, wherever you run it.
 Budget numbers are `token_cost` units (see pricing.py); 'none' clears a ceiling.
 """
 from __future__ import annotations
@@ -96,7 +96,7 @@ def _budget_clear(args: argparse.Namespace) -> int:
 def _db_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--db", metavar="PATH",
                         help="stat.db path (default: <xun home>/extension_data/stat/, "
-                             "where <xun home> is $XUN_HOME else cwd/.xun)")
+                             "where <xun home> is $XUN_HOME else ~/.xun)")
 
 
 def build_parser() -> argparse.ArgumentParser:

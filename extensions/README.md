@@ -1,6 +1,6 @@
 # Extensions
 
-Drop Python code under `$XUN_HOME/extensions/` (default `./.xun/extensions/`) and every agent picks up its effects — tools, hooks, commands, config tweaks — at initialization. No registration needed. Extensions are **trusted code**: they run at import time with full process privileges, like a shell rc file. Check what loaded with the built-in `/extensions` command.
+Drop Python code under `$XUN_HOME/extensions/` (default `~/.xun/extensions/`) and every agent picks up its effects — tools, hooks, commands, config tweaks — at initialization. No registration needed. Extensions are **trusted code**: they run at import time with full process privileges, like a shell rc file. Check what loaded with the built-in `/extensions` command.
 
 ## Source forms
 

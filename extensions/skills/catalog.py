@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from xun.core.agent import Agent
 from xun.core.agent_state import StateRuntimeEntry
+from xun.core.config import get_home_dir
 
 try:
     import yaml
@@ -54,7 +55,7 @@ def session(agent: Agent[Agent.T.Alive]) -> Session:
 def roots(agent: Agent[Agent.T.Alive]) -> list[tuple[Path, str]]:
     """Where `skills` looks for bundles, highest precedence first."""
     return [
-        (Path(os.environ.get("XUN_HOME", Path.cwd() / ".xun")) / "skills", "user"),
+        (get_home_dir() / "skills", "user"),
         (agent.workspace.workdir / ".agents" / "skills", "project"),
         (Path.home() / ".agents" / "skills", "user"),
     ]

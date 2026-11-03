@@ -219,7 +219,7 @@ Open `http://127.0.0.1:5173`. Build a production bundle with `npm run build`. Se
 
 ## Configuration
 
-xun reads optional configuration from `.xun/config.json` (override the location with `XUN_HOME`); missing fields fall back to built-in defaults. Include only the fields you want to change, for example to override the model:
+xun reads optional configuration from `~/.xun/config.json` (override the location with `XUN_HOME`); missing fields fall back to built-in defaults. Include only the fields you want to change, for example to override the model:
 
 ```json
 {

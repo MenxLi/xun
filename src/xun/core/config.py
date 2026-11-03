@@ -24,11 +24,9 @@ def xun_version() -> str | None:
         return None
 
 def get_home_dir() -> Path:
-    home_dir = os.environ.get(f"XUN_HOME")
-    if home_dir:
-        return Path(home_dir)
-    else:
-        return Path.cwd() / f".xun"
+    if home_dir := os.environ.get("XUN_HOME"):
+        return Path(home_dir).expanduser().absolute()
+    return Path.home() / ".xun"
 
 HOME_COPY_INCLUDE = {"config.json", "extensions", "skills"}
 """What to copy from the host home dir into a container; skips x/ and sessions/."""
