@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Callable
 
 from ..core.config import get_home_dir
 from ..core.display_abstract import DisplayAbstract
+from ..core.hooks import HookArgs
 from ..core.workspace import DeferredTempDirectory, Workspace
 from .storage import AgentStore, DBEventStore
 
@@ -83,8 +84,15 @@ class DurableSession[D: DisplayAbstract]:
         agent.workspace = Workspace(workdir=workspace, tempdir=DeferredTempDirectory(tempdir))
         store = AgentStore(self._dir / "agents" / agent.identifier)
         self._agents[agent.identifier] = (agent, store)
-        # once the session has ended, a late save must not resurrect it
-        agent.hooks.run_end.add(lambda args: None if self._ended else store.save(args.agent))
+
+        def save(args: HookArgs.RunArgs) -> None:
+            if self._ended:
+                return  # a late save must not resurrect an ended session
+            store.save(args.agent)
+            self._save_meta()
+
+        self._save_meta()  # discoverable from its first agent on: a killed container never reaches close()
+        agent.hooks.run_end.add(save)
         return store
 
     def close(self) -> None:
@@ -98,8 +106,11 @@ class DurableSession[D: DisplayAbstract]:
             agent, store = self._agents.popitem()[1]
             agent.finalize()
             store.save(agent)
-        (self._dir / "session.json").write_text(json.dumps({"name": self.name}), encoding="utf-8")
+        self._save_meta()
         self._store.close()
+
+    def _save_meta(self) -> None:
+        (self._dir / "session.json").write_text(json.dumps({"name": self.name}), encoding="utf-8")
 
     def destroy(self) -> None:
         """Discard the session: release agents without saving and erase the
@@ -125,8 +136,7 @@ class DurableSession[D: DisplayAbstract]:
         home_dir: Path | None = None,
     ) -> list["DurableSession[DT]"]:
         """Stored sessions under `<home>/sessions/`, with names restored from
-        `session.json`. A directory without it is an interrupted-run orphan
-        and is skipped."""
+        `session.json`. A directory without it never had an agent and is skipped."""
         root = (home_dir or get_home_dir()) / "sessions"
         sessions: list[DurableSession[DT]] = []
         for directory in sorted(root.glob("*")):

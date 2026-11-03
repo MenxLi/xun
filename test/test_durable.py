@@ -32,6 +32,24 @@ class DurableSessionTest(unittest.TestCase):
             self.assertIn("after run", (slot / "conversation.json").read_text())
             session.close()  # idempotent
 
+    def test_attach_registers_the_session_so_a_kill_cannot_hide_it(self) -> None:
+        """`xunx upgrade` force-removes the container, so `close()` never runs: the
+        meta rides on attach and on every save instead, renaming included."""
+        with TemporaryDirectory() as home:
+            session = DurableSession("ran", name="Killed", home_dir=Path(home), display_factory=DISPLAY)
+            agent = Agent(name="survivor", display=NullDisplay())
+            session.attach(agent)
+            self.assertTrue((session.directory / "session.json").is_file())  # registered by its first agent
+            agent = agent.initialize()
+            session.name = "Renamed"
+            with agent.run_scope():
+                pass  # the run-end save carries the new name; close() is not needed
+            DurableSession("bare", home_dir=Path(home), display_factory=DISPLAY)  # never had an agent: hidden
+
+            found = DurableSession.discover(display_factory=DISPLAY, home_dir=Path(home))
+            self.assertEqual([(m.session_id, m.name) for m in found], [("ran", "Renamed")])
+            self.assertIn("survivor", (found[0].directory / "agents" / agent.identifier / "meta.json").read_text())
+
     def test_destroy_releases_agents_and_erases_directory(self) -> None:
         with TemporaryDirectory() as home:
             session = DurableSession("s1", home_dir=Path(home), display_factory=DISPLAY)
@@ -50,7 +68,7 @@ class DurableSessionTest(unittest.TestCase):
 
     def test_discover_restores_names_and_restore_round_trip(self) -> None:
         with TemporaryDirectory() as home:
-            DurableSession("orphan", home_dir=Path(home), display_factory=DISPLAY)  # never closed: no session.json
+            DurableSession("orphan", home_dir=Path(home), display_factory=DISPLAY)  # no agent attached: no session.json
             session = DurableSession("alpha", name="Research", home_dir=Path(home), display_factory=DISPLAY)
             agent = Agent(name="restorable", display=NullDisplay())
             session.attach(agent)
