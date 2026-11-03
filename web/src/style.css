@@ -16,7 +16,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app-shell { display: flex; width: 100%; height: 100%; background: var(--canvas); }
 .chat-shell { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-.session-sidebar { width: 216px; height: 100%; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel); z-index: 20; }
+.session-sidebar { position: relative; width: 216px; height: 100%; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel); z-index: 20; }
 .session-header { height: 62px; padding: 0 10px 0 14px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .session-header strong { display: block; margin-top: 2px; font-size: 13px; }
 .session-header-actions { display: flex; align-items: center; gap: 2px; }
@@ -343,11 +343,12 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .resize-handle { flex: none; border: 0; background: transparent; touch-action: none; }
 .resize-handle:hover, .resize-handle:focus-visible { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 .resize-handle.horizontal { position: absolute; top: 0; left: -3px; width: 6px; height: 100%; z-index: 21; cursor: col-resize; }
+.resize-handle.horizontal.edge-right { left: auto; right: -3px; }
 .resize-handle.vertical { position: relative; height: 5px; margin: -1px 0 -4px; z-index: 2; cursor: row-resize; }
 body.resizing-x { cursor: col-resize; user-select: none; }
 body.resizing-y { cursor: row-resize; user-select: none; }
 .file-browser.drag-active { outline: 2px solid var(--accent); outline-offset: -2px; }
-@media (min-width: 900px) { .file-browser { max-width: 45%; } }
+@media (min-width: 900px) { .file-browser { max-width: 45%; } .session-sidebar { max-width: 45%; } }
 .file-header { height: 62px; padding: 0 14px 0 16px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .file-header strong { display: block; margin-top: 2px; font-size: 13px; }
 .eyebrow { color: var(--muted); font: 500 9px/1 'Fira Code', monospace; text-transform: uppercase; letter-spacing: .06em; }
@@ -478,7 +479,7 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .prompt-footer .primary-button { min-width: 72px; height: 34px; padding: 0 12px; flex: none; color: var(--paper); font-size: 11px; }
 .primary-button { min-width: 82px; height: 36px; border: 0; border-radius: 5px; background: var(--accent); color: #fff; font-weight: 700; cursor: pointer; }
 .primary-button:disabled { opacity: .35; cursor: default; }
-@media (max-width: 899px) { .session-sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100% - 42px)); box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .file-browser { position: fixed; inset: 0 0 0 auto; width: min(330px, calc(100% - 42px)) !important; box-shadow: -18px 0 45px rgba(25, 33, 29, .18); } .resize-handle.horizontal { display: none; } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } .topbar { padding: 0 12px; } .agent-controls { max-width: 360px; margin-left: 12px; margin-right: auto; } .agent-controls select { min-width: 0; max-width: none; } .stream-filter span { display: none; } .token-badge { display: none; } .topbar-actions { gap: 4px; } }
+@media (max-width: 899px) { .session-sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px, calc(100% - 42px)) !important; box-shadow: 18px 0 45px rgba(25, 33, 29, .18); } .file-browser { position: fixed; inset: 0 0 0 auto; width: min(330px, calc(100% - 42px)) !important; box-shadow: -18px 0 45px rgba(25, 33, 29, .18); } .resize-handle.horizontal { display: none; } .mobile-close { display: inline-grid; } .mobile-scrim { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(25, 33, 29, .38); } .topbar { padding: 0 12px; } .agent-controls { max-width: 360px; margin-left: 12px; margin-right: auto; } .agent-controls select { min-width: 0; max-width: none; } .stream-filter span { display: none; } .token-badge { display: none; } .topbar-actions { gap: 4px; } }
 @media (max-width: 720px) { .agent-controls { margin-left: 10px; } }
 @container topbar (max-width: 720px) { .stream-filter span { display: none; } .token-badge { display: none; } }
 @container topbar (max-width: 560px) { .connection-text { display: none; } }

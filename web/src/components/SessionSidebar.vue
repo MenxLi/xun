@@ -3,6 +3,8 @@ import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LoaderCircle, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
+import ResizeHandle from './ResizeHandle.vue'
+import { useSettingsStore } from '../stores/settings'
 import type { SessionInfo } from '../types'
 
 const props = defineProps<{
@@ -20,6 +22,7 @@ const emit = defineEmits<{
   select: [path: string]
 }>()
 
+const settings = useSettingsStore()
 const { t } = useI18n()
 const renamingPath = ref<string | null>(null)
 const renameName = ref('')
@@ -87,6 +90,14 @@ function remove() {
   removing.value = null
 }
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+function resizeWidth(delta: number) {
+  // keep the chat pane usable
+  const max = Math.min(420, Math.max(180, window.innerWidth * 0.45))
+  settings.sessionsWidth = clamp(settings.sessionsWidth + delta, 180, max)
+}
+
 onMounted(() => {
   window.addEventListener('resize', closeMenu)
   document.addEventListener('click', closeMenu)
@@ -98,7 +109,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside class="session-sidebar" @keydown.esc="closeMenu">
+  <aside class="session-sidebar" :style="{ width: `${settings.sessionsWidth}px` }" @keydown.esc="closeMenu">
+    <ResizeHandle class="edge-right" orientation="horizontal" @drag="resizeWidth" @reset="settings.sessionsWidth = 216" />
     <header class="session-header">
       <div>
         <span class="eyebrow">Xun</span>

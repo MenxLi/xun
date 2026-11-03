@@ -10,6 +10,7 @@ export const useSettingsStore = defineStore('settings', {
     markdown: true,
     sessionsOpen: true,
     filesOpen: true,
+    sessionsWidth: 216,
     filesWidth: 310,
     previewHeight: 260,
     lastSessions: {} as Record<string, string>,
