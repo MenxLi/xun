@@ -19,6 +19,7 @@ ASSET_DIR = Path(__file__).parent.parent / "assets"
 # read the environment. dotenv's own default search starts at this file...
 load_dotenv(find_dotenv(usecwd=True))
 
+@functools.cache
 def xun_version() -> str | None:
     """Installed release version of xun, or None when running without package metadata."""
     from importlib.metadata import PackageNotFoundError, version

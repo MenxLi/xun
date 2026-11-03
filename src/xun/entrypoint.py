@@ -103,7 +103,7 @@ def _new_durable_session(
 ) -> DurableSession[WebDisplay]:
     """Give a durable session its agents: restore each saved snapshot in
     `stores`, or set up one fresh agent when none are given."""
-    session = session or DurableSession(display_factory=_web_display_factory)
+    session = session or DurableSession.new(display_factory=_web_display_factory)
     for store in stores or (None,):
         def pre_init(agent: "Agent[Agent.T.Uninit]") -> None:
             if store is not None:

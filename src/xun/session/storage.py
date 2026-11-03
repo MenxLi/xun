@@ -8,11 +8,11 @@ import json
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..core.config import get_home_dir, xun_version
+from ..core.config import xun_version
 from ..core.display_event import DisplayEvent
 from ..core.workspace import Workspace
 
@@ -24,26 +24,23 @@ if TYPE_CHECKING:
 class SnapshotMeta:
     name: str
     identifier: str
-    saved_at: str
+    created_at: float  # born once: set on first save, never rewritten
+    saved_at: float
     xun_version: str | None
     workspace: dict
     """`Workspace.to_json` payload, kept raw: restoring is the workspace's business."""
 
     def to_json(self) -> dict:
-        return {
-            "name": self.name,
-            "identifier": self.identifier,
-            "saved_at": self.saved_at,
-            "xun_version": self.xun_version,
-            "workspace": self.workspace,
-        }
+        return asdict(self)
 
     @classmethod
     def from_json(cls, data: dict) -> "SnapshotMeta":
+        now = time.time()  # older snapshots: missing timestamps claim now
         return cls(
             name=data["name"],
             identifier=data["identifier"],
-            saved_at=data["saved_at"],
+            created_at=data.get("created_at", now),
+            saved_at=data.get("saved_at", now),
             xun_version=data.get("xun_version"),
             workspace=data["workspace"],
         )
@@ -52,23 +49,37 @@ class SnapshotMeta:
 class AgentStore:
     """Read and write a single session snapshot directory."""
 
-    def __init__(self, directory: Path | None = None):
-        self._dir = directory or get_home_dir() / "session"
+    def __init__(self, directory: Path):
+        self._dir = directory
 
     def exists(self) -> bool:
         return (self._dir / "meta.json").is_file()
 
+    def created_at(self) -> float:
+        """Birth timestamp of this slot; damaged meta degrades to 0."""
+        meta = self._load_meta()
+        return meta.created_at if meta else 0.0
+
     def save(self, agent: "Agent[Agent.T.Any]") -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        existing = self._load_meta()  # born once: an existing slot keeps its created_at
         self._write("meta.json", SnapshotMeta(
             name=agent.name,
             identifier=agent.identifier,
-            saved_at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            created_at=existing.created_at if existing else now,
+            saved_at=now,
             xun_version=xun_version(),
             workspace=agent.workspace.to_json(),
         ).to_json())
         agent.conversation.dump(self._dir / "conversation.json")
         self._write("state.json", agent.state.to_json())
+
+    def _load_meta(self) -> SnapshotMeta | None:
+        try:
+            return SnapshotMeta.from_json(self._read("meta.json"))
+        except (OSError, ValueError, KeyError):
+            return None  # missing or damaged: a fresh save rewrites it
 
     def load(self, agent: "Agent[Agent.T.Uninit]") -> list[str]:
         """Pour the snapshot into an uninitialized agent: name, identifier,
@@ -116,8 +127,7 @@ class DBEventStore:
     `manual_commit=True` batches them until `flush()`. `close()` always flushes.
     """
 
-    def __init__(self, path: Path | None = None, *, manual_commit: bool = False):
-        path = path or get_home_dir() / "session" / "events.db"
+    def __init__(self, path: Path, *, manual_commit: bool = False):
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
