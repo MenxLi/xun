@@ -95,6 +95,16 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
     return after_exec_arg.should_continue, message.content or ""
 
 
+def _is_retryable_completion_error(error: Exception) -> bool:
+    """A rejected 4xx returns the same answer when resent; 408/409/429,
+    5xx, and status-less errors are transient.
+    """
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int) and 400 <= status_code < 500:
+        return status_code in {408, 409, 429}
+    return True
+
+
 def _run_model_call(params: ExecutionLoopParams, remaining_iterations: int) -> ChatCompletionMessageWithReasoning:
     # one model turn; the retry policy: backoff retries, then ask a human
     agent = params.agent
@@ -230,7 +240,7 @@ def _run_model_call(params: ExecutionLoopParams, remaining_iterations: int) -> C
             raise
 
         except Exception as e:
-            if n_completion_max_retries > 0:
+            if n_completion_max_retries > 0 and _is_retryable_completion_error(e):
                 agent.display_warning(f"Error during chat completion: {e}, will retry in {completion_retry_backoff}s")
                 time.sleep(completion_retry_backoff)
                 n_completion_max_retries -= 1
