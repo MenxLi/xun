@@ -160,7 +160,7 @@ class Conversation:
     @classmethod
     def _estimate_message_length(cls, message: AbstractMessage | list[AbstractMessage] | dict) -> int:
         """Rough text-length proxy for a message's token contribution."""
-        length_kw = ['content', 'text', 'reasoning', 'reasoning_content']
+        length_kw = ['content', 'text', 'reasoning', 'reasoning_content', 'arguments']
         total_length = 0
         if isinstance(message, list):
             return sum(cls._estimate_message_length(item) for item in message if isinstance(item, (AbstractMessage, dict)))
