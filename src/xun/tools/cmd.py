@@ -286,7 +286,7 @@ def bash(
     """
     _validate_timeout(timeout)
     _validate_output_size(max_output_size)
-    authorize_command(ctx, command)
+    authorize_command(ctx, command, envs)
     start = time.monotonic()
     result = run_command(command, timeout, ctx.agent.workspace.workdir, envs, ctx.agent.cancel_event.is_set)
     return CmdExecResult(
@@ -314,7 +314,7 @@ def bash_spawn(
     A finished command stays visible to `bash_wait` until its result is returned.
     On agent finalization, running commands are killed and all logs are deleted.
     """
-    authorize_command(ctx, command)
+    authorize_command(ctx, command, envs)
     pool = CommandPool.of(ctx)
     if pool.closed:
         raise RuntimeError("Cannot start a command after its pool has shut down.")

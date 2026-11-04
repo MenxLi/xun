@@ -24,9 +24,11 @@ from xun.core.workspace import DeferredTempDirectory, Workspace
 
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
-    def assertConfirmationRequired(self, command: str, expected: bool) -> None:
+    def assertConfirmationRequired(
+        self, command: str, expected: bool, envs: dict[str, str] | None = None,
+    ) -> None:
         ctx = ToolCallContext(cast("Agent[Agent.T.Init]", SimpleNamespace(state=AgentState())), "bash", None)
-        policy = _confirmation_policy(ctx, _parse_command_spec(command))
+        policy = _confirmation_policy(ctx, _parse_command_spec(command), envs)
         self.assertIs(policy.requires_confirmation, expected, command)
 
     def test_allowlisted_command_chain_is_auto_approved(self) -> None:
@@ -48,6 +50,23 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, False)
+
+    def test_execution_semantic_env_overrides_require_confirmation(self) -> None:
+        # an allowlisted command must never absorb an override that steers code execution
+        for name in (
+            "PATH", "BASH_ENV", "ENV", "PROMPT_COMMAND", "LD_PRELOAD", "LD_LIBRARY_PATH",
+            "PYTHONPATH", "PYTHONSTARTUP", "PERL5OPT", "RUBYOPT", "NODE_OPTIONS",
+            "GIT_CONFIG_GLOBAL", "GIT_EXEC_PATH", "GIT_SSH_COMMAND", "GIT_CONFIG_COUNT",
+            "PAGER", "EDITOR", "SUDO_ASKPASS", "BASH_FUNC_evil", "CDPATH",
+        ):
+            with self.subTest(name=name):
+                self.assertConfirmationRequired("ls", True, {name: "/tmp/anything"})
+
+    def test_benign_env_overrides_stay_auto_approved(self) -> None:
+        for name in ("XUN_TEST", "FOO", "LANG", "LC_ALL", "TERM", "PATHX", "MY_PATH", "PYTHONWARNINGS"):
+            with self.subTest(name=name):
+                self.assertConfirmationRequired("ls", False, {name: "x"})
+        self.assertConfirmationRequired("ls", False, {})
 
     def test_exact_safe_redirections_are_auto_approved(self) -> None:
         for command in (
@@ -273,6 +292,17 @@ class CmdExecutionTest(unittest.TestCase):
         self.assertEqual(set(result), {"stdout", "stderr", "returncode", "duration"})
         self.assertEqual(Path.cwd(), original_cwd)
         self.assertNotIn("XUN_TEST", os.environ)
+
+    def test_benign_envs_stay_auto_approved_without_assessment(self) -> None:
+        result = bash(self.ctx, "echo hi", envs={"XUN_TEST": "value"})
+        self.assertEqual(result["stdout"], "hi")
+        self.assessment.assert_not_called()
+
+    def test_execution_semantic_envs_leave_the_allowlist_for_assessment(self) -> None:
+        result = bash(self.ctx, "echo hi", envs={"PATH": os.environ["PATH"]})
+        self.assertEqual(result["stdout"], "hi")
+        self.assessment.assert_called_once()
+        self.assertIn("PATH", self.assessment.call_args.kwargs["env_overrides"])
 
     def test_run_command_executes_literal_argv_without_shell(self) -> None:
         result = run_command(

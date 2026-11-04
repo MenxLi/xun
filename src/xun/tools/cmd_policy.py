@@ -22,6 +22,21 @@ SAFE_REDIRECTION_TARGETS = {"/dev/null"}
 _HARMLESS_CD_FLAGS = {"--", "-P", "-L"}
 _SHELL_SYNTAX_TIMEOUT = 10.0
 
+# Overrides that steer which code runs (init files, binary lookup, loaders,
+# interpreter paths, pagers/hooks): never allowlisted, always assessed first.
+_ENV_EXECUTION_VARIABLES = frozenset({
+    "PATH", "CDPATH", "BASH_ENV", "ENV", "PROMPT_COMMAND", "HOME", "XDG_CONFIG_HOME",
+    "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "GCONV_PATH",
+    "PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP",
+    "PERL5OPT", "PERL5LIB", "PERLLIB", "RUBYOPT", "RUBYLIB",
+    "NODE_OPTIONS", "NODE_PATH",
+    "JAVA_TOOL_OPTIONS", "JAVA_OPTS", "CLASSPATH",
+    "GIT_CONFIG", "GIT_EXEC_PATH", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_PAGER",
+    "PAGER", "EDITOR", "VISUAL",
+    "SUDO_ASKPASS", "SSH_ASKPASS",
+})
+_ENV_EXECUTION_PREFIXES = ("BASH_FUNC_", "GIT_CONFIG_")
+
 class RiskAssessResult(BaseModel):
     policy: Literal['allow', 'unsure', 'reject']
     reason: Optional[str] = None
@@ -30,6 +45,7 @@ def agent_risk_assess(
     cmd: str, 
     workdir: Path,
     extra_allowed_paths: Sequence[Path] = (),
+    env_overrides: dict[str, str] | None = None,
     ) -> RiskAssessResult:
     from ..core.agent import Agent
     from ..core.null_display import NullDisplay
@@ -59,6 +75,8 @@ def agent_risk_assess(
         "The command is considered safe if it is a readonly command. \n"
         "Otherwise, it should be confirmed with the user before execution by assessing it as `unsure`. \n\n"
 
+        "The command also runs with the environment overrides listed in the task, judge them too.\n\n"
+
         "You have tools to read files (only within the allowed paths), "
         "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
         "If you determine that the command is safe, you can output a reason as null. "
@@ -68,6 +86,7 @@ def agent_risk_assess(
         f"Given the command: `{cmd}`\n"
         f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
         f"Extra allowed paths: `{extra_allowed_paths}`\n"
+        f"Environment overrides: `{env_overrides or 'none'}`\n"
         f"Please determine the risk policy for this command. "
     ).initialize()
     res = agent.execute(schema=RiskAssessResult, max_iterations=8)
@@ -364,6 +383,16 @@ def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
     return tuple(reasons)
 
 
+def _execution_env_overrides(envs: dict[str, str] | None) -> tuple[str, ...]:
+    """Names in `envs` that steer which code runs, sorted."""
+    if not envs:
+        return ()
+    return tuple(sorted(
+        name for name in envs
+        if name in _ENV_EXECUTION_VARIABLES or name.startswith(_ENV_EXECUTION_PREFIXES)
+    ))
+
+
 def _command_substitutions(command_line: str) -> tuple[str, ...]:
     substitutions: list[str] = []
     index = 0
@@ -430,7 +459,11 @@ def _parse_substitution_spec(substitution: str) -> CommandSpec:
     return replace(_parse_command_spec(substitution), leading_cd_target=None)
 
 
-def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> ConfirmationPolicy:
+def _confirmation_policy(
+    ctx: ToolCallContext,
+    spec: CommandSpec,
+    envs: dict[str, str] | None = None,
+) -> ConfirmationPolicy:
     reasons: list[str] = []
 
     # Check if any segment is not allowlisted. A leading `cd` is exempt when its
@@ -450,6 +483,7 @@ def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> Confirmatio
     path_reason = _command_path_reason(spec)
     syntax_reasons = _shell_syntax_reasons(spec.command_line)
     substitution_reasons = _command_substitution_reasons(ctx, spec.command_line)
+    env_overrides = _execution_env_overrides(envs)
 
     if unallowlisted_segment is not None:
         reasons.append(f"command '{unallowlisted_segment.executable}' is not allowlisted in full command '{unallowlisted_segment.command_str}'")
@@ -459,6 +493,8 @@ def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> Confirmatio
         reasons.append(path_reason)
     reasons.extend(syntax_reasons)
     reasons.extend(substitution_reasons)
+    if env_overrides:
+        reasons.append(f"overrides execution-semantic environment variables ({', '.join(env_overrides)})")
 
     rejection_message = None
     if unallowlisted_segment is not None:
@@ -471,6 +507,8 @@ def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> Confirmatio
         rejection_message = "Backtick command substitution and line-separated commands are not allowed without confirmation."
     elif substitution_reasons:
         rejection_message = "A command substitution contains a command that is not allowlisted."
+    elif env_overrides:
+        rejection_message = "Environment overrides that steer which code runs (e.g. PATH, BASH_ENV) require explicit approval."
 
     return ConfirmationPolicy(
         allow_unlisted=(unallowlisted_segment is not None) or (path_reason is not None),
@@ -483,7 +521,8 @@ def _confirm_command_execution(
     ctx: ToolCallContext, 
     spec: CommandSpec, 
     policy: ConfirmationPolicy, 
-    workdir_resolved: Path
+    workdir_resolved: Path,
+    envs: dict[str, str] | None = None,
     ) -> bool:
     if not policy.requires_confirmation:
         return False
@@ -493,6 +532,7 @@ def _confirm_command_execution(
         spec.command_line,
         workdir=workdir_resolved,
         extra_allowed_paths=[ctx.agent.workspace.tempdir.path],
+        env_overrides=envs,
     )
     if agent_check_res.policy == 'allow':
         return True
@@ -503,6 +543,8 @@ def _confirm_command_execution(
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
+    if envs:
+        message += f"\nEnvironment overrides: {envs}"
     if agent_check_res.reason:
         message += f"\n(Risk assessment: {agent_check_res.reason})"
     outcome = ctx.agent.get_choice(
@@ -548,10 +590,12 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path
 def authorize_command(
     ctx: ToolCallContext,
     command: str,
+    envs: dict[str, str] | None = None,
 ) -> None:
     """Validate the command and obtain approval before execution.
     Raises on rejection; the command then runs with the workspace workdir
-    as its process cwd (a leading `cd` inside the command moves from there)."""
+    as its process cwd (a leading `cd` inside the command moves from there).
+    `envs` are part of the approval input, never approved silently."""
     spec = _parse_command_spec(command)
 
     # A leading `cd x; cmd` / `cd x && cmd` must stay within the workspace;
@@ -567,8 +611,8 @@ def authorize_command(
             )
         effective_dir = resolved.path
 
-    policy = _confirmation_policy(ctx, spec)
+    policy = _confirmation_policy(ctx, spec, envs)
 
-    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=effective_dir)
+    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=effective_dir, envs=envs)
     for exe in spec.commands:
         _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=effective_dir)
