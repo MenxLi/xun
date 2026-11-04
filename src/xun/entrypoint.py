@@ -1,12 +1,14 @@
 import argparse, shlex, sys, hashlib, secrets
 from contextlib import suppress
+from functools import partial
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Literal, overload
 import docker
 from docker.errors import NotFound
 
 from .core.display_abstract import DisplayAbstract
 from .core.config import get_home_dir, HOME_COPY_INCLUDE
+from .core.display_store import EventStore
 from .displays.display import Display
 from .displays.web_display import WebDisplay
 from .displays.web_service import SimpleSession, WebDisplayService, WebSession
@@ -16,7 +18,7 @@ from .core.prompt import get_system_prompt
 from .core.command import Command
 from .core.types import CancelledError
 from .core.workspace import Workspace
-from .session import (AgentStore, DBEventStore, Instruction, DurableSession, execute_instruction,
+from .session import (AgentStore, Instruction, DurableSession, execute_instruction,
                      input_to_instruction, parse_message_input, register_default_commands)
 from .tools.common import default_tool_commands
 from .supervisor.runtime import copy_directory, start_attached
@@ -32,6 +34,30 @@ def get_instruction(
         if raw_input:
             return input_to_instruction(raw_input)
 
+@overload
+def setup_agent(
+    name: str = "agent",
+    tools: list[Callable] = [],
+    default_tools: bool = False,
+    default_system_prompt: bool = True,
+    default_commands: bool = True,
+    display: DisplayAbstract | None = None,
+    workdir: Path | str | None = None,
+    *,
+    init: Literal[True] = True,
+    ) -> "Agent[Agent.T.Init]": ...
+@overload
+def setup_agent(
+    name: str = "agent",
+    tools: list[Callable] = [],
+    default_tools: bool = False,
+    default_system_prompt: bool = True,
+    default_commands: bool = True,
+    display: DisplayAbstract | None = None,
+    workdir: Path | str | None = None,
+    *,
+    init: Literal[False],
+    ) -> "Agent[Agent.T.Uninit]": ...
 def setup_agent(
     name: str = "agent",
     tools: list[Callable] = [],
@@ -40,9 +66,11 @@ def setup_agent(
     default_commands: bool = True,
     display: DisplayAbstract | None = None,
     workdir: Path | str | None = None,
-    pre_init: Callable[["Agent[Agent.T.Uninit]"], object] | None = None,
-    ) -> "Agent[Agent.T.Init]":
-    """Quickly set up a CLI agent with builtins."""
+    *,
+    init: bool = True,
+    ) -> "Agent[Agent.T.Any]":
+    """Quickly set up a CLI agent with builtins; `init=False` returns it
+    uninitialized for a session to adopt."""
     toolbox = ToolBox()
     if default_tools:
         # top-agent can spawn worker agents to execute tasks.
@@ -61,10 +89,8 @@ def setup_agent(
         register_default_commands(agent.command, fs_extra=True)
         if default_tools:
             agent.command.register(*default_tool_commands())
-    if pre_init is not None:
-        pre_init(agent)
     # initialize last: after_initialize hooks observe the fully configured agent
-    return agent.initialize()
+    return agent.initialize() if init else agent
 
 
 def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
@@ -93,25 +119,26 @@ def interactive_session(agent: "Agent[Agent.T.Init]", task = ""):
         inst = get_instruction(agent.display, agent=agent)
 
 
-def _web_display_factory(store: DBEventStore | None = None) -> WebDisplay:
+def _web_display_factory(store: EventStore | None = None) -> WebDisplay:
     return WebDisplay(expose_files=True, event_store=store)
 
 
-def _new_durable_session(
-    session: DurableSession[WebDisplay] | None = None,
-    stores: Iterable[AgentStore] = (),
-) -> DurableSession[WebDisplay]:
-    """Give a durable session its agents: restore each saved snapshot in
-    `stores`, or set up one fresh agent when none are given."""
-    session = session or DurableSession.new(display_factory=_web_display_factory)
-    for store in stores or (None,):
-        def pre_init(agent: "Agent[Agent.T.Uninit]") -> None:
-            if store is not None:
-                store.load(agent)  # load before attach: the identifier lands in its own slot
-            session.attach(agent)
+def _durable_session(
+    events: EventStore, stores: list[AgentStore] = []
+) -> tuple[WebDisplay, list["Agent[Agent.T.Uninit]"]]:
+    """One agent per store (loaded from its snapshot), or one fresh when none are stored."""
+    display = _web_display_factory(events)
+    agents = []
+    for store in stores or [None]:
+        agent = setup_agent(default_tools=True, default_commands=True, display=display, init=False)
+        if store is not None:
+            store.load(agent)
+        agents.append(agent)
+    return display, agents
 
-        setup_agent(default_tools=True, default_commands=True, display=session.display, pre_init=pre_init)
-    return session
+
+_durable_new = partial(DurableSession.new, factory=_durable_session)
+_durable_discover = partial(DurableSession.discover, factory=_durable_session)
 
 
 def _new_session(workdir: Path | None) -> WebSession:
@@ -120,7 +147,7 @@ def _new_session(workdir: Path | None) -> WebSession:
         display = _web_display_factory()
         agent = setup_agent(default_tools=True, default_commands=True, display=display, workdir=workdir)
         return SimpleSession(f"/{secrets.token_hex(6)}", display, release=agent.finalize)
-    return _new_durable_session()
+    return _durable_new()
 
 
 def web_session(
@@ -152,12 +179,8 @@ def web_session(
         if initial_agent:
             if fixed_workdir is not None:
                 sessions.append(_new_session(fixed_workdir))
-            else:
-                # stored sessions return under their old paths
-                for found in DurableSession.discover(display_factory=_web_display_factory):
-                    sessions.append(_new_durable_session(found, found.entries().values()))
-                if not sessions:  # nothing to come back to: start fresh
-                    sessions.append(_new_durable_session())
+            else:  # stored sessions return under their old paths; fresh only when none
+                sessions.extend(_durable_discover() or [_durable_new()])
         else:
             sessions.append(SimpleSession("/", _web_display_factory()))
         for session in sessions:

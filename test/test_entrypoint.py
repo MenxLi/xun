@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
+from xun import AgentState, NullDisplay
 from xun.displays import SimpleSession
 from xun.entrypoint import main_container, main_serve, web_session
 from xun.session import DurableSession
@@ -20,19 +21,24 @@ class _Workspace:
 
 
 class _Agent:
-    def __init__(self, workdir: Path | None) -> None:
+    def __init__(self, workdir: Path | None, display: object = None) -> None:
         self.name = "fake"
         self.workspace = _Workspace(workdir if workdir is not None else Path.cwd())
         self.command = Mock()
         self.conversation = Mock()
-        self.state = Mock()
-        self.state.to_json.return_value = {}
+        self.state = AgentState()
+        self.display = display if display is not None else NullDisplay()
         self.finalized = False
         self.identifier = uuid.uuid4().hex
         self.hooks = Mock()
 
     def finalize(self) -> None:
         self.finalized = True
+        self.display.unbind(self)
+
+    def initialize(self) -> "_Agent":
+        self.display.bind(self)  # the session's roster is the display's binds
+        return self
 
 
 class _Service:
@@ -68,11 +74,8 @@ class WebSessionTest(unittest.TestCase):
 
     def setup_agent(self, **kwargs):
         workdir = kwargs.get("workdir")
-        agent = _Agent(Path(workdir) if workdir is not None else None)
-        self.agents.append(agent)
-        if kwargs.get("pre_init") is not None:
-            kwargs["pre_init"](agent)
-        return agent
+        self.agents.append(_Agent(Path(workdir) if workdir is not None else None, kwargs.get("display")))
+        return self.agents[-1]
 
     def test_fixed_workdir_is_shared_by_ephemeral_sessions(self) -> None:
         with TemporaryDirectory() as directory, \
@@ -126,6 +129,8 @@ class WebSessionTest(unittest.TestCase):
                          [restored.directory])
         self.assertEqual(second.mounts[0].name, restored.name)  # name survives via session.json
         self.assertTrue(all(agent.finalized for agent in self.agents))
+        for session in second.mounts:
+            session.destroy()  # keep the temp home clean
 
     def test_fresh_session_when_nothing_is_stored(self) -> None:
         with patch("xun.entrypoint.WebDisplayService", _Service), \
