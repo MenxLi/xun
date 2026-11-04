@@ -12,7 +12,7 @@ from .conversation_message import (
     message_from_json, remove_empty_tool_calls,
 )
 from .types import Result, ToolResultType
-from .util import image_to_url
+from .util import atomic_write, image_to_url
 from .openai_helper import ChatCompletionMessageWithReasoning
 
 
@@ -59,8 +59,7 @@ class Conversation:
         return json.dumps(self.to_json(), indent=2, ensure_ascii=False)
     
     def dump(self, file_path: str | Path):
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(self.dumps())
+        atomic_write(Path(file_path), self.dumps().encode("utf-8"))
     
     def load_json(self, data: dict):
         self.conversation_id = data.get("conversation_id", self.conversation_id)

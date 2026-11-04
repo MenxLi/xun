@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass, field
 from ..core.config import get_home_dir
 from ..core.display_abstract import DisplayAbstract
 from ..core.hooks import HookArgs
+from ..core.util import atomic_write
 from ..core.workspace import DeferredTempDirectory, Workspace
 from .storage import AgentStore, DBEventStore
 
@@ -166,7 +167,7 @@ class DurableSession[D: DisplayAbstract]:
 
     def _save_meta(self) -> None:
         meta = SessionMeta(name=self.name, created_at=self.created_at, saved_at=time.time())
-        (self.directory / "session.json").write_text(json.dumps(meta.to_json()), encoding="utf-8")
+        atomic_write(self.directory / "session.json", json.dumps(meta.to_json()).encode("utf-8"))
 
     def destroy(self) -> None:
         """Release agents without saving and erase the directory. Idempotent,

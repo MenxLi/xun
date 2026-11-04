@@ -21,7 +21,7 @@ import tempfile
 import zipfile
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import Callable, TYPE_CHECKING
 
 import puremagic
 
@@ -31,6 +31,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 
+from ..core.util import atomic_write
 if TYPE_CHECKING:
     from ..core.agent import Agent
 
@@ -165,20 +166,6 @@ def _media_type(path: Path, file_stat: os.stat_result | None = None) -> str:
 def _is_text_media(media_type: str) -> bool:
     """Shared gate for inline preview and text saving."""
     return media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES
-
-
-def _atomic_write_text(target: Path, payload: bytes, mode: int) -> None:
-    """Replace through a sibling temp file so readers never see a partial file."""
-    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".xun-tmp")
-    tmp = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
-        os.chmod(tmp, mode)
-        os.replace(tmp, target)
-    except OSError:
-        tmp.unlink(missing_ok=True)
-        raise
 
 
 def _slugify(path: str) -> str:
@@ -423,9 +410,8 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         payload = request.content.encode("utf-8")
         if len(payload) > MAX_PREVIEW_TEXT_SIZE:  # the same cap the preview serves
             raise HTTPException(413, "Text is too large to save")
-        mode = stat.S_IMODE(target.stat().st_mode) if exists else 0o644
         try:
-            await run_in_threadpool(_atomic_write_text, target, payload, mode)
+            await run_in_threadpool(atomic_write, target, payload)
         except OSError as exc:
             raise HTTPException(400, "Could not write file") from exc
         saved = target.stat()

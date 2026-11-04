@@ -6,6 +6,7 @@ import base64
 import binascii
 import fnmatch
 import mimetypes
+import stat
 from io import BytesIO
 from pathlib import Path
 from typing import Sequence
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 from datetime import datetime
 from PIL import Image as PILImage, UnidentifiedImageError
 from PIL.Image import Image
+import tempfile
 from .types import JsonType
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -174,3 +176,21 @@ def to_json_object(
         return {str(key): to_json_object(value, try_methods=try_methods) for key, value in obj.items()}
 
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+def atomic_write(target: Path, payload: bytes, mode: int | None = None) -> None:
+    """Replace through a sibling temp file so readers never see a partial file. """
+    if mode is None:
+        try:
+            mode = stat.S_IMODE(target.stat().st_mode)
+        except FileNotFoundError:
+            mode = 0o644
+    fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".xun-tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(payload)
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise

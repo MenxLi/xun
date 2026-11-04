@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from ..core.config import xun_version
 from ..core.display_event import DisplayEvent
+from ..core.util import atomic_write
 from ..core.workspace import Workspace
 
 if TYPE_CHECKING:
@@ -99,7 +100,7 @@ class AgentStore:
         return json.loads((self._dir / name).read_text(encoding="utf-8"))
 
     def _write(self, name: str, data: dict) -> None:
-        (self._dir / name).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write(self._dir / name, json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
 
     @staticmethod
     def _restore_workspace(agent: "Agent[Agent.T.Uninit]", data: dict) -> list[str]:
