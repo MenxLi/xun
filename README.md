@@ -152,11 +152,12 @@ Input `/help` to see the full list of commands.
 
 `xuns` starts the managed web service for Xun, providing a browser-based interface to interact with the system.
 
-If no arguments are provided, `xuns` will start the web service with a temporary workspace.
-Otherwise, the first argument is treated as the path to the workspace directory.
+If no arguments are provided, `xuns` will start with persistent sessions (saved in <home>/sessions/). 
+Otherwise, the first argument is treated as the path to the workspace directory, 
+and the sessions will be ephemeral.
 
 ```sh
-xuns        # start with a temporary workspace
+xuns        # start with persistent sessions
 xuns .      # start with the current directory as the workspace
 ```
 The url with access token will be displayed in the terminal after starting the web service.
