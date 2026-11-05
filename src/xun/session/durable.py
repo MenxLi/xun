@@ -173,9 +173,9 @@ class DurableSession[D: DisplayAbstract]:
             if self._ended:
                 return  # a late save must not resurrect an ended session
             self._slot(args.agent.identifier).save(args.agent)
-            self._save_meta()
+            self.save_meta()
 
-        self._save_meta()  # discoverable from its first agent on: a killed container never reaches close()
+        self.save_meta()  # discoverable from its first agent on: a killed container never reaches close()
         agent.hooks.run_end.add(save)
         return agent.initialize()
 
@@ -187,14 +187,17 @@ class DurableSession[D: DisplayAbstract]:
         """End the session keeping its data. Idempotent."""
         if self._ended:
             return
+        self.save_meta()  # before ending: save_meta is a no-op once ended
         self._ended = True
         for agent in self._members():  # bind order keeps closing events chronological
             agent.finalize()
             self._slot(agent.identifier).save(agent)
-        self._save_meta()
         self._store.close()
 
-    def _save_meta(self) -> None:
+    def save_meta(self) -> None:
+        """Write session.json now, e.g. to persist a rename without a run."""
+        if self._ended:
+            return
         meta = SessionMeta(name=self.name, created_at=self.created_at, saved_at=time.time())
         atomic_write(self.directory / "session.json", json.dumps(meta.to_json()).encode("utf-8"))
 

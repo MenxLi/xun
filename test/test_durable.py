@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from xun import Agent, NullDisplay
 from xun.session import AgentStore, DurableSession
+from xun.session.durable import SessionMeta
 
 BARE = lambda events, stores=[]: (NullDisplay(), [])  # noqa: E731  # fresh or saved: same bare display, no agents
 
@@ -78,6 +79,17 @@ class DurableSessionTest(unittest.TestCase):
             found[0].destroy()
             self.assertEqual(
                 DurableSession.discover(factory=BARE, home_dir=Path(home)), [])
+
+    def test_save_meta_flushes_a_rename_without_a_run(self) -> None:
+        with TemporaryDirectory() as home:
+            session = DurableSession.new("s1", name="Before", home_dir=Path(home), factory=BARE)
+            session.name = "After"
+            session.save_meta()
+            self.assertEqual(SessionMeta.load(session.directory, fallback_name="s1").name, "After")
+            session.close()
+            session.name = "Too late"
+            session.save_meta()  # an ended session never writes
+            self.assertEqual(SessionMeta.load(session.directory, fallback_name="s1").name, "After")
 
     def test_destroy_releases_agents_and_erases_directory(self) -> None:
         with TemporaryDirectory() as home:

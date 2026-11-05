@@ -192,7 +192,8 @@ class SessionRename(BaseModel):
 class WebSession(Protocol):
     """A mountable session: the service mounts its display under `mount_path`
     and calls `destroy()` when the user removes it, `close()` when the service
-    stops. `DurableSession` satisfies this structurally."""
+    stops. `DurableSession` satisfies this structurally. Sessions may also
+    implement `save_meta()` to flush in-memory changes, such as a rename, to storage."""
 
     name: str
 
@@ -205,6 +206,11 @@ class WebSession(Protocol):
     def close(self) -> None: ...
 
     def destroy(self) -> None: ...
+
+
+def _save_meta(session: WebSession) -> None:
+    if save_meta := getattr(session, "save_meta", None):  # optional hook, see WebSession
+        save_meta()
 
 
 SessionSource = Callable[[], "WebSession | AbstractContextManager[tuple[str, WebDisplay]]"]
@@ -344,6 +350,7 @@ class WebDisplayService:
             try:
                 if name := (request.name or "").strip():
                     session.name = name
+                    _save_meta(session)
                 self.mount(session, managed=True)
             except BaseException:
                 session.destroy()
@@ -494,6 +501,7 @@ class WebDisplayService:
             if mounted is None:
                 raise HTTPException(404, "Session not found")
             mounted.session.name = session_name
+            _save_meta(mounted.session)
             return self._session_info(mount_path)
 
     def list_sessions(self) -> list[SessionInfo]:
