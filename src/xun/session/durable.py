@@ -77,6 +77,8 @@ def _open[DT: DisplayAbstract](
     display: DT,
     agents: list["Agent[Agent.T.Uninit]"],
 ) -> "DurableSession[DT]":
+    if display.event_store is not event_store:
+        raise RuntimeError("Display's event store does not match the session's event store")
     session = DurableSession(directory, name, created_at, display, event_store)
     for agent in agents:
         session._attach(agent)

@@ -9,12 +9,17 @@ from xun import Agent, NullDisplay
 from xun.session import AgentStore, DurableSession
 from xun.session.durable import SessionMeta
 
-BARE = lambda events, stores=[]: (NullDisplay(), [])  # noqa: E731  # fresh or saved: same bare display, no agents
+def bare_display(events) -> NullDisplay:
+    display = NullDisplay()
+    display.event_store = events  # factories must build on the session's store
+    return display
+
+BARE = lambda events, stores=[]: (bare_display(events), [])  # noqa: E731  # fresh or saved: same bare display, no agents
 
 def make_factory(built: list[Agent]):
     """Fresh or saved factory: one agent per store, or one fresh when none are stored."""
     def factory(events, stores: list[AgentStore] = []):
-        display = NullDisplay()
+        display = bare_display(events)
         agents: list[Agent] = []
         for store in stores or [None]:
             agent = Agent(display=display)
