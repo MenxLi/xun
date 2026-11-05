@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
       </i18n-t>
     </AppDialog>
 
-    <AppDialog :open="logoutOpen" :title="t('sessions.logout')" :confirm-label="t('sessions.logout')" @close="logoutOpen = false" @confirm="void logout()">
+    <AppDialog :open="logoutOpen" :title="t('sessions.logout')" :confirm-label="t('sessions.logout')" danger @close="logoutOpen = false" @confirm="void logout()">
       <p>{{ t('sessions.logoutConfirm') }}</p>
     </AppDialog>
   </aside>
