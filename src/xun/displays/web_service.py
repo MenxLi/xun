@@ -10,6 +10,7 @@ import socket
 import threading
 from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, cast, Literal, Optional, Protocol
 from urllib.parse import quote, urlencode, urlsplit
@@ -30,9 +31,13 @@ from ..core.config import ASSET_DIR
 from .web_display import WebDisplay
 
 
-LOGIN_TEMPLATE = jinja2.Environment(autoescape=True).from_string(
-    (ASSET_DIR / "login.template.html").read_text(encoding="utf-8")
-)
+@cache
+def _login_template() -> jinja2.Template:
+    return jinja2.Environment(autoescape=True).from_string(
+        (ASSET_DIR / "login.template.html").read_text(encoding="utf-8")
+    )
+
+
 _COOKIE_NAME = "xun_web_token"
 _DEFAULT_WEB_ASSETS = ASSET_DIR / "web"
 _DEFAULT_DOCS_ASSETS = ASSET_DIR / "docs"
@@ -416,7 +421,7 @@ class WebDisplayService:
         root_path = request.scope.get("root_path", "").rstrip("/")
         action = f"{root_path}{self.login_path}"
         return HTMLResponse(
-            LOGIN_TEMPLATE.render(action=action, target=target, error=error),
+            _login_template().render(action=action, target=target, error=error),
             status_code=status_code,
         )
 

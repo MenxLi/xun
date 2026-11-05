@@ -1,6 +1,9 @@
-from .entrypoint import setup_agent, interactive_session, web_session, main, main_serve, main_container
+"""Public API. Heavy display/CLI/web symbols resolve lazily on first access
+(PEP 562), so `import xun` never loads fastapi, uvicorn, docker, etc."""
+
+from typing import TYPE_CHECKING
+
 from .core.display_abstract import DisplayAbstract
-from .displays import Display, WebDisplay, WebDisplayService
 from .core.null_display import NullDisplay
 from .core.types import Result, ToolResultType, ErrorInfo, CancelledError, ToJson, FromJson
 from .core.agent_state import StateEntry, StatePersistEntry, StateRuntimeEntry, JsonEntry, RuntimeEntry, AgentState
@@ -15,6 +18,28 @@ from .core.extension import ExtensionContext, extension_attr, extension_data_dir
 from .core.workspace import Workspace
 from .core.slot_semaphore import SlotSemaphore
 from .core.agent import Agent
+
+if TYPE_CHECKING:  # resolved via __getattr__
+    from .displays import Display, WebDisplay, WebDisplayService
+    from .entrypoint import (setup_agent, interactive_session, web_session,
+                             main, main_serve, main_container)
+
+_LAZY = {
+    "displays": ("Display", "WebDisplay", "WebDisplayService"),
+    "entrypoint": ("setup_agent", "interactive_session", "web_session",
+                   "main", "main_serve", "main_container"),
+}
+
+
+def __getattr__(name: str):
+    for module, names in _LAZY.items():
+        if name in names:
+            from importlib import import_module
+            value = getattr(import_module(f".{module}", __name__), name)
+            globals()[name] = value
+            return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "Agent", "AgentConfig",

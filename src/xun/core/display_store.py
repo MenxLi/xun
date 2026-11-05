@@ -8,7 +8,6 @@ import threading
 import time
 from datetime import datetime
 from dataclasses import dataclass, field, replace
-import jinja2
 import markdown
 from markupsafe import Markup, escape
 from .config import ASSET_DIR
@@ -406,6 +405,7 @@ class DisplayEventStoreMixin:
 
     def render_history_as_html(self, title: str = "Session") -> str:
         """Render this display's buffered events as a standalone HTML page."""
+        import jinja2
         events = self.events()
         latest_tokens = next(
             (event.payload.total_tokens for event in reversed(events) if isinstance(event.payload, ModelMessageEvent)),
