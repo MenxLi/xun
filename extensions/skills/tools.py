@@ -86,7 +86,7 @@ def run_skill_script(
         if answer.choice == "Allow for this session" and answer.source == "user":
             grants.add(str(target))
     start = time.monotonic()
-    result = run_command([executable, str(target), *(args or [])], timeout, ctx.agent.workspace.workdir, None, ctx.agent.cancel_event.is_set)
+    result = run_command([executable, str(target), *(args or [])], timeout, ctx.agent.workspace.workdir, ctx.agent.cancel_event.is_set)
     return CmdExecResult(
         stdout=truncate_output(result.stdout.strip(), max_output_size), 
         stderr=truncate_output(result.stderr.strip(), max_output_size), 

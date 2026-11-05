@@ -80,10 +80,6 @@ def _duration(elapsed: float) -> str:
     return f"{elapsed:.2f}s" if elapsed < 60 else f"{int(elapsed)//60}m{int(elapsed)%60:02d}s"
 
 
-def _environment(overrides: dict[str, str] | None) -> dict[str, str]:
-    return os.environ | (overrides or {})
-
-
 def _signal_process(process: subprocess.Popen[str] | subprocess.Popen[bytes], hard: bool = False) -> None:
     try:
         if os.name == "nt":
@@ -107,10 +103,10 @@ def run_command(
     target: str | Sequence[str],
     timeout: float,
     cwd: Path,
-    env_overrides: dict[str, str] | None,
     cancel_check: Callable[[], bool],
 ) -> subprocess.CompletedProcess[str]:
-    """Run a string through bash, or execute an argv sequence without a shell."""
+    """Run a string through bash, or execute an argv sequence without a shell.
+    Inherits the process environment; inline `NAME=value` prefixes set it per command."""
     _validate_timeout(timeout)
     command_line = target if isinstance(target, str) else shlex.join(target)
     process = subprocess.Popen(
@@ -120,7 +116,6 @@ def run_command(
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=_environment(env_overrides),
         cwd=cwd,
         start_new_session=os.name != "nt",
     )  # nosec B602
@@ -159,8 +154,7 @@ class CommandJob:
 
     @classmethod
     def start(
-        cls, identifier: str, command: str, cwd: Path,
-        envs: dict[str, str] | None, log_dir: Path,
+        cls, identifier: str, command: str, cwd: Path, log_dir: Path,
     ) -> "CommandJob":
         stdout_log = log_dir / f"bash_{identifier}.stdout.log"
         stderr_log = log_dir / f"bash_{identifier}.stderr.log"
@@ -170,7 +164,7 @@ class CommandJob:
                 process = subprocess.Popen(
                     command, shell=True, executable=shutil.which("bash") or "/bin/sh",
                     stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
-                    cwd=cwd, env=_environment(envs),
+                    cwd=cwd,
                     start_new_session=True,
                 )  # nosec B602
         except OSError:
@@ -273,22 +267,21 @@ def bash(
     ctx: ToolCallContext,
     command: str,
     timeout: float = 300,
-    envs: dict[str, str] | None = None,
     max_output_size: int | None = 16_000,
 ) -> CmdExecResult:
     """
     Run through bash, returning output, exit code and duration.
     Runs in the workspace; prefix with `cd <dir>; ` to work elsewhere in it.
-    `envs` overrides inherited variables for this call.
+    Set environment per command with inline `NAME=value command` prefixes.
     Timeout (seconds) or cancellation terminates the command.
     `max_output_size` limits characters per stream, preserving head/tail plus a marker;
     null disables truncation. For non-blocking execution, use `bash_spawn`.
     """
     _validate_timeout(timeout)
     _validate_output_size(max_output_size)
-    authorize_command(ctx, command, envs)
+    authorize_command(ctx, command)
     start = time.monotonic()
-    result = run_command(command, timeout, ctx.agent.workspace.workdir, envs, ctx.agent.cancel_event.is_set)
+    result = run_command(command, timeout, ctx.agent.workspace.workdir, ctx.agent.cancel_event.is_set)
     return CmdExecResult(
         stdout=truncate_output(result.stdout.strip(), max_output_size),
         stderr=truncate_output(result.stderr.strip(), max_output_size),
@@ -299,11 +292,11 @@ def bash(
 def bash_spawn(
     ctx: ToolCallContext,
     command: str,
-    envs: dict[str, str] | None = None,
 ) -> SpawnResult:
     """
     Start a background command and return its id and log file paths; same
-    approval/envs rules as `bash`. No time limit; stdin is closed.
+    approval rules as `bash`, including inline `NAME=value` prefixes.
+    No time limit; stdin is closed.
     Prefer this over other background execution methods (such as `&` and `nohup`).
 
     Stdout/stderr stream in real time to `bash_<id>.stdout.log` /
@@ -314,7 +307,7 @@ def bash_spawn(
     A finished command stays visible to `bash_wait` until its result is returned.
     On agent finalization, running commands are killed and all logs are deleted.
     """
-    authorize_command(ctx, command, envs)
+    authorize_command(ctx, command)
     pool = CommandPool.of(ctx)
     if pool.closed:
         raise RuntimeError("Cannot start a command after its pool has shut down.")
@@ -323,7 +316,7 @@ def bash_spawn(
     with pool.lock:
         if pool.closed:  # racing shutdown()
             raise RuntimeError("Cannot start a command after its pool has shut down.")
-        job = CommandJob.start(identifier, command, ctx.agent.workspace.workdir, envs, ctx.agent.workspace.tempdir.path)
+        job = CommandJob.start(identifier, command, ctx.agent.workspace.workdir, ctx.agent.workspace.tempdir.path)
         pool.value[identifier] = job
         pool.log_files.update((job.stdout_log, job.stderr_log))
     return SpawnResult(id=identifier, stdout_log=str(job.stdout_log), stderr_log=str(job.stderr_log))

@@ -4,6 +4,7 @@ The code in this module are best-effort assessments of command risk and should n
 """
 from dataclasses import dataclass, replace
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -22,7 +23,7 @@ SAFE_REDIRECTION_TARGETS = {"/dev/null"}
 _HARMLESS_CD_FLAGS = {"--", "-P", "-L"}
 _SHELL_SYNTAX_TIMEOUT = 10.0
 
-# Overrides that steer which code runs (init files, binary lookup, loaders,
+# Variables that steer which code runs (init files, binary lookup, loaders,
 # interpreter paths, pagers/hooks): never allowlisted, always assessed first.
 _ENV_EXECUTION_VARIABLES = frozenset({
     "PATH", "CDPATH", "BASH_ENV", "ENV", "PROMPT_COMMAND", "HOME", "XDG_CONFIG_HOME",
@@ -45,7 +46,6 @@ def agent_risk_assess(
     cmd: str, 
     workdir: Path,
     extra_allowed_paths: Sequence[Path] = (),
-    env_overrides: dict[str, str] | None = None,
     ) -> RiskAssessResult:
     from ..core.agent import Agent
     from ..core.null_display import NullDisplay
@@ -75,7 +75,7 @@ def agent_risk_assess(
         "The command is considered safe if it is a readonly command. \n"
         "Otherwise, it should be confirmed with the user before execution by assessing it as `unsure`. \n\n"
 
-        "The command also runs with the environment overrides listed in the task, judge them too.\n\n"
+        "Environment changes appear inline in the command as `NAME=value` prefixes; judge them too.\n\n"
 
         "You have tools to read files (only within the allowed paths), "
         "you should avoid using them unless they are absolutely necessary to determine the risk of the command. \n\n"
@@ -86,7 +86,6 @@ def agent_risk_assess(
         f"Given the command: `{cmd}`\n"
         f"Current working directory: `{workdir} (absolute path: {workdir.resolve()})`\n"
         f"Extra allowed paths: `{extra_allowed_paths}`\n"
-        f"Environment overrides: `{env_overrides or 'none'}`\n"
         f"Please determine the risk policy for this command. "
     ).initialize()
     res = agent.execute(schema=RiskAssessResult, max_iterations=8)
@@ -160,6 +159,9 @@ class CommandSpec:
     yields the home directory, matching bash), or None for any other command.
     Only non-None targets are workspace-checked by authorize_command and exempt
     from the allowlist; dynamic cd forms fall through to normal confirmation."""
+    env_assignments: tuple[tuple[str, str], ...] = ()
+    """Inline `NAME=value` command prefixes: the one way to change the
+    environment, applied to that command."""
 
     @property
     def disallowed_operators(self) -> tuple[str, ...]:
@@ -253,48 +255,65 @@ class ConfirmationPolicy:
         return bool(self.reasons)
 
 
-def _extract_exes(argv: list[str]) -> tuple[ExecutableSpec, ...]:
-    """Extract each executable token (the head of every command in the chain)."""
-    commands: list[ExecutableSpec] = []
-    expect_command = True
-
-    for token in argv:
-        if token == "(":
-            expect_command = True
-            continue
-        if token == ")":
-            continue
-        if token in COMMAND_CHAIN_OPERATORS:
-            expect_command = True
-            continue
-        if expect_command and not _is_shell_punctuation(token):
-            commands.append(ExecutableSpec(token))
-            expect_command = False
-
-    return tuple(commands)
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _extract_segments(argv: list[str]) -> tuple[CommandSegment, ...]:
-    """Extract full command segments, splitting on chain operators."""
-    segments = []
+def _env_assignment(token: str) -> tuple[str, str] | None:
+    """The (name, value) when bash would read this word as a NAME=value
+    assignment prefix rather than a command or an argument."""
+    name, separator, value = token.partition("=")
+    return (name, value) if separator and _ENV_NAME.fullmatch(name) else None
+
+
+def _split_segments(argv: Sequence[str]) -> list[list[str]]:
+    """Split on chain operators; parentheses only group and never split.
+    Tokens that redirect (>, <, ...) stay in their segment."""
+    segments: list[list[str]] = []
     current: list[str] = []
-
-    def flush():
-        if current:
-            segments.append(CommandSegment(tuple(current)))
-            current.clear()
-
     for token in argv:
         if token in COMMAND_CHAIN_OPERATORS:
-            flush()
-            continue
-        if token in ("(", ")"):
-            continue
-        # Include all other tokens in the segment (operators like >, <, etc.)
-        current.append(token)
+            segments.append(current)
+            current = []
+        elif token not in ("(", ")"):
+            current.append(token)
+    segments.append(current)
+    return segments
 
-    flush()
-    return tuple(segments)
+
+def _parse_segments(argv: Sequence[str]) -> tuple[
+    tuple[CommandSegment, ...], tuple[ExecutableSpec, ...], tuple[tuple[str, str], ...],
+]:
+    """Segments, executable heads, and inline assignments of a command chain.
+
+    A leading `NAME=value` applies to that command's environment only, so it is
+    peeled off before allowlist matching and judged by the execution-variable
+    rules. A segment that is assignments only sets shell variables the later
+    commands on the line still see (PATH shapes command lookup), so it keeps
+    its assessment as an unallowlisted command instead of being peeled.
+    """
+    segments: list[CommandSegment] = []
+    commands: list[ExecutableSpec] = []
+    env_assignments: list[tuple[str, str]] = []
+
+    for raw in _split_segments(argv):
+        assignments: list[tuple[str, str]] = []
+        for token in raw:
+            assignment = _env_assignment(token)
+            if assignment is None:
+                break
+            assignments.append(assignment)
+        rest = raw[len(assignments):]
+        head = next((token for token in rest if not _is_shell_punctuation(token)), None)
+        if head is None:
+            if raw:
+                segments.append(CommandSegment(tuple(raw)))
+                commands.append(ExecutableSpec(raw[0]))
+            continue
+        env_assignments.extend(assignments)
+        segments.append(CommandSegment(tuple(rest)))
+        commands.append(ExecutableSpec(head))
+
+    return tuple(segments), tuple(commands), tuple(env_assignments)
 
 
 def _is_shell_script(command_line: str) -> bool:
@@ -353,11 +372,11 @@ def _parse_command_spec(command_line: str) -> CommandSpec:
         # confirmation still receive the complete unmodified source
         commands: tuple[ExecutableSpec, ...] = ()
         segments: tuple[CommandSegment, ...] = ()
+        env_assignments: tuple[tuple[str, str], ...] = ()
     else:
-        commands = _extract_exes(argv)
+        segments, commands, env_assignments = _parse_segments(argv)
         if not commands:
             raise ValueError("Command must contain an executable.")
-        segments = _extract_segments(argv)
 
     return CommandSpec(
         command_line=command_line,
@@ -365,6 +384,7 @@ def _parse_command_spec(command_line: str) -> CommandSpec:
         commands=commands,
         segments=segments,
         leading_cd_target=_leading_cd_target(argv),
+        env_assignments=env_assignments,
     )
 
 
@@ -383,14 +403,9 @@ def _shell_syntax_reasons(command_line: str) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-def _execution_env_overrides(envs: dict[str, str] | None) -> tuple[str, ...]:
-    """Names in `envs` that steer which code runs, sorted."""
-    if not envs:
-        return ()
-    return tuple(sorted(
-        name for name in envs
-        if name in _ENV_EXECUTION_VARIABLES or name.startswith(_ENV_EXECUTION_PREFIXES)
-    ))
+def _is_execution_env(name: str) -> bool:
+    """Whether this variable steers which code runs."""
+    return name in _ENV_EXECUTION_VARIABLES or name.startswith(_ENV_EXECUTION_PREFIXES)
 
 
 def _command_substitutions(command_line: str) -> tuple[str, ...]:
@@ -459,11 +474,7 @@ def _parse_substitution_spec(substitution: str) -> CommandSpec:
     return replace(_parse_command_spec(substitution), leading_cd_target=None)
 
 
-def _confirmation_policy(
-    ctx: ToolCallContext,
-    spec: CommandSpec,
-    envs: dict[str, str] | None = None,
-) -> ConfirmationPolicy:
+def _confirmation_policy(ctx: ToolCallContext, spec: CommandSpec) -> ConfirmationPolicy:
     reasons: list[str] = []
 
     # Check if any segment is not allowlisted. A leading `cd` is exempt when its
@@ -483,7 +494,7 @@ def _confirmation_policy(
     path_reason = _command_path_reason(spec)
     syntax_reasons = _shell_syntax_reasons(spec.command_line)
     substitution_reasons = _command_substitution_reasons(ctx, spec.command_line)
-    env_overrides = _execution_env_overrides(envs)
+    env_overrides = tuple(sorted({name for name, _ in spec.env_assignments if _is_execution_env(name)}))
 
     if unallowlisted_segment is not None:
         reasons.append(f"command '{unallowlisted_segment.executable}' is not allowlisted in full command '{unallowlisted_segment.command_str}'")
@@ -522,7 +533,6 @@ def _confirm_command_execution(
     spec: CommandSpec, 
     policy: ConfirmationPolicy, 
     workdir_resolved: Path,
-    envs: dict[str, str] | None = None,
     ) -> bool:
     if not policy.requires_confirmation:
         return False
@@ -532,7 +542,6 @@ def _confirm_command_execution(
         spec.command_line,
         workdir=workdir_resolved,
         extra_allowed_paths=[ctx.agent.workspace.tempdir.path],
-        env_overrides=envs,
     )
     if agent_check_res.policy == 'allow':
         return True
@@ -543,8 +552,6 @@ def _confirm_command_execution(
     message = f"Confirming on command `{spec.command_line}` because it {reasons_str}."
     if policy.rejection_message:
         message += f"\n{policy.rejection_message}"
-    if envs:
-        message += f"\nEnvironment overrides: {envs}"
     if agent_check_res.reason:
         message += f"\n(Risk assessment: {agent_check_res.reason})"
     outcome = ctx.agent.get_choice(
@@ -587,15 +594,12 @@ def _resolve_executable(command: ExecutableSpec, allow_unlisted: bool, cwd: Path
     return None
 
 
-def authorize_command(
-    ctx: ToolCallContext,
-    command: str,
-    envs: dict[str, str] | None = None,
-) -> None:
+def authorize_command(ctx: ToolCallContext, command: str) -> None:
     """Validate the command and obtain approval before execution.
     Raises on rejection; the command then runs with the workspace workdir
     as its process cwd (a leading `cd` inside the command moves from there).
-    `envs` are part of the approval input, never approved silently."""
+    Inline `NAME=value` prefixes are part of the approval input, never
+    approved silently."""
     spec = _parse_command_spec(command)
 
     # A leading `cd x; cmd` / `cd x && cmd` must stay within the workspace;
@@ -611,8 +615,7 @@ def authorize_command(
             )
         effective_dir = resolved.path
 
-    policy = _confirmation_policy(ctx, spec, envs)
-
-    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=effective_dir, envs=envs)
+    policy = _confirmation_policy(ctx, spec)
+    allow_unlisted = _confirm_command_execution(ctx, spec, policy, workdir_resolved=effective_dir)
     for exe in spec.commands:
         _resolve_executable(exe, allow_unlisted=allow_unlisted, cwd=effective_dir)

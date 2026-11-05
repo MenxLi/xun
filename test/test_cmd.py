@@ -24,11 +24,9 @@ from xun.core.workspace import DeferredTempDirectory, Workspace
 
 
 class CmdConfirmationPolicyTest(unittest.TestCase):
-    def assertConfirmationRequired(
-        self, command: str, expected: bool, envs: dict[str, str] | None = None,
-    ) -> None:
+    def assertConfirmationRequired(self, command: str, expected: bool) -> None:
         ctx = ToolCallContext(cast("Agent[Agent.T.Init]", SimpleNamespace(state=AgentState())), "bash", None)
-        policy = _confirmation_policy(ctx, _parse_command_spec(command), envs)
+        policy = _confirmation_policy(ctx, _parse_command_spec(command))
         self.assertIs(policy.requires_confirmation, expected, command)
 
     def test_allowlisted_command_chain_is_auto_approved(self) -> None:
@@ -51,8 +49,8 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertConfirmationRequired(command, False)
 
-    def test_execution_semantic_env_overrides_require_confirmation(self) -> None:
-        # an allowlisted command must never absorb an override that steers code execution
+    def test_every_execution_env_name_is_caught_inline(self) -> None:
+        # an allowlisted command must never absorb an assignment that steers code execution
         for name in (
             "PATH", "BASH_ENV", "ENV", "PROMPT_COMMAND", "LD_PRELOAD", "LD_LIBRARY_PATH",
             "PYTHONPATH", "PYTHONSTARTUP", "PERL5OPT", "RUBYOPT", "NODE_OPTIONS",
@@ -60,13 +58,38 @@ class CmdConfirmationPolicyTest(unittest.TestCase):
             "PAGER", "EDITOR", "SUDO_ASKPASS", "BASH_FUNC_evil", "CDPATH",
         ):
             with self.subTest(name=name):
-                self.assertConfirmationRequired("ls", True, {name: "/tmp/anything"})
+                self.assertConfirmationRequired(f"{name}=/tmp/anything ls", True)
 
-    def test_benign_env_overrides_stay_auto_approved(self) -> None:
-        for name in ("XUN_TEST", "FOO", "LANG", "LC_ALL", "TERM", "PATHX", "MY_PATH", "PYTHONWARNINGS"):
-            with self.subTest(name=name):
-                self.assertConfirmationRequired("ls", False, {name: "x"})
-        self.assertConfirmationRequired("ls", False, {})
+    def test_inline_benign_env_assignments_peel_and_follow_the_allowlist(self) -> None:
+        for command in (
+            "FOO=bar ls",
+            "FOO=bar BAZ=qux ls -la",
+            "LANG=C grep x file && FOO=1 wc file",
+            "FOO=x python -m unittest",
+            "XUN_TEST=x TERM=dumb PYTHONWARNINGS=ignore MY_PATH=1 ls",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, False)
+        spec = _parse_command_spec("FOO=bar BAZ=1 ls")
+        self.assertEqual(spec.env_assignments, (("FOO", "bar"), ("BAZ", "1")))
+        self.assertEqual([segment.tokens for segment in spec.segments], [("ls",)])
+
+    def test_inline_execution_env_assignments_require_confirmation(self) -> None:
+        for command in (
+            "PATH=/evil ls",
+            "LD_PRELOAD=/tmp/evil.so cat x",
+            "PYTHONPATH=x python -m unittest",
+            "FOO=1 PYTHONSTARTUP=/tmp/e.py python",
+            "ls && PAGER=less git log",
+        ):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, True)
+
+    def test_assignment_only_segment_lingers_as_a_shell_variable(self) -> None:
+        # a bare `NAME=value;` sets a shell variable later commands still see
+        for command in ("PATH=/evil; ls", "FOO=1; ls"):
+            with self.subTest(command=command):
+                self.assertConfirmationRequired(command, True)
 
     def test_exact_safe_redirections_are_auto_approved(self) -> None:
         for command in (
@@ -281,10 +304,9 @@ class CmdExecutionTest(unittest.TestCase):
         original_cwd = Path.cwd()
         result = bash(
             self.ctx,
-            "cd child; " + self.command(
+            "cd child; XUN_TEST=value " + self.command(
                 "import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
                 "print('error', file=sys.stderr); sys.exit(7)"),
-            envs={"XUN_TEST": "value"},
         )
         self.assertEqual(result["stdout"], f"{(self.cwd / 'child').resolve()}\nvalue")
         self.assertEqual(result["stderr"], "error")
@@ -293,21 +315,20 @@ class CmdExecutionTest(unittest.TestCase):
         self.assertEqual(Path.cwd(), original_cwd)
         self.assertNotIn("XUN_TEST", os.environ)
 
-    def test_benign_envs_stay_auto_approved_without_assessment(self) -> None:
-        result = bash(self.ctx, "echo hi", envs={"XUN_TEST": "value"})
+    def test_benign_inline_envs_stay_auto_approved_without_assessment(self) -> None:
+        result = bash(self.ctx, "XUN_TEST=value echo hi")
         self.assertEqual(result["stdout"], "hi")
         self.assessment.assert_not_called()
 
-    def test_execution_semantic_envs_leave_the_allowlist_for_assessment(self) -> None:
-        result = bash(self.ctx, "echo hi", envs={"PATH": os.environ["PATH"]})
+    def test_execution_semantic_inline_envs_leave_the_allowlist_for_assessment(self) -> None:
+        result = bash(self.ctx, "PATH=/usr/bin:/bin echo hi")
         self.assertEqual(result["stdout"], "hi")
         self.assessment.assert_called_once()
-        self.assertIn("PATH", self.assessment.call_args.kwargs["env_overrides"])
 
     def test_run_command_executes_literal_argv_without_shell(self) -> None:
         result = run_command(
             [sys.executable, "-c", "import sys; print(sys.argv[1])", "literal; $HOME"],
-            5, self.cwd, None, lambda: False,
+            5, self.cwd, lambda: False,
         )
         self.assertEqual(result.stdout, "literal; $HOME\n")
         self.assertEqual(result.returncode, 0)
@@ -352,10 +373,9 @@ class CmdExecutionTest(unittest.TestCase):
         (self.cwd / "child").mkdir()
         spawn = bash_spawn(
             self.ctx,
-            "cd child; " + self.command(
+            "cd child; XUN_TEST=value " + self.command(
                 "import os, sys; print(os.getcwd()); print(os.getenv('XUN_TEST')); "
                 "print('error', file=sys.stderr); sys.exit(9)"),
-            envs={"XUN_TEST": "value"},
         )
         identifier = spawn["id"]
         self.assertEqual(Path(spawn["stdout_log"]), self.logs(identifier)[0])
