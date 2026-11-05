@@ -214,11 +214,14 @@ class DurableSession[D: DisplayAbstract]:
         factory: "SessionFactory[DT]",
         home_dir: Path | None = None,
     ) -> list["DurableSession[DT]"]:
-        """Stored sessions, oldest first, contents rebuilt by `factory`.
-        A directory without `session.json` never had an agent: skipped."""
-        sessions = [
-            DurableSession.from_saved(directory.name, home_dir=home_dir, factory=factory)
+        """Stored sessions, oldest first. """
+        directories = [
+            directory
             for directory in _sessions_root(home_dir).glob("*")
             if _SAFE_ID.fullmatch(directory.name) and (directory / "session.json").is_file()
         ]
-        return sorted(sessions, key=lambda session: (session.created_at, session.session_id))
+        directories.sort(key=lambda d: (SessionMeta.load(d, fallback_name=d.name).created_at, d.name))
+        return [
+            DurableSession.from_saved(d.name, home_dir=home_dir, factory=factory)
+            for d in directories
+        ]
