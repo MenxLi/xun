@@ -230,7 +230,8 @@ xun reads optional configuration from `~/.xun/config.json` (override the locatio
 }
 ```
 
-The config supports `${XUN_...}` placeholders which are substituted from environment variables (e.g. `${XUN_OPENAI_API_KEY}`), so secrets can live in a `.env` file instead. 
+The config supports `${XUN_...}` placeholders which are substituted from environment variables (e.g. `${XUN_OPENAI_API_KEY}`), so secrets can live in a `.env` file instead.   
+The `xun*` commands load `.env` automatically; when embedding xun as a library, call `xun.load_env()` yourself.
 
 | Config field | Environment variable | Description |
 |---|---|---|

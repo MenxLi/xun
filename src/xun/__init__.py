@@ -13,7 +13,7 @@ from .core.compact import CompactorAbstract, AutoCompactor
 from .core.toolbox import ToolBox, ToolCallContext
 from .core.agent_factory import AgentGetterProtocol, AgentGetterParam
 from .core.toolcall import tool_attr
-from .core.config import AgentConfig, xun_version
+from .core.config import AgentConfig, xun_version, load_env
 from .core.extension import ExtensionContext, extension_attr, extension_data_dir
 from .core.workspace import Workspace
 from .core.slot_semaphore import SlotSemaphore
@@ -46,7 +46,7 @@ __all__ = [
     "Workspace", "SlotSemaphore",
     "tool_attr", "ToolBox", "ToolCallContext", "ExtensionContext", "extension_attr",
     "extension_data_dir",
-    "xun_version",
+    "xun_version", "load_env",
     "AgentGetterProtocol", "AgentGetterParam", 
     "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",
