@@ -5,7 +5,7 @@ import functools
 from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 import openai
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pydantic import BaseModel, ConfigDict
 from typing import Self, Literal
 from string import Template
@@ -15,9 +15,10 @@ from .types import ModelCapabilityType, JsonType
 
 ASSET_DIR = Path(__file__).parent.parent / "assets"
 
-# The `.env` of the working directory, at import: `DEFAULTS` below and every `get_home_dir()` call
-# read the environment. dotenv's own default search starts at this file...
-load_dotenv(find_dotenv(usecwd=True))
+def load_env(dotenv_path: str | os.PathLike | None = None) -> None:
+    """Load a `.env` into `os.environ` (nearest from cwd by default; existing variables win).
+    Only program entrypoints call this; `import xun` never touches the environment."""
+    load_dotenv(dotenv_path if dotenv_path is not None else find_dotenv(usecwd=True))
 
 @functools.cache
 def xun_version() -> str | None:
@@ -38,21 +39,26 @@ HOME_COPY_INCLUDE = {"config.json", "extensions", "skills"}
 
 def get_internal_env(key: str) -> str | None:
     return os.environ.get(f"_XUN_{key}")
-def get_internal_env_bool(key: str) -> bool | None:
-    v = get_internal_env(key)
-    if v is None:
-        return None
-    return v.lower() in ("1", "true", "yes")
+
+def _env_int(key: str, default: int) -> int:
+    value = get_internal_env(key)
+    return default if value is None else int(value)
+
+def _env_bool(key: str) -> bool:
+    value = get_internal_env(key)
+    return value is not None and value.lower() in ("1", "true", "yes")
 
 @dataclass(frozen=True)
 class EnvParams:
-    max_api_call_concurrency: int = 8 if not (s:=get_internal_env("MAX_API_CALL_CONCURRENCY")) else int(s)
-    max_execution_iterations: int = 512 if not (s:=get_internal_env("MAX_EXECUTION_ITERATIONS")) else int(s)
-    subagent_max_depth: int = 2 if not (s:=get_internal_env("SUBAGENT_MAX_DEPTH")) else int(s)
-    info_tool_override: bool = bool(get_internal_env_bool("INFO_TOOL_OVERRIDE"))
-    info_command_override: bool = bool(get_internal_env_bool("INFO_COMMAND_OVERRIDE"))
+    max_api_call_concurrency: int = field(default_factory=lambda: _env_int("MAX_API_CALL_CONCURRENCY", 8))
+    max_execution_iterations: int = field(default_factory=lambda: _env_int("MAX_EXECUTION_ITERATIONS", 512))
+    subagent_max_depth: int = field(default_factory=lambda: _env_int("SUBAGENT_MAX_DEPTH", 2))
+    info_tool_override: bool = field(default_factory=lambda: _env_bool("INFO_TOOL_OVERRIDE"))
+    info_command_override: bool = field(default_factory=lambda: _env_bool("INFO_COMMAND_OVERRIDE"))
 
-DEFAULTS = EnvParams()
+def env_defaults() -> EnvParams:
+    """Env-derived defaults, read on each call."""
+    return EnvParams()
 
 class ConfigModel(BaseModel):
     """Satisfies `ToJson`/`FromJson` structurally (pydantic models cannot subclass a Protocol)."""

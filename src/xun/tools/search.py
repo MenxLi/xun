@@ -244,9 +244,11 @@ def expose_search_tools() -> list[Callable]:
 
 if __name__ == "__main__":
     from ..core.agent import Agent
+    from ..core.config import load_env
     from ..displays.display import Display
     from ..core.toolcall import ToolCallContext
 
+    load_env()
     query = input("Enter your search query: ")
     host = Agent(display=Display()).initialize()
     ctx = ToolCallContext(agent=host, tool_name="web_search", v=None)

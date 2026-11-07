@@ -10,7 +10,7 @@ from rich.table import Table
 from .runtime import DockerManager, instance_id, start_shell
 from .service import Multiplexer, Supervisor
 from .users import UserStore
-from ..core.config import get_home_dir
+from ..core.config import get_home_dir, load_env
 from ..core.util import CONTAINER_ENV_PATTERNS, parse_env_option
 
 
@@ -77,6 +77,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    load_env()
     parser = _build_parser()
     args = parser.parse_args()
     store = UserStore()

@@ -7,7 +7,7 @@ import docker
 from docker.errors import NotFound
 
 from .core.display_abstract import DisplayAbstract
-from .core.config import get_home_dir, HOME_COPY_INCLUDE
+from .core.config import get_home_dir, HOME_COPY_INCLUDE, load_env
 from .core.display_store import EventStore
 from .displays.display import Display
 from .displays.web_display import WebDisplay
@@ -224,6 +224,7 @@ def cli_commands() -> list[Command]:
     ]
 
 def main():
+    load_env()
 
     parser = argparse.ArgumentParser(description="Run the agent.")
     parser.add_argument("instruction", type=str, help="The instruction for the agent.", default="", nargs="?")
@@ -253,6 +254,8 @@ def main():
             agent.finalize()
 
 def main_serve():
+    load_env()
+
     parser = argparse.ArgumentParser(description="Run the agent in web mode.")
     parser.add_argument("workdir", type=str, help="Workspace for all sessions (default: a temporary workspace).", nargs="?", default=None)
     parser.add_argument("--host", type=str, default="localhost", help="Host for the web server (default: localhost).")
@@ -274,6 +277,8 @@ def main_serve():
     )
 
 def main_container():
+    load_env()
+
     parser = argparse.ArgumentParser(description="Run the container")
     parser.add_argument("mount", type=str, help="Directory to mount as /workspace in the container (default: no host mount).", default="", nargs="?")
     parser.add_argument("--copy", action="store_true", help="Copy the mount directory into /workspace instead of bind mounting it.")

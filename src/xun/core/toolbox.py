@@ -10,7 +10,7 @@ from .types import ModelCapabilityType, ToolResultType
 from .error_catch import is_except_safe_wrapper, except_safe
 from .toolcall import Function, ToolCallContext
 from .agent_factory import AgentGetterProtocol, AgentGetterParam, agent_run_factory
-from .config import DEFAULTS
+from .config import env_defaults
 import rich
 
 STANDARD_TOOL_SET_OPTIONS = Literal["system", "framework", "fs", "patch", "cmd", "search", "browser", "diagnostic"]
@@ -79,15 +79,15 @@ class ToolBox:
                 continue
             if f.override:
                 self._tools[f.name] = f
-                if DEFAULTS.info_tool_override:
+                if env_defaults().info_tool_override:
                     rich.print(f"[blue]Info: Overriding tool '{f.name}'[/blue]")
             elif old.override:
-                if DEFAULTS.info_tool_override:
+                if env_defaults().info_tool_override:
                     rich.print(f"[blue]Info: Kept existing override for '{f.name}', skipped incoming[/blue]")
             else:
                 if raise_on_conflict:
                     raise ValueError(f"Conflict tool name: {f.name}")
-                if DEFAULTS.info_tool_override:
+                if env_defaults().info_tool_override:
                     rich.print(f"[blue]Info: Skipped existing tool '{f.name}'[/blue]")
 
         return self
@@ -104,7 +104,7 @@ class ToolBox:
     def with_subagent_provider(
         self, 
         agent_getter: "AgentGetterProtocol | None" = None, 
-        max_depth: int = DEFAULTS.subagent_max_depth
+        max_depth: int | None = None
         ) -> Self:
         """
         Allow the agent to spawn sub-agents (worker) to execute tasks.
@@ -112,6 +112,8 @@ class ToolBox:
         The getter receives an AgentGetterParam and is supposed to commit to it (e.g. name, span).
         the agent at the `max_depth` generation is born with sub-agent tools disabled.
         """
+        if max_depth is None:
+            max_depth = env_defaults().subagent_max_depth
         if agent_getter is None:
             def _agent_getter(param: AgentGetterParam) -> "Agent[_Uninit]":
                 from .agent import Agent    # avoid circular import

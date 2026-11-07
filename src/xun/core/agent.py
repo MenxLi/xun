@@ -18,7 +18,7 @@ from .null_display import NullDisplay
 from .running_state import AgentRunningStateMixin, ChainedEvent
 from .slot_semaphore import SlotSemaphore
 from .conversation import Conversation
-from .config import AgentConfig, load_config, DEFAULTS
+from .config import AgentConfig, load_config, env_defaults
 from .error_catch import except_safe
 from .toolbox import ToolBox
 from .workspace import Workspace
@@ -66,7 +66,7 @@ class Agent(
 
     # below auto inherit or chained
     config: AgentConfig = field(default_factory=lambda: load_config().clone())
-    api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(DEFAULTS.max_api_call_concurrency))
+    api_call_semaphore: SlotSemaphore = field(default_factory=lambda: SlotSemaphore(env_defaults().max_api_call_concurrency))
     extension_loader: ExtensionLoader = default_loader
     cancel_event: ChainedEvent = field(default_factory=lambda: ChainedEvent())
     span: SpanContext = field(default_factory=SpanContext)
@@ -219,22 +219,24 @@ class Agent(
     @except_safe
     def execute[T: BaseModel](
         self: Agent[Agent.T.Init], schema: type[T],  # explicit Agent.T: method typevar T shadows the module alias
-        max_iterations: int = DEFAULTS.max_execution_iterations, 
+        max_iterations: int | None = None, 
         context: Any = None
     ) -> T: ...
     @overload
     @except_safe
     def execute(
         self: Agent[T.Init], schema: None = None, 
-        max_iterations: int = DEFAULTS.max_execution_iterations, 
+        max_iterations: int | None = None, 
         context: Any = None
     ) -> str: ...
     @except_safe
     def execute(
         self: Agent[T.Init], schema: Optional[type[BaseModel]] = None,
-        max_iterations: int = DEFAULTS.max_execution_iterations,
+        max_iterations: int | None = None,
         context: Any = None
         ):
+        if max_iterations is None:
+            max_iterations = env_defaults().max_execution_iterations
         if not Agent.is_initialized(self):
             raise RuntimeError(f"Agent '{self.name}' is not initialized. Call agent.initialize() or use 'with agent:'.")
 

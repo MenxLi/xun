@@ -19,7 +19,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Callable, cast
 import rich
-from .config import get_home_dir, xun_version
+from .config import get_home_dir, load_env, xun_version
 from .types import CancelledError, JsonType, Result
 if TYPE_CHECKING:
     from .agent import Agent
@@ -349,6 +349,7 @@ def main_extension(argv: list[str] | None = None) -> None:
 
         xune <extension> [args...]
     """
+    load_env()
     argv = sys.argv[1:] if argv is None else argv
     loaded = {ext.name: ext for ext in default_loader.imported()}
     with_cli = ", ".join(sorted(name for name, ext in loaded.items() if ext.cli)) or "(none)"

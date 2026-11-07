@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Callable, Any, cast
 import inspect
 from .types import CancelledError
-from .config import DEFAULTS
+from .config import env_defaults
 import rich
 if TYPE_CHECKING:
     from .agent import Agent
@@ -137,7 +137,7 @@ class CommandRegistry:
             if raise_on_conflict:
                 raise ValueError(f"Conflict command name: {command.name}")
             msg = f"Skipped existing command '{command.name}'"
-        if DEFAULTS.info_command_override:
+        if env_defaults().info_command_override:
             rich.print(f"[blue]Info: {msg}[/blue]")
 
     def get(self, name: str) -> Optional[Command]:
