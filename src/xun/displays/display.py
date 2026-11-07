@@ -152,10 +152,10 @@ class Display(DisplayAbstract):
     def _show_tool_call(self, event: DisplayEvent[ToolCallEvent]) -> None:
         ev = event.payload
         tool_id = hashlib.sha1(ev.tool_call_id.encode()).hexdigest()[:6]
-        self._print(f"[dim]{rich.markup.escape(event.agent.name)} / tool {tool_id}[/dim] [cyan]{rich.markup.escape(ev.tool_name)}[/cyan]({self._arg_str(ev.args)})")
+        self._print(f"[dim]{rich.markup.escape(event.agent.name)} · tool {tool_id}[/dim] [cyan]{rich.markup.escape(ev.tool_name)}[/cyan]({self._arg_str(ev.args)})")
 
     def _show_agent_running_start(self, event: DisplayEvent[AgentRunningStartEvent]) -> None:
-        msg = f"[dim]{rich.markup.escape(event.agent.name)} / running[/dim]"
+        msg = f"[dim]{rich.markup.escape(event.agent.name)} · running[/dim]"
         self._print(msg)
 
     def _show_model_message(self, event: DisplayEvent[ModelMessageEvent]) -> None:
@@ -182,20 +182,20 @@ class Display(DisplayAbstract):
         ))
 
     def _show_warning(self, event: DisplayEvent[WarningEvent]) -> None:
-        self._print(f"[bold yellow]warning[/bold yellow] / {event.payload.message}")
+        self._print(f"[bold yellow]warning[/bold yellow] · {event.payload.message}")
 
     def _show_error(self, event: DisplayEvent[ErrorEvent]) -> None:
-        self._print(f"[bold red]error[/bold red] / {event.payload.message}")
+        self._print(f"[bold red]error[/bold red] · {event.payload.message}")
 
     def _show_tool_result(self, event: DisplayEvent[ToolResultEvent]) -> None:
         ev = event.payload
         if ev.is_error:
             result = ev.result
             message = result.get("error", result) if isinstance(result, dict) else result
-            self._print(f"[bold red]tool error[/bold red] / {rich.markup.escape(str(message))}")
+            self._print(f"[bold red]tool error[/bold red] · {rich.markup.escape(str(message))}")
 
     def _show_info(self, event: DisplayEvent[InfoEvent]) -> None:
-        self._print(f"[dim]info /[/dim] {event.payload.message}")
+        self._print(f"[dim]info ·[/dim] {event.payload.message}")
 
     def _show_html_info(self, event: DisplayEvent[HTMLInfoEvent]) -> None:
         ev = event.payload
@@ -203,19 +203,19 @@ class Display(DisplayAbstract):
         if ev.title:
             self._print(rich.panel.Panel(text, title=ev.title, border_style="cyan", box=rich.box.ROUNDED, padding=(0, 1)))
         else:
-            self._print(f"[dim]info /[/dim] {text}")
+            self._print(f"[dim]info ·[/dim] {text}")
 
     def _show_confirm(self, event: DisplayEvent[ConfirmEvent]) -> None:
-        self._print(f"[dim]confirmed / {event.payload.source}: {event.payload.choice!r} for {event.payload.prompt!r}[/dim]")
+        self._print(f"[dim]confirmed · {event.payload.source}: {event.payload.choice!r} for {event.payload.prompt!r}[/dim]")
     
     def _agent_bind(self, event: DisplayEvent[AgentBindEvent]) -> None:
-        self._print(f"[dim]{rich.markup.escape(event.agent.name)} / attached[/dim]")
+        self._print(f"[dim]{rich.markup.escape(event.agent.name)} · attached[/dim]")
     
     def _agent_unbind(self, event: DisplayEvent[AgentUnbindEvent]) -> None:
-        self._print(f"[dim]{rich.markup.escape(event.agent.name)} / detached[/dim]")
+        self._print(f"[dim]{rich.markup.escape(event.agent.name)} · detached[/dim]")
 
     def _unhandled(self, event: DisplayEvent) -> None:
-        self._print(f"[yellow]unhandled[/yellow] / {rich.markup.escape(event.name)} (from {rich.markup.escape(event.agent.name)})")
+        self._print(f"[yellow]unhandled[/yellow] · {rich.markup.escape(event.name)} (from {rich.markup.escape(event.agent.name)})")
 
     @staticmethod
     def _role_color(role: str) -> str:
