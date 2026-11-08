@@ -98,7 +98,9 @@ def default_commands() -> list[Command]:
             for k in key_sp[:-1]:
                 var = getattr(var, k)
             setattr(var, key_sp[-1], value)
-            agent.display_info(f"Config updated: {key} = {getattr(var, key_sp[-1])!r}")
+            if reset_client:=(key_sp[0] == 'provider'):
+                agent.openai_client = None
+            agent.display_info(f"Config updated: {key} = {getattr(var, key_sp[-1])!r}" + (" (Client reset)" if reset_client else ""))
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))

@@ -102,7 +102,7 @@ class Agent(
         return self._openai_client
 
     @openai_client.setter
-    def openai_client(self, client: OpenAI) -> None:
+    def openai_client(self, client: OpenAI | None) -> None:
         self._openai_client = client
 
     def initialize(self: Agent[T.Alive]) -> Agent[T.Init]:
