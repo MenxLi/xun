@@ -84,23 +84,31 @@ def default_commands() -> list[Command]:
     def _config_handler(agent: "Agent[Agent.T.Init]", args: list[str]) -> None:
         """Show or edit the agent's configuration.
         If no arguments are provided, the current configuration is displayed.
-        To edit a configuration value, provide a single argument in the format 'key.sub=value'.
+        To edit configuration values, provide arguments in the format 'key.sub=value'.
         """
         if not args:
             agent.display_info(agent.config.to_json_str())
             return
         
-        if args:
-            assert len(args) == 1, "Expected one argument for config edition. e.g. key.sub=value"
-            key, value = args[0].split("=", 1)
+        config = agent.config.model_copy(deep=True)
+        reset_client = False
+        updated: dict[str, object] = {}
+        for pair in args:
+            if "=" not in pair:
+                raise ValueError("Expected argument in the format 'key.sub=value'")
+            key, value = pair.split("=", 1)
             key_sp = key.split(".")
-            var = agent.config
+            var = config
             for k in key_sp[:-1]:
                 var = getattr(var, k)
             setattr(var, key_sp[-1], value)
-            if reset_client:=(key_sp[0] == 'provider'):
-                agent.openai_client = None
-            agent.display_info(f"Config updated: {key} = {getattr(var, key_sp[-1])!r}" + (" (Client reset)" if reset_client else ""))
+            if key_sp[0] == 'provider':
+                reset_client = True
+            updated[key] = getattr(var, key_sp[-1])
+        if reset_client:
+            agent.openai_client = None
+        agent.config = config
+        agent.display_info(f"Config updated: {updated}" + (" (Client reset)" if reset_client else ""))
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
