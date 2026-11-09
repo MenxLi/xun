@@ -46,6 +46,10 @@ def _build_parser() -> argparse.ArgumentParser:
     delete = commands.add_parser("user-del", help="Delete a user.")
     delete.add_argument("username")
 
+    rotate = commands.add_parser("rotate-token", help="Replace a user's access token.")
+    rotate.add_argument("username")
+    rotate.add_argument("--token", help="new token (default: generate a random one)")
+
     commands.add_parser("user-list", help="List users.")
 
     pause = commands.add_parser("pause", help="Pause a user's container.")
@@ -112,6 +116,15 @@ def main() -> None:
             else:
                 console.print(f"[green]Deleted user[/green] [cyan]{args.username}[/cyan]")
                 console.print(f"[dim]Home data stays under {get_home_dir() / 'x' / 'users' / args.username}.[/dim]")
+        elif args.command == "rotate-token":
+            try:
+                user = store.rotate_token(args.username, args.token)
+            except ValueError as error:
+                parser.error(str(error))
+            if user is None:
+                parser.error(f"user does not exist: {args.username}")
+            console.print(f"[green]New token for[/green] [cyan]{args.username}[/cyan]: [magenta]{user.token}[/magenta]")
+            console.print("[dim]The container is recreated on the next serve reconciliation.[/dim]")
         elif args.command == "user-list":
             users = store.list()
             if not users:

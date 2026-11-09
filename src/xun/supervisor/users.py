@@ -11,6 +11,7 @@ from ..core.config import get_home_dir
 
 
 _USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")  # URL-safe so tokens survive login query strings
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,18 @@ class UserStore:
             connection.execute(
                 "UPDATE users SET paused = ? WHERE name = ?", (int(paused), name)
             )
+        return self.get(name)
+
+    def rotate_token(self, name: str, token: str | None = None) -> User | None:
+        """Replace a user's token; the running container is recreated on the next reconciliation."""
+        token = token or secrets.token_urlsafe(24)
+        if not _TOKEN_PATTERN.fullmatch(token):
+            raise ValueError("token may only contain letters, numbers, '_' and '-'")
+        try:
+            with self._connect() as connection:
+                connection.execute("UPDATE users SET token = ? WHERE name = ?", (token, name))
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"token already in use: {token}") from error
         return self.get(name)
 
     def upgrade(self, name: str) -> User | None:

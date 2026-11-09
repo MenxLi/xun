@@ -85,6 +85,26 @@ class UserStoreTest(unittest.TestCase):
             self.assertEqual(store.set_paused("alice", False), alice)
             self.assertIsNone(store.set_paused("nobody", True))
 
+    def test_rotate_token(self) -> None:
+        with TemporaryDirectory() as directory:
+            store = UserStore(Path(directory) / "xunx.db")
+            alice = store.add("alice")
+            store.add("bob")
+
+            rotated = store.rotate_token("alice")
+            self.assertIsNotNone(rotated)
+            assert rotated is not None
+            self.assertNotEqual(rotated.token, alice.token)
+            self.assertEqual(rotated.name, alice.name)
+
+            fixed = store.rotate_token("alice", "fixed-token")
+            self.assertEqual(fixed, User("alice", "fixed-token", 0, False))
+            with self.assertRaisesRegex(ValueError, "already in use"):
+                store.rotate_token("bob", "fixed-token")
+            with self.assertRaisesRegex(ValueError, "may only contain"):
+                store.rotate_token("alice", "bad token!")
+            self.assertIsNone(store.rotate_token("nobody"))
+
     def test_migrates_databases_without_generation(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "xunx.db"
