@@ -98,6 +98,11 @@ export const api = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path, name }),
   }),
+  forkSession: (path: string, name?: string) => request<SessionInfo>(`${sessionUrl()}/fork`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, name: name || null }),
+  }),
   removeSession: (path: string) => request<{ removed: boolean }>(`${sessionUrl()}/remove`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

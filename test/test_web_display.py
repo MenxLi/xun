@@ -938,12 +938,20 @@ class WebDisplayTest(unittest.TestCase):
             def destroy(self) -> None:
                 events.append((self.mount_path, "destroy"))
 
-        service = WebDisplayService(token="service-token", session_factory=NewSession)
+        def fork_session(source) -> NewSession:
+            self.assertEqual(source.mount_path, "/sessions/main")
+            forked = NewSession()
+            forked.mount_path = "/sessions/forked"
+            forked.name = "Main session (fork)"
+            return forked
+
+        service = WebDisplayService(token="service-token", session_factory=NewSession, session_forker=fork_session)
         service.mount(SimpleSession("/sessions/main", main_display, name="Main session"))
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             listing = client.get("/api/sessions").json()
             self.assertTrue(listing["can_manage"])
+            self.assertTrue(listing["can_fork"])
             self.assertEqual(listing["sessions"], [{
                 "path": "/sessions/main",
                 "name": "Main session",
@@ -952,7 +960,7 @@ class WebDisplayTest(unittest.TestCase):
 
             main_agent._running = True
             self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "running")
-            main_display._pending.set("main-agent", {"prompt": "Continue?", "choices": ["Yes"]}, SpanSnapshot().model_dump())
+            waiting_prompt = main_display._pending.set("main-agent", {"prompt": "Continue?", "choices": ["Yes"]}, SpanSnapshot().model_dump())
             self.assertEqual(client.get("/api/sessions/sessions/main").json()["status"], "waiting")
 
             created = client.post("/api/sessions/create", json={"name": "Research"})
@@ -987,10 +995,27 @@ class WebDisplayTest(unittest.TestCase):
             recreated = client.post("/api/sessions/create", json={"name": "Research again"})
             self.assertEqual(recreated.status_code, 201)
             self.assertEqual(client.post("/api/sessions/remove", json={"path": "/sessions/new"}).status_code, 200)
+
+            main_agent._running = False
+            main_display._pending.discard(waiting_prompt)
+            forked = client.post("/api/sessions/fork", json={"path": "/sessions/main"})
+            self.assertEqual(forked.status_code, 201)
+            self.assertEqual(forked.json(), {"path": "/sessions/forked", "name": "Main session (fork)", "status": "idle"})
+            self.assertEqual(client.get("/session/sessions/forked/api/config").status_code, 200)
+            self.assertEqual(client.post("/api/sessions/fork", json={"path": "/nope"}).status_code, 404)
+            main_agent._running = True
+            self.assertEqual(client.post("/api/sessions/fork", json={"path": "/sessions/main"}).status_code, 409)
+            main_agent._running = False
+            self.assertEqual(client.post("/api/sessions/remove", json={"path": "/sessions/forked"}).status_code, 200)
+
             last = client.post("/api/sessions/remove", json={"path": "/sessions/main"})
             self.assertEqual(last.status_code, 409)
 
-        self.assertEqual(events, [("/sessions/new", "destroy"), ("/sessions/new", "destroy")])
+        self.assertEqual(events, [
+            ("/sessions/new", "destroy"),
+            ("/sessions/new", "destroy"),
+            ("/sessions/forked", "destroy"),
+        ])
 
     def test_service_closes_managed_session_contexts_on_shutdown(self) -> None:
         events: list[str] = []
@@ -1048,16 +1073,31 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertEqual(exits, ["exit"])  # shutdown re-exits nothing already unmounted
 
+    def test_service_rejects_forking_an_unforkable_session(self) -> None:
+        def forker(source):
+            raise ValueError("Only durable sessions can be forked")
+
+        service = WebDisplayService(token="service-token", session_forker=forker)
+        service.mount(SimpleSession("/", WebDisplay()))
+
+        with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+            response = client.post("/api/sessions/fork", json={"path": "/"})
+            self.assertEqual(response.status_code, 409)
+            self.assertIn("durable", response.json()["detail"])
+
     def test_session_management_is_disabled_without_manager(self) -> None:
         response = self.client.post("http://testserver/api/sessions/create", json={"name": "New session"})
         renamed = self.client.post(
             "http://testserver/api/sessions/rename",
             json={"path": "/", "name": "Renamed"},
         )
+        forked = self.client.post("http://testserver/api/sessions/fork", json={"path": "/"})
 
         self.assertEqual(response.status_code, 405)
         self.assertEqual(renamed.status_code, 405)
+        self.assertEqual(forked.status_code, 405)
         self.assertFalse(self.client.get("http://testserver/api/sessions").json()["can_manage"])
+        self.assertFalse(self.client.get("http://testserver/api/sessions").json()["can_fork"])
 
 
 if __name__ == "__main__":

@@ -174,6 +174,7 @@ class SessionInfo(BaseModel):
 class SessionList(BaseModel):
     sessions: list[SessionInfo]
     can_manage: bool
+    can_fork: bool
 
 
 class SessionCreate(BaseModel):
@@ -182,6 +183,11 @@ class SessionCreate(BaseModel):
 
 class SessionRemove(BaseModel):
     path: str
+
+
+class SessionFork(BaseModel):
+    path: str
+    name: Optional[str] = Field(default=None, max_length=80)
 
 
 class SessionRename(BaseModel):
@@ -259,6 +265,7 @@ class WebDisplayService:
         assets_dir: Path = _DEFAULT_WEB_ASSETS,
         docs_dir: Path = _DEFAULT_DOCS_ASSETS,
         session_factory: Optional[SessionSource] = None,
+        session_forker: Optional[Callable[[WebSession], WebSession]] = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -272,6 +279,7 @@ class WebDisplayService:
         self.logout_path = f"{self.base_path}/logout"
         self._sessions: dict[str, _Mounted] = {}
         self._session_factory = session_factory
+        self._session_forker = session_forker
         self._session_lock = threading.RLock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Optional[uvicorn.Server] = None
@@ -331,7 +339,11 @@ class WebDisplayService:
     def _configure_sessions(self) -> None:
         @self.app.get(self.sessions_api_path)
         async def sessions() -> SessionList:
-            return SessionList(sessions=self.list_sessions(), can_manage=self._session_factory is not None)
+            return SessionList(
+                sessions=self.list_sessions(),
+                can_manage=self._session_factory is not None,
+                can_fork=self._session_forker is not None,
+            )
 
         @self.app.get(f"{self.sessions_api_path}/{{session_path:path}}")
         async def session(session_path: str) -> SessionInfo:
@@ -365,6 +377,32 @@ class WebDisplayService:
                 raise HTTPException(409, "The last session cannot be removed")
             self.unmount(request.path)
             return {"removed": True}
+
+        @self.app.post(f"{self.sessions_api_path}/fork", status_code=201)
+        async def fork_session(request: SessionFork) -> SessionInfo:
+            forker = self._session_forker
+            if forker is None:
+                raise HTTPException(405, "Session forking is disabled")
+            with self._session_lock:
+                mounted = self._sessions.get(_normalize_path(request.path))
+            if mounted is None:
+                raise HTTPException(404, "Session not found")
+            source = mounted.session
+            if source.display._pending.list() or any(agent.is_running for agent in source.display.agents.values()):
+                raise HTTPException(409, "Cannot fork a busy session")
+            try:
+                session = forker(source)  # derives the copy; may reject the source type
+            except ValueError as e:
+                raise HTTPException(409, str(e))
+            try:
+                if name := (request.name or "").strip():
+                    session.name = name
+                    _save_meta(session)
+                self.mount(session, managed=True)
+            except BaseException:
+                session.destroy()
+                raise
+            return self._session_info(_normalize_path(session.mount_path))
 
         @self.app.post(f"{self.sessions_api_path}/rename")
         async def rename_session(request: SessionRename) -> SessionInfo:

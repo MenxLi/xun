@@ -36,6 +36,7 @@ const exposeFiles = ref<boolean | null>(null)
 const settingsOpen = ref(false)
 const sessions = ref<SessionInfo[]>([])
 const canManageSessions = ref(false)
+const canForkSessions = ref(false)
 const sessionBusy = ref(false)
 const sessionError = ref('')
 const narrowLayout = ref(window.innerWidth < 900)
@@ -204,6 +205,7 @@ async function loadSessions() {
     const listing = await api.sessions()
     sessions.value = listing.sessions
     canManageSessions.value = listing.can_manage
+    canForkSessions.value = listing.can_fork
     sessionError.value = ''
     if (socket && !listing.sessions.some(session => session.path === currentSessionPath.value)) {
       const fallback = listing.sessions[0]
@@ -223,6 +225,20 @@ async function createSession() {
     switchSession(session.path)
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : t('sessions.createError')
+  } finally {
+    sessionBusy.value = false
+  }
+}
+
+async function forkSession(session: SessionInfo) {
+  sessionBusy.value = true
+  sessionError.value = ''
+  try {
+    const forked = await api.forkSession(session.path)
+    await loadSessions()
+    switchSession(forked.path)
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : t('sessions.forkError')
   } finally {
     sessionBusy.value = false
   }
@@ -673,11 +689,13 @@ onBeforeUnmount(() => {
       :sessions="sessions"
       :current-path="currentSessionPath"
       :can-manage="canManageSessions"
+      :can-fork="canForkSessions"
       :busy="sessionBusy"
       :error="sessionError"
       @close="closeSessions"
       @create="createSession"
       @rename="renameSession"
+      @fork="forkSession"
       @remove="removeSession"
       @select="switchSession"
     />

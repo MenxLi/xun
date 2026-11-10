@@ -1,4 +1,5 @@
 import itertools
+import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -95,6 +96,56 @@ class DurableSessionTest(unittest.TestCase):
             session.name = "Too late"
             session.save_meta()  # an ended session never writes
             self.assertEqual(SessionMeta.load(session.directory, fallback_name="s1").name, "After")
+
+    def test_fork_copies_the_session_and_is_born_fresh(self) -> None:
+        with TemporaryDirectory() as home, patch("time.time", side_effect=itertools.count(1)):
+            session = DurableSession.new("src", name="Origin", home_dir=Path(home), factory=BARE)
+            agent = attach(session, name="worker")
+            (session.directory / "workspace" / "note.txt").write_text("copy me")
+            agent.conversation.add_user_message("born in source")
+            with agent.run_scope():
+                pass  # run-end save
+            identifier = agent.identifier
+            session.close()
+            with sqlite3.connect(session.directory / "events.db") as conn:
+                conn.execute("INSERT INTO events(agent_id, timestamp, data) VALUES ('probe', 1.0, '{}')")
+                conn.commit()
+
+            rebuilt: list[Agent] = []
+            forked = DurableSession.fork("src", home_dir=Path(home), factory=make_factory(rebuilt))
+            self.addCleanup(forked.destroy)
+            self.assertNotEqual(forked.session_id, "src")
+            self.assertEqual(forked.name, "Origin (fork)")
+            self.assertGreater(forked.created_at, session.created_at)
+            self.assertEqual((forked.directory / "workspace" / "note.txt").read_text(), "copy me")
+            self.assertEqual((session.directory / "workspace" / "note.txt").read_text(), "copy me")
+
+            restored = rebuilt[0]
+            self.assertEqual(restored.identifier, identifier)  # ids ride along: the timeline stays continuous
+            self.assertEqual(restored.workspace.workdir, forked.directory / "workspace")
+            param = cast(dict, restored.conversation.messages[-1].completion_param())
+            self.assertEqual(param["content"], "born in source")
+            self.assertEqual(forked._store.count(agent_id="probe"), 1)  # event history comes along
+
+    def test_fork_names_on_demand_and_copies_events_from_a_live_source(self) -> None:
+        with TemporaryDirectory() as home:
+            session = DurableSession.new("src", home_dir=Path(home), factory=BARE)
+            attach(session)
+            with sqlite3.connect(session.directory / "events.db") as conn:
+                conn.execute("INSERT INTO events(agent_id, timestamp, data) VALUES ('a', 1.0, '{}')")
+                conn.commit()  # the source store is still open: fork must back it up online
+
+            rebuilt: list[Agent] = []
+            forked = DurableSession.fork("src", name="Custom", home_dir=Path(home), factory=make_factory(rebuilt))
+            self.addCleanup(forked.destroy)
+            self.addCleanup(session.destroy)
+            self.assertEqual(forked.name, "Custom")
+            self.assertEqual(forked._store.count(agent_id="a"), 1)
+
+    def test_fork_requires_an_existing_source(self) -> None:
+        with TemporaryDirectory() as home:
+            with self.assertRaisesRegex(FileNotFoundError, "No such session"):
+                DurableSession.fork("ghost", home_dir=Path(home), factory=BARE)
 
     def test_destroy_releases_agents_and_erases_directory(self) -> None:
         with TemporaryDirectory() as home:

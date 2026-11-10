@@ -19,7 +19,9 @@ import json
 import re
 import secrets
 import shutil
+import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING
 from dataclasses import asdict, dataclass, field
@@ -147,6 +149,37 @@ class DurableSession[D: DisplayAbstract]:
         event_store = DBEventStore(directory / "events.db")
         display, agents = factory(event_store, _agent_stores(directory))
         return _open(directory, stored.name, stored.created_at, event_store, display, agents)
+
+    @staticmethod
+    def fork[DT: DisplayAbstract](
+        source_id: str,
+        *,
+        name: str | None = None,
+        home_dir: Path | None = None,
+        factory: "SessionFactory[DT]",
+    ) -> "DurableSession[DT]":
+        """A new session from a complete copy of a stored one: 
+        The copy is born fresh (new id and created_at, `name` defaults to "<source> (fork)"); 
+        agents keep their identifiers, so the copied timeline stays continuous."""
+        source = _session_dir(source_id, home_dir)
+        if not source.is_dir():
+            raise FileNotFoundError(f"No such session: {source_id!r}")
+        session_id = secrets.token_hex(6)
+        directory = _session_dir(session_id, home_dir)
+        # session.json would carry the source's birth; events.db is copied online below.
+        shutil.copytree(source, directory, ignore=shutil.ignore_patterns("session.json", "events.db*"))
+        session: "DurableSession[DT] | None" = None
+        try:
+            with closing(sqlite3.connect(source / "events.db")) as src, \
+                    closing(sqlite3.connect(directory / "events.db")) as dst:
+                src.backup(dst)
+            session = DurableSession.from_saved(session_id, home_dir=home_dir, factory=factory)
+            session.name = name or f"{SessionMeta.load(source, fallback_name=source_id).name} (fork)"
+            session.save_meta()
+            return session
+        except BaseException:
+            session.destroy() if session else shutil.rmtree(directory, ignore_errors=True)
+            raise
 
     @property
     def session_id(self) -> str:

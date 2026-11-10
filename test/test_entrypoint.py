@@ -4,11 +4,12 @@ import sys
 import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 from unittest.mock import Mock, patch
 
 from xun import AgentState, NullDisplay
 from xun.displays import SimpleSession
-from xun.entrypoint import main_container, main_serve, web_session
+from xun.entrypoint import main_container, main_serve, web_session, _new_session
 from xun.session import DurableSession
 
 
@@ -164,6 +165,41 @@ class WebSessionTest(unittest.TestCase):
         self.assertEqual(service.mounts[0].mount_path, "/")
         self.assertTrue(service.started)
         self.assertTrue(service.stopped)
+
+    def test_fork_session_copies_files_and_notes_the_model(self) -> None:
+        from xun.entrypoint import _fork_session
+
+        with patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
+            durable = _new_session(None)
+            self.addCleanup(durable.destroy)
+            source = cast(DurableSession, durable)
+            (source.directory / "workspace" / "keep.txt").write_text("carried")
+            source.close()
+
+            forked = cast(DurableSession, _fork_session(source))
+            self.addCleanup(forked.destroy)
+            self.assertNotEqual(forked.session_id, source.session_id)
+            self.assertEqual((forked.directory / "workspace" / "keep.txt").read_text(), "carried")
+            self.assertTrue(forked.name.endswith("(fork)"))
+            note = self.agents[-1].conversation.add_developer_message.call_args
+            self.assertIn("forked", note.args[0])
+            self.assertIn(str(forked.directory / "workspace"), note.args[0])
+
+            with self.assertRaisesRegex(ValueError, "durable"):
+                _fork_session(SimpleSession("/ephemeral", NullDisplay()))
+
+    def test_forker_wiring_follows_session_management(self) -> None:
+        with TemporaryDirectory() as directory, \
+                patch("xun.entrypoint.WebDisplayService", _Service), \
+                patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
+            web_session(manage_sessions=True)
+            self.assertIsNotNone(_Service.instances[0].kwargs["session_forker"])
+
+            web_session(workdir=directory)  # ephemeral fixed workdir: nothing to fork from
+            self.assertIsNone(_Service.instances[1].kwargs["session_forker"])
+
+            web_session(manage_sessions=False)
+            self.assertIsNone(_Service.instances[2].kwargs["session_forker"])
 
 
 class EntrypointCliTest(unittest.TestCase):

@@ -139,6 +139,26 @@ def _durable_session(
 
 _durable_new = partial(DurableSession.new, factory=_durable_session)
 _durable_discover = partial(DurableSession.discover, factory=_durable_session)
+_durable_fork = partial(DurableSession.fork, factory=_durable_session)
+
+
+def _fork_session(source: WebSession) -> WebSession:
+    """Fork a mounted session: a complete copy (files, agents, history) plus a
+    developer notice steering agents away from the source's paths."""
+    if not isinstance(source, DurableSession):
+        raise ValueError("Only durable sessions can be forked")
+    forked = _durable_fork(source.session_id)
+    workdir = forked.directory / "workspace"
+    for agent in forked.display.agents.values():
+        agent.conversation.add_developer_message(
+            f"This session was forked from another session; its workspace was copied "
+            f"to {workdir}, which is now the working directory. Paths under "
+            f"{source.directory} appear in earlier messages but belong to the source "
+            "session, which may still live: never read or write them. Use paths "
+            "relative to the working directory from now on. "
+            "Also use your new temporary directories for any transient files."
+        )
+    return forked
 
 
 def _new_session(workdir: Path | None) -> WebSession:
@@ -173,6 +193,7 @@ def web_session(
         token=token,
         base_path=base_path,
         session_factory=(lambda: _new_session(fixed_workdir)) if manage_sessions else None,
+        session_forker=_fork_session if manage_sessions and fixed_workdir is None else None,
     )
     sessions: list[WebSession] = []
     try:

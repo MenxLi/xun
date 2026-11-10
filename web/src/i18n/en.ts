@@ -55,6 +55,8 @@ export default {
     running: 'Running',
     waiting: 'Waiting for input',
     renameSession: 'Rename session',
+    forkSession: 'Fork session',
+    busyCannotFork: 'Wait until the session is idle to fork',
     logout: 'Log out',
     logoutConfirm: 'Log out of this workspace?',
     lastCannotRemove: 'The last session cannot be removed',
@@ -63,6 +65,7 @@ export default {
     loadError: 'Could not load sessions',
     createError: 'Could not create session',
     renameError: 'Could not rename session',
+    forkError: 'Could not fork session',
     removeError: 'Could not remove session',
   },
   prompt: {

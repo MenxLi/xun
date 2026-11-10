@@ -154,6 +154,7 @@ export interface SessionInfo {
 export interface SessionList {
   sessions: SessionInfo[]
   can_manage: boolean
+  can_fork: boolean
 }
 
 export interface ModelCapabilities {

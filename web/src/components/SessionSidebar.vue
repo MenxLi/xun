@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LoaderCircle, LogOut, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
+import { GitBranch, LoaderCircle, LogOut, MoreHorizontal, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
 import ResizeHandle from './ResizeHandle.vue'
 import { logout } from '../api'
@@ -12,6 +12,7 @@ const props = defineProps<{
   sessions: SessionInfo[]
   currentPath: string
   canManage: boolean
+  canFork: boolean
   busy: boolean
   error: string
 }>()
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   close: []
   create: []
   rename: [session: SessionInfo, name: string]
+  fork: [session: SessionInfo]
   remove: [session: SessionInfo]
   select: [path: string]
 }>()
@@ -47,7 +49,7 @@ function toggleMenu(session: SessionInfo, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const margin = 6
   const width = 176
-  const height = 72
+  const height = props.canFork ? 106 : 72
   const top = rect.bottom + 4 + height <= window.innerHeight - margin
     ? rect.bottom + 4
     : rect.top - height - 4
@@ -60,6 +62,11 @@ function toggleMenu(session: SessionInfo, event: MouseEvent) {
 
 function closeMenu() {
   activeSession.value = null
+}
+
+function confirmFork(session: SessionInfo) {
+  closeMenu()
+  if (!props.busy) emit('fork', session)
 }
 
 function beginRename(session: SessionInfo) {
@@ -181,6 +188,7 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div v-if="activeSession" class="action-menu" :style="menuPosition" @click.stop>
         <button @click="beginRename(activeSession)"><Pencil :size="14" /><span>{{ t('sessions.renameSession') }}</span></button>
+        <button v-if="canFork" :title="busy ? t('sessions.busyCannotFork') : undefined" :disabled="busy" @click="confirmFork(activeSession)"><GitBranch :size="14" /><span>{{ t('sessions.forkSession') }}</span></button>
         <button class="danger" :title="sessions.length === 1 ? t('sessions.lastCannotRemove') : undefined" :disabled="busy || sessions.length === 1" @click="confirmRemove(activeSession)"><Trash2 :size="14" /><span>{{ t('sessions.removeSession') }}</span></button>
       </div>
     </Teleport>

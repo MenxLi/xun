@@ -57,6 +57,8 @@ const zh: typeof en = {
     running: '运行中',
     waiting: '等待输入',
     renameSession: '重命名会话',
+    forkSession: '分叉会话',
+    busyCannotFork: '会话空闲后才能分叉',
     logout: '退出登录',
     logoutConfirm: '确定要退出登录吗？',
     lastCannotRemove: '无法删除最后一个会话',
@@ -65,6 +67,7 @@ const zh: typeof en = {
     loadError: '无法加载会话列表',
     createError: '无法创建会话',
     renameError: '无法重命名会话',
+    forkError: '无法分叉会话',
     removeError: '无法删除会话',
   },
   prompt: {
