@@ -91,7 +91,6 @@ def default_commands() -> list[Command]:
             return
         
         config = agent.config.model_copy(deep=True)
-        reset_client = False
         updated: dict[str, object] = {}
         for pair in args:
             if "=" not in pair:
@@ -102,13 +101,13 @@ def default_commands() -> list[Command]:
             for k in key_sp[:-1]:
                 var = getattr(var, k)
             setattr(var, key_sp[-1], value)
-            if key_sp[0] == 'provider':
-                reset_client = True
             updated[key] = getattr(var, key_sp[-1])
-        if reset_client:
-            agent.openai_client = None
         agent.config = config
-        agent.display_info(f"Config updated: {updated}" + (" (Client reset)" if reset_client else ""))
+        # NOTE: websocket_base_url were set at construction time,
+        # but since we only use the completion endpoint, should be fine.
+        agent.openai_client.base_url = agent.config.provider.openai_base_url
+        agent.openai_client.api_key = agent.config.provider.openai_api_key
+        agent.display_info(f"Config updated: {updated}")
 
     def _tools_handler(agent: "Agent[Agent.T.Init]") -> None:
         agent.display_event(ShowToolsEvent.from_tools(agent.toolbox.list_tools()))
