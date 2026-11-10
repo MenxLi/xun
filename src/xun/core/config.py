@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import os
+import time
 import functools
 from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
@@ -9,6 +10,8 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, ConfigDict
 from typing import Self, Literal
 from string import Template
+from functools import lru_cache
+from threading import Lock
 
 from .types import ModelCapabilityType, JsonType
 
@@ -86,6 +89,31 @@ class AutoCompactionConfig(ConfigModel):
     token_threshold: int
     """Auto-compact the conversation when the last model call used more tokens than this."""
 
+_PROBE_TTL = 60  # seconds
+_prob_lock = Lock()
+
+class _ProbClientWrapper:
+    def __init__(self, client: openai.OpenAI):
+        self.client = client
+    def __hash__(self) -> int:
+        return hash((self.client.base_url, self.client.api_key))
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, _ProbClientWrapper):
+            return False
+        return (self.client.base_url, self.client.api_key) == (other.client.base_url, other.client.api_key)
+
+@lru_cache(maxsize=32)
+def _prob_first_model_name(
+    client: _ProbClientWrapper, 
+    _ttl_cache_key: int,
+    ) -> str:
+    models = client.client.models.list()
+    if not models or not models.data:
+        raise RuntimeError("Failed to infer OpenAI model from provider. Please specify a model in the config.")
+    if len(models.data) > 1:
+        print(f"Warning: Multiple models found in the provider, but no model name specified in the config. Defaulting to the first model: {models.data[0].id}.")
+    return models.data[0].id
+
 class ModelConfig(ConfigModel):
     name: str
     capabilities: set[ModelCapabilityType]
@@ -101,13 +129,10 @@ class ModelConfig(ConfigModel):
 
     def _assign_primary_model(self, client: openai.OpenAI) -> None:
         if not self.name:
-            models = client.models.list()
-            if models and len(models.data) > 0:
-                self.name = models.data[0].id
-                if not len(models.data) == 1:
-                    print(f"Warning: Multiple models found in the provider, but no model name specified in the config. Defaulting to the first model: {self.name}.")
-            else:
-                raise RuntimeError(f"Failed to infer OpenAI model from provider. Please specify a model in the config.")
+            with _prob_lock:  # cache-guard
+                self.name = _prob_first_model_name(
+                    _ProbClientWrapper(client), int(time.time()) // _PROBE_TTL
+                )
 
 class AgentConfig(ConfigModel):
     auto_confirm: bool
