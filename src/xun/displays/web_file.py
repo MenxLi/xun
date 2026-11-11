@@ -88,6 +88,12 @@ MEDIA_TYPE_OVERRIDES = {
 # Structured text formats that preview as text although they are not text/*.
 TEXT_MEDIA_TYPES = {"application/json", "application/toml", "application/xml", "application/yaml"}
 
+OFFICE_MEDIA_TYPES = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
 # Inline previews serve agent/user content: nosniff + a null CSP keep SVG or
 # mislabelled files from running scripts or masquerading as another type.
 INLINE_SECURITY_HEADERS = {
@@ -277,7 +283,7 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
             if target.stat().st_size > MAX_PREVIEW_IMAGE_SIZE:
                 raise HTTPException(413, "Image is too large to preview")
             return FileResponse(target, media_type=media_type, headers=INLINE_SECURITY_HEADERS)
-        if media_type == "application/pdf":
+        if media_type == "application/pdf" or media_type in OFFICE_MEDIA_TYPES:
             if target.stat().st_size > MAX_PREVIEW_DOCUMENT_SIZE:
                 raise HTTPException(413, "Document is too large to preview")
             return FileResponse(target, media_type=media_type, headers=INLINE_SECURITY_HEADERS)

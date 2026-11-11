@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, Pencil, RotateCcw, Save, X, ZoomIn, ZoomOut } from 'lucide-vue-next'
 import ResizeHandle from './ResizeHandle.vue'
 import MarkdownText from './MarkdownText.vue'
+import OfficePreview from './office/OfficePreview.vue'
 import { api, errorMessage, writeConflict } from '../api'
 import { highlightFile } from '../highlight'
 import { previewKind, renderKind } from '../preview'
@@ -202,9 +203,9 @@ function onEditorKeydown(event: KeyboardEvent) {
     </header>
 
     <div v-if="kind !== 'unsupported'" class="preview-zoom" role="group" :aria-label="t('preview.zoom')">
-      <button class="icon-button" :title="t('preview.zoomOut')" :disabled="zoom <= 25" @click="zoom -= 25"><ZoomOut :size="14" /></button>
+      <button class="icon-button" :title="t('preview.zoomOut')" :disabled="zoom <= 25" @click="zoom = Math.max(25, zoom - 25)"><ZoomOut :size="14" /></button>
       <button class="zoom-reset" :title="t('preview.resetZoom')" @click="zoom = 100">{{ zoom }}%</button>
-      <button class="icon-button" :title="t('preview.zoomIn')" :disabled="zoom >= 400" @click="zoom += 25"><ZoomIn :size="14" /></button>
+      <button class="icon-button" :title="t('preview.zoomIn')" :disabled="zoom >= 400" @click="zoom = Math.min(400, zoom + 25)"><ZoomIn :size="14" /></button>
     </div>
 
     <template v-if="kind === 'image'">
@@ -254,6 +255,14 @@ function onEditorKeydown(event: KeyboardEvent) {
         <iframe class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
       </div>
     </div>
+
+    <OfficePreview
+      v-else-if="kind !== 'unsupported'"
+      v-model:zoom="zoom"
+      :src="documentUrl"
+      :format="kind"
+      :download-url="api.downloadUrl(agentId, entry.path)"
+    />
 
     <div v-else class="preview-unsupported">
       <FileQuestion :size="20" />

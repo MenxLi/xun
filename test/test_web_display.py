@@ -29,6 +29,7 @@ from xun.core.running_state import AgentRunningStateMixin, ChainedEvent
 from xun.core.hooks import HookArgs, Hooks
 from xun.displays import SimpleSession, WebDisplay, WebDisplayService
 from xun.displays.web_serve import MAX_SERVE_SERVERS
+from xun.displays.web_file import MAX_PREVIEW_DOCUMENT_SIZE
 from xun.core.null_display import NullDisplay
 from xun.core.types import CancelledError, ErrorInfo, Result
 from xun.core.workspace import Workspace
@@ -449,6 +450,51 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(refused.status_code, 415)
         download = self.client.get("api/files/agent-1/download", params={"path": "blob.bin"})
         self.assertEqual(download.status_code, 200)
+
+    def test_office_preview_serves_original_bytes_read_only(self) -> None:
+        for extension, media_type in {
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        }.items():
+            with self.subTest(extension=extension):
+                name = f"document.{extension}"
+                payload = b"PK\x03\x04office bytes"
+                (self.root / name).write_bytes(payload)
+                info = self.client.get("api/files/agent-1/info", params={"path": name})
+                self.assertEqual(info.json()["media_type"], media_type)
+                self.assertFalse(info.json()["is_text"])
+                response = self.client.get(f"api/files/agent-1/content/{name}")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content, payload)
+                self.assertEqual(response.headers["content-type"], media_type)
+                self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+                self.assertEqual(response.headers["content-security-policy"], "default-src 'none'")
+                write = self.client.post("api/files/agent-1/write", json={"path": name, "content": "text"})
+                self.assertEqual(write.status_code, 415)
+                self.assertEqual((self.root / name).read_bytes(), payload)
+
+    def test_office_preview_size_limit_and_legacy_files(self) -> None:
+        for extension in ("docx", "xlsx", "pptx"):
+            with self.subTest(extension=extension):
+                name = f"large.{extension}"
+                with (self.root / name).open("wb") as file:
+                    file.truncate(MAX_PREVIEW_DOCUMENT_SIZE)
+                accepted = self.client.get(
+                    f"api/files/agent-1/content/{name}", headers={"Range": "bytes=0-0"}
+                )
+                self.assertEqual(accepted.status_code, 206)
+                self.assertEqual(accepted.content, b"\x00")
+                with (self.root / name).open("r+b") as file:
+                    file.truncate(MAX_PREVIEW_DOCUMENT_SIZE + 1)
+                response = self.client.get(f"api/files/agent-1/content/{name}")
+                self.assertEqual(response.status_code, 413)
+        for extension in ("doc", "xls", "ppt"):
+            with self.subTest(extension=extension):
+                name = f"old.{extension}"
+                (self.root / name).write_bytes(b"legacy")
+                response = self.client.get(f"api/files/agent-1/content/{name}")
+                self.assertEqual(response.status_code, 415)
 
     def test_download_folder_as_archive(self) -> None:
         folder = self.root / "assets" / "nested"

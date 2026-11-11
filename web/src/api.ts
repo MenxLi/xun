@@ -68,6 +68,10 @@ function request<T>(url: string, options?: RequestInit): Promise<T> {
   return fetchOk(url, options).then(response => response.json() as Promise<T>)
 }
 
+export function fetchBinary(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+  return fetchOk(url, { signal }).then(response => response.arrayBuffer())
+}
+
 function query(params: Record<string, string>): string {
   return new URLSearchParams(params).toString()
 }
