@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
-import type { DocxViewer } from '@silurus/ooxml/docx'
+import type { DocxScrollViewer } from '@silurus/ooxml/docx'
 import type { XlsxViewer } from '@silurus/ooxml/xlsx'
-import type { PptxViewer } from '@silurus/ooxml/pptx'
+import type { PptxScrollViewer } from '@silurus/ooxml/pptx'
 import { errorMessage, fetchBinary } from '../../api'
+import { preserveViewportCenter } from '../../previewViewport'
 import type { OfficeFormat } from './formats'
 
-type Viewer = DocxViewer | XlsxViewer | PptxViewer
+type Viewer = DocxScrollViewer | XlsxViewer | PptxScrollViewer
 
 const props = defineProps<{ src: string; format: OfficeFormat; downloadUrl: string }>()
 const zoom = defineModel<number>('zoom', { required: true })
@@ -71,18 +71,17 @@ watch([() => props.src, () => props.format], async ([src, format], _, onCleanup)
     host.value.append(mount)
     if ('XlsxViewer' in module) {
       instance = new module.XlsxViewer(mount, { ...options, showZoomSlider: false })
+    } else if ('DocxScrollViewer' in module) {
+      instance = new module.DocxScrollViewer(mount, { ...options, enableTextSelection: true, onVisiblePageChange: onPageChange })
     } else {
-      const canvas = document.createElement('canvas')
-      mount.append(canvas)
-      instance = 'DocxViewer' in module
-        ? new module.DocxViewer(canvas, { ...options, container: mount, onPageChange })
-        : new module.PptxViewer(canvas, { ...options, enableMediaPlayback: false, onSlideChange: onPageChange })
+      instance = new module.PptxScrollViewer(mount, { ...options, enableTextSelection: true, enableMediaPlayback: false, onVisibleSlideChange: onPageChange })
     }
     await instance.load(bytes)
     if (controller.signal.aborted) return
     viewer = instance
     if (format === 'xlsx') await instance.setScale(zoom.value / 100)
     else await instance.fitWidth()
+    if (!controller.signal.aborted) zoom.value = Math.round(instance.getScale() * 100)
   } catch (reason) {
     onError(reason)
   } finally {
@@ -93,12 +92,32 @@ watch([() => props.src, () => props.format], async ([src, format], _, onCleanup)
   }
 }, { immediate: true })
 
+function preserveOfficeCenter() {
+  if (props.format === 'xlsx') return
+  const canvases = [...(host.value?.querySelectorAll('canvas') ?? [])]
+  const first = canvases[0]
+  let viewport = first?.parentElement
+  while (viewport && viewport !== host.value && !/(auto|scroll)/.test(getComputedStyle(viewport).overflow)) {
+    viewport = viewport.parentElement
+  }
+  if (!viewport?.clientWidth || !first?.getBoundingClientRect().width) return
+  const center = viewport.getBoundingClientRect().top + viewport.clientHeight / 2
+  const content = canvases.find(canvas => {
+    const bounds = canvas.getBoundingClientRect()
+    return bounds.top <= center && bounds.bottom >= center
+  }) ?? first
+  return preserveViewportCenter(viewport, content)
+}
+
 async function act(action: (active: Viewer) => void | Promise<void>) {
   const active = viewer
   if (!active || loading.value || busy.value || error.value) return
   busy.value = true
   try {
+    const scale = active.getScale()
+    const restore = preserveOfficeCenter()
     await action(active)
+    if (viewer === active && active.getScale() !== scale) restore?.()
   } catch (reason) {
     if (viewer === active) error.value = errorMessage(reason, t('preview.officeError'))
   } finally {
@@ -110,18 +129,13 @@ watch(zoom, async value => {
   const active = viewer
   if (!active || loading.value || Math.abs(active.getScale() - value / 100) < 0.005) return
   try {
+    const restore = preserveOfficeCenter()
     await active.setScale(value / 100)
+    if (viewer === active && active.getScale() === value / 100) restore?.()
   } catch (reason) {
     if (viewer === active) error.value = errorMessage(reason, t('preview.officeError'))
   }
 })
-
-function navigate(delta: number) {
-  void act(active => {
-    if ('goToPage' in active) return active.goToPage(page.value + delta)
-    if ('goToSlide' in active) return active.goToSlide(page.value + delta)
-  })
-}
 </script>
 
 <template>
@@ -133,15 +147,7 @@ function navigate(delta: number) {
     </div>
     <div ref="host" v-show="!error" class="office-host" :class="{ 'is-loading': loading }" />
     <div v-if="!loading && !error" class="office-controls">
-      <template v-if="format !== 'xlsx'">
-        <button class="icon-button" :title="t('preview.previousPage')" :disabled="busy || page <= 0" @click="navigate(-1)">
-          <ChevronLeft :size="14" />
-        </button>
-        <span>{{ page + 1 }} / {{ total }}</span>
-        <button class="icon-button" :title="t('preview.nextPage')" :disabled="busy || page + 1 >= total" @click="navigate(1)">
-          <ChevronRight :size="14" />
-        </button>
-      </template>
+      <span v-if="format !== 'xlsx'">{{ page + 1 }} / {{ total }}</span>
       <button class="fit-width" :disabled="busy" @click="act(active => active.fitWidth())">{{ t('preview.fitWidth') }}</button>
     </div>
   </div>

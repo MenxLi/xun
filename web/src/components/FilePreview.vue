@@ -5,6 +5,7 @@ import { BookOpenText, CodeXml, FileQuestion, Maximize2, Minimize2, Pencil, Rota
 import ResizeHandle from './ResizeHandle.vue'
 import MarkdownText from './MarkdownText.vue'
 import OfficePreview from './office/OfficePreview.vue'
+import PreviewViewport from './PreviewViewport.vue'
 import { api, errorMessage, writeConflict } from '../api'
 import { highlightFile } from '../highlight'
 import { previewKind, renderKind } from '../preview'
@@ -209,11 +210,9 @@ function onEditorKeydown(event: KeyboardEvent) {
     </div>
 
     <template v-if="kind === 'image'">
-      <div v-show="!error" class="preview-viewport is-media">
-        <div class="preview-media">
-          <img :src="contentUrl" :alt="entry.name" @error="error = t('preview.imageError')">
-        </div>
-      </div>
+      <PreviewViewport v-show="!error" :zoom="zoom">
+        <img :src="contentUrl" :alt="entry.name" @error="error = t('preview.imageError')">
+      </PreviewViewport>
       <div v-if="error" class="preview-error">{{ error }}</div>
     </template>
 
@@ -239,22 +238,18 @@ function onEditorKeydown(event: KeyboardEvent) {
           <div v-if="render === 'markdown'" class="preview-viewport">
             <MarkdownText class="preview-rendered" :content="buffer" :enabled="!loading" :base-href="dirUrl" @dblclick="onContentDblClick" />
           </div>
-          <div v-else class="preview-viewport is-media">
-            <div class="preview-media">
-              <iframe :key="dirty ? 'draft' : 'disk'" class="preview-document" :src="dirty ? undefined : documentUrl" :srcdoc="dirty ? liveDraft : undefined" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" @load="onDocumentLoad" />
-            </div>
-          </div>
+          <PreviewViewport v-else :zoom="zoom">
+            <iframe :key="dirty ? 'draft' : 'disk'" class="preview-document" :src="dirty ? undefined : documentUrl" :srcdoc="dirty ? liveDraft : undefined" sandbox="allow-same-origin" :title="t('preview.previewOf', { name: entry.name })" @load="onDocumentLoad" />
+          </PreviewViewport>
         </template>
         <pre v-else-if="highlighted" v-html="highlighted" @dblclick="onContentDblClick" />
         <pre v-else @dblclick="onContentDblClick">{{ loading ? t('preview.loading') : buffer }}</pre>
       </template>
     </template>
 
-    <div v-else-if="kind === 'pdf'" class="preview-viewport is-media">
-      <div class="preview-media">
-        <iframe class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
-      </div>
-    </div>
+    <PreviewViewport v-else-if="kind === 'pdf'" :zoom="zoom">
+      <iframe class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
+    </PreviewViewport>
 
     <OfficePreview
       v-else-if="kind !== 'unsupported'"

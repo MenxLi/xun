@@ -217,8 +217,6 @@ const zh: typeof en = {
     imageError: '无法加载图片',
     textError: '无法预览文件',
     officeError: '无法预览 Office 文档',
-    previousPage: '上一页',
-    nextPage: '下一页',
     fitWidth: '适应宽度',
     loading: '加载中……',
     noPreview: '无法预览 {type}',

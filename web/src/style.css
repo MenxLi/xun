@@ -430,10 +430,6 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .zoom-reset:hover { color: var(--ink); background: var(--hover); }
 .file-preview pre { min-height: 0; flex: 1; margin: 0; padding: 11px; overflow: auto; color: #eaf0ec; background: var(--code); font-size: calc(10px * var(--preview-zoom)); line-height: 1.55; white-space: pre; }
 .preview-viewport { min-height: 0; min-width: 0; flex: 1; overflow: auto; background: var(--panel); }
-/* Reserve both scrollbars so zoom keeps the same base viewport dimensions. */
-.preview-viewport.is-media { overflow: scroll; }
-.preview-media { width: calc(100% * var(--preview-zoom)); height: calc(100% * var(--preview-zoom)); }
-.preview-media > img, .preview-media > iframe { display: block; width: calc(100% / var(--preview-zoom)); height: calc(100% / var(--preview-zoom)); transform: scale(var(--preview-zoom)); transform-origin: top left; }
 .file-preview img { object-fit: contain; padding: 11px; background: var(--panel); }
 .preview-document { border: 0; background: var(--panel); }
 .preview-rendered { padding: 11px 14px; zoom: var(--preview-zoom); }

@@ -215,8 +215,6 @@ export default {
     imageError: 'Could not load image',
     textError: 'Could not preview file',
     officeError: 'Could not preview Office document',
-    previousPage: 'Previous page',
-    nextPage: 'Next page',
     fitWidth: 'Fit width',
     loading: 'Loading…',
     noPreview: 'No preview for {type}',
