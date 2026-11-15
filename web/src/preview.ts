@@ -21,3 +21,8 @@ export function renderKind(mediaType: string | null, path: string): RenderKind |
   if (mediaType === 'text/html' || extension === 'html' || extension === 'htm') return 'html'
   return null
 }
+
+// Surfaces the browser's own viewer renders
+export function usesNativeViewer(kind: PreviewKind): kind is 'pdf' {
+  return kind === 'pdf'
+}

@@ -434,6 +434,7 @@ body.resizing-y { cursor: row-resize; user-select: none; }
 .preview-viewport { min-height: 0; min-width: 0; flex: 1; overflow: auto; background: var(--panel); }
 .file-preview img { object-fit: contain; padding: 11px; background: var(--panel); }
 .preview-document { border: 0; background: var(--panel); }
+.preview-pdf { min-height: 0; width: 100%; flex: 1; }
 .preview-rendered { padding: 11px 14px; zoom: var(--preview-zoom); }
 .preview-editor { min-height: 0; flex: 1; width: 100%; margin: 0; padding: 11px; border: 0; outline: 0; resize: none; overflow: auto; color: #eaf0ec; background: var(--code); font: calc(10px * var(--preview-zoom))/1.55 'Fira Code', monospace; white-space: pre; tab-size: 2; }
 .preview-editor:focus-visible { outline: none; }

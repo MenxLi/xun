@@ -8,7 +8,7 @@ import OfficePreview from './office/OfficePreview.vue'
 import PreviewViewport from './PreviewViewport.vue'
 import { api, errorMessage, writeConflict } from '../api'
 import { highlightFile } from '../highlight'
-import { previewKind, renderKind } from '../preview'
+import { previewKind, renderKind, usesNativeViewer } from '../preview'
 import type { FileInfo, SavedFile } from '../types'
 
 type PreviewView = 'render' | 'source' | 'edit'
@@ -203,7 +203,7 @@ function onEditorKeydown(event: KeyboardEvent) {
       </div>
     </header>
 
-    <div v-if="kind !== 'unsupported'" class="preview-zoom" role="group" :aria-label="t('preview.zoom')">
+    <div v-if="kind !== 'unsupported' && !usesNativeViewer(kind)" class="preview-zoom" role="group" :aria-label="t('preview.zoom')">
       <button class="icon-button" :title="t('preview.zoomOut')" :disabled="zoom <= 25" @click="zoom = Math.max(25, zoom - 25)"><ZoomOut :size="14" /></button>
       <button class="zoom-reset" :title="t('preview.resetZoom')" @click="zoom = 100">{{ zoom }}%</button>
       <button class="icon-button" :title="t('preview.zoomIn')" :disabled="zoom >= 400" @click="zoom = Math.min(400, zoom + 25)"><ZoomIn :size="14" /></button>
@@ -247,9 +247,8 @@ function onEditorKeydown(event: KeyboardEvent) {
       </template>
     </template>
 
-    <PreviewViewport v-else-if="kind === 'pdf'" :zoom="zoom">
-      <iframe class="preview-document" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
-    </PreviewViewport>
+    <!-- native viewers own scroll, zoom and search -->
+    <iframe v-else-if="usesNativeViewer(kind)" class="preview-document preview-pdf" :src="documentUrl" :title="t('preview.previewOf', { name: entry.name })" />
 
     <OfficePreview
       v-else-if="kind !== 'unsupported'"
