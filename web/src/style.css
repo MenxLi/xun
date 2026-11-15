@@ -20,8 +20,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .session-header { height: 62px; padding: 0 10px 0 14px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
 .session-header strong { display: block; margin-top: 2px; font-size: 13px; }
 .session-header-actions { display: flex; align-items: center; gap: 2px; }
-.session-list { min-height: 0; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
-.session-row { position: relative; height: 32px; display: flex; align-items: center; border-radius: 5px; color: var(--muted); transition: background .12s ease, color .12s ease; }
+/* Standard properties only: setting scrollbar-color disables ::-webkit-scrollbar anyway. */
+.session-list { min-height: 0; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .2s ease; }
+.session-list:hover { scrollbar-color: var(--line-strong) transparent; }
+.session-row { position: relative; height: 32px; flex: none; display: flex; align-items: center; border-radius: 5px; color: var(--muted); transition: background .12s ease, color .12s ease; }
 .session-row:hover { background: var(--hover); color: var(--ink); }
 .session-row.active { color: var(--accent-dark); background: var(--accent-soft); }
 .session-select { min-width: 0; height: 100%; padding: 0 6px 0 10px; border: 0; background: none; flex: 1; display: flex; align-items: center; gap: 8px; color: inherit; text-align: left; cursor: pointer; }
