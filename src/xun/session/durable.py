@@ -10,6 +10,10 @@
             conversation.json
             state.json
 
+The display and event store live off memory until first use: `display` materializes
+them (rebuilding every saved agent), and `offload()` releases them again. Close,
+destroy, and discover never wake a resting session; `fork` wakes only its copy.
+
 Implements the `xun.displays.WebSession` protocol.
 """
 
@@ -20,6 +24,7 @@ import re
 import secrets
 import shutil
 import sqlite3
+import threading
 import time
 from contextlib import closing
 from pathlib import Path
@@ -41,10 +46,9 @@ if TYPE_CHECKING:
     from ..core.display_store import EventStore
 
     # A factory builds the display around the session's event store, plus agents.
-    # FreshFactory creates them from scratch; SessionFactory loads them from saved slots.
-    # Agent should assign the display on the factory, will initialize by the session.
-    type FreshFactory[D: DisplayAbstract] = Callable[
-        ["EventStore"], tuple[D, list["Agent[Agent.T.Uninit]"]]]
+    # Empty stores means fresh birth; otherwise the factory `store.load`s each slot
+    # into its agent. Agents must assign the display on the factory; the session
+    # initializes them. Called on every materialization, so it must be repeatable.
     type SessionFactory[D: DisplayAbstract] = Callable[
         ["EventStore", list[AgentStore]], tuple[D, list["Agent[Agent.T.Uninit]"]]]
 
@@ -71,20 +75,12 @@ def _agent_stores(session_dir: Path) -> list[AgentStore]:
             found.append((store.created_at(), slot.name, store))
     return [store for _, _, store in sorted(found)]
 
-def _open[DT: DisplayAbstract](
-    directory: Path,
-    name: str,
-    created_at: float,
-    event_store: DBEventStore,
-    display: DT,
-    agents: list["Agent[Agent.T.Uninit]"],
-) -> "DurableSession[DT]":
-    if display.event_store is not event_store:
-        raise RuntimeError("Display's event store does not match the session's event store")
-    session = DurableSession(directory, name, created_at, display, event_store)
-    for agent in agents:
-        session._attach(agent)
-    return session
+@dataclass
+class _Live[D: DisplayAbstract]:
+    """A session's resident generation: store and display are born and die together."""
+
+    store: DBEventStore
+    display: D
 
 @dataclass(frozen=True)
 class SessionMeta:
@@ -108,14 +104,18 @@ class SessionMeta:
 
 @dataclass(eq=False)
 class DurableSession[D: DisplayAbstract]:
-    """The session root. Construct through `new()` or `from_saved()`, not the generated init."""
+    """The session root. Construct through `new()`, `from_saved()`, or `fork()`.
+
+    Thread-safe (`_lock` is reentrant: `_attach` initializes agents under it):
+    the session is resident only while someone holds `display` or is serving it."""
 
     directory: Path
     name: str
     created_at: float
-    display: D = field(repr=False)
-    _store: DBEventStore = field(repr=False)
+    _factory: "SessionFactory[D]" = field(repr=False)
+    _live: "_Live[D] | None" = field(default=None, repr=False)
     _ended: bool = False
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     @staticmethod
     def new[DT: DisplayAbstract](
@@ -123,16 +123,14 @@ class DurableSession[D: DisplayAbstract]:
         *,
         name: str | None = None,
         home_dir: Path | None = None,
-        factory: "FreshFactory[DT]",
+        factory: "SessionFactory[DT]",
     ) -> "DurableSession[DT]":
         session_id = session_id or secrets.token_hex(6)  # git-style hex
         directory = _session_dir(session_id, home_dir)
         if directory.exists():
             raise FileExistsError(f"Session already exists: {session_id!r}")
         directory.mkdir(parents=True)
-        event_store = DBEventStore(directory / "events.db")
-        display, agents = factory(event_store)
-        return _open(directory, name or session_id, time.time(), event_store, display, agents)
+        return DurableSession(directory, name or session_id, time.time(), factory)
 
     @staticmethod
     def from_saved[DT: DisplayAbstract](
@@ -146,39 +144,79 @@ class DurableSession[D: DisplayAbstract]:
         if not directory.is_dir():
             raise FileNotFoundError(f"No such session: {session_id!r}")
         stored = SessionMeta.load(directory, fallback_name=session_id)
-        event_store = DBEventStore(directory / "events.db")
-        display, agents = factory(event_store, _agent_stores(directory))
-        return _open(directory, stored.name, stored.created_at, event_store, display, agents)
+        return DurableSession(directory, stored.name, stored.created_at, factory)
 
-    @staticmethod
-    def fork[DT: DisplayAbstract](
-        source_id: str,
-        *,
-        name: str | None = None,
-        home_dir: Path | None = None,
-        factory: "SessionFactory[DT]",
-    ) -> "DurableSession[DT]":
-        """A new session from a complete copy of a stored one: 
-        The copy is born fresh (new id and created_at, `name` defaults to "<source> (fork)"); 
-        agents keep their identifiers, so the copied timeline stays continuous."""
-        source = _session_dir(source_id, home_dir)
-        if not source.is_dir():
-            raise FileNotFoundError(f"No such session: {source_id!r}")
+    @property
+    def display_alive(self) -> "D | None":
+        """The display while resident; None when resting. Never materializes."""
+        return self._live.display if self._live is not None else None
+
+    @property
+    def display(self) -> D:
+        """The session's display, materialized on first use (see `offload`)."""
+        with self._lock:
+            return self._materialize().display
+
+    @property
+    def _store(self) -> DBEventStore:
+        with self._lock:
+            return self._materialize().store
+
+    def _materialize(self) -> "_Live[D]":
+        """Build store+display and adopt the saved agents (caller holds `_lock`)."""
+        if self._ended:
+            raise RuntimeError("Session already ended")
+        if self._live is None:
+            event_store = DBEventStore(self.directory / "events.db")
+            display, agents = self._factory(event_store, _agent_stores(self.directory))
+            if display.event_store is not event_store:
+                raise RuntimeError("Display's event store does not match the session's event store")
+            self._live = _Live(event_store, display)
+            for agent in agents:
+                self._adopt(agent)
+        return self._live
+
+    def offload(self) -> None:
+        """Release the resident generation: members are saved and finalized, then the
+        display and store are dropped. The session stays open and re-materializes on
+        the next `display`. Idempotent; a no-op on an ended or resting session."""
+        with self._lock:
+            if not self._ended:
+                self._release(save=True)
+
+    def fork(self, name: str | None = None) -> "DurableSession[D]":
+        """A complete copy of this session (files, agents, history) born fresh as a
+        sibling: new id and created_at, `name` defaults to "<this> (fork)"; agents
+        keep their identifiers, so the copied timeline stays continuous. The source
+        is not woken; the copy is, once, to hand its agents off the source's paths."""
+        if not self.directory.is_dir():
+            raise FileNotFoundError(f"No such session: {self.session_id!r}")
         session_id = secrets.token_hex(6)
-        directory = _session_dir(session_id, home_dir)
+        directory = self.directory.parent / session_id
         # session.json would carry the source's birth; events.db is copied online below.
-        shutil.copytree(source, directory, ignore=shutil.ignore_patterns("session.json", "events.db*"))
-        session: "DurableSession[DT] | None" = None
+        shutil.copytree(self.directory, directory, ignore=shutil.ignore_patterns("session.json", "events.db*"))
+        forked: "DurableSession[D] | None" = None
         try:
-            with closing(sqlite3.connect(source / "events.db")) as src, \
-                    closing(sqlite3.connect(directory / "events.db")) as dst:
-                src.backup(dst)
-            session = DurableSession.from_saved(session_id, home_dir=home_dir, factory=factory)
-            session.name = name or f"{SessionMeta.load(source, fallback_name=source_id).name} (fork)"
-            session.save_meta()
-            return session
+            if (source_db := self.directory / "events.db").exists():
+                with closing(sqlite3.connect(source_db)) as src, \
+                        closing(sqlite3.connect(directory / "events.db")) as dst:
+                    src.backup(dst)
+            forked = DurableSession(directory, name or f"{self.name} (fork)", time.time(), self._factory)
+            forked.save_meta()
+            workdir = forked.directory / "workspace"
+            for agent in forked.display.agents.values():
+                agent.conversation.add_developer_message(
+                    f"This session was forked from another session; its workspace was copied "
+                    f"to {workdir}, which is now the working directory. Paths under "
+                    f"{self.directory} appear in earlier messages but belong to the source "
+                    "session, which may still live: never read or write them. Use paths "
+                    "relative to the working directory from now on. "
+                    "Also use your new temporary directories for any transient files."
+                )
+            return forked
         except BaseException:
-            session.destroy() if session else shutil.rmtree(directory, ignore_errors=True)
+            # destroy, when available: closes the store a failed wake may have opened
+            forked.destroy() if forked else shutil.rmtree(directory, ignore_errors=True)
             raise
 
     @property
@@ -193,10 +231,14 @@ class DurableSession[D: DisplayAbstract]:
         return AgentStore(self.directory / "agents" / identifier)
 
     def _attach(self, agent: "Agent[Agent.T.Uninit]") -> "Agent[Agent.T.Init]":
+        """Materialize if resting, then adopt and initialize a factory-built agent."""
+        with self._lock:
+            self._materialize()
+            return self._adopt(agent)
+
+    def _adopt(self, agent: "Agent[Agent.T.Uninit]") -> "Agent[Agent.T.Init]":
         """Adopt a factory-built agent, then initialize it: shared workspace,
         member marker, run-end save."""
-        if self._ended:
-            raise RuntimeError("Session already ended")
         workspace = self.directory / "workspace"
         tempdir = self.directory / "tempdir"
         workspace.mkdir(exist_ok=True)
@@ -205,8 +247,8 @@ class DurableSession[D: DisplayAbstract]:
         agent.state[MEMBER_KEY] = JsonEntry(True)
 
         def save(args: HookArgs.RunArgs) -> None:
-            if self._ended:
-                return  # a late save must not resurrect an ended session
+            if self._ended or args.agent.display is not self.display_alive:
+                return  # a late save must not touch an ended or offloaded generation
             self._slot(args.agent.identifier).save(args.agent)
             self.save_meta()
 
@@ -215,19 +257,33 @@ class DurableSession[D: DisplayAbstract]:
         return agent.initialize()
 
     def _members(self) -> list["Agent[Agent.T.Alive]"]:
-        """The display's binds, filtered to members (drops transient co-residents)."""
-        return [a for a in list(self.display.agents.values()) if MEMBER_KEY in a.state]
+        """The resident display's binds, filtered to members (drops transient
+        co-residents). Never materializes: a resting session has no members."""
+        live = self._live
+        if live is None:
+            return []
+        return [a for a in list(live.display.agents.values()) if MEMBER_KEY in a.state]
 
     def close(self) -> None:
-        """End the session keeping its data. Idempotent."""
-        if self._ended:
-            return
+        """End the session keeping its data. Idempotent. Never wakes a resting session."""
         self.save_meta()  # before ending: save_meta is a no-op once ended
-        self._ended = True
+        with self._lock:
+            if self._ended:
+                return
+            self._release(save=True)
+            self._ended = True
+
+    def _release(self, *, save: bool) -> None:
+        """Drop the resident generation (caller holds `_lock`); resting is a no-op."""
+        live = self._live
+        if live is None:
+            return
         for agent in self._members():  # bind order keeps closing events chronological
             agent.finalize()
-            self._slot(agent.identifier).save(agent)
-        self._store.close()
+            if save:
+                self._slot(agent.identifier).save(agent)
+        live.store.close()
+        self._live = None
 
     def save_meta(self) -> None:
         """Write session.json now, e.g. to persist a rename without a run."""
@@ -237,19 +293,19 @@ class DurableSession[D: DisplayAbstract]:
         atomic_write(self.directory / "session.json", json.dumps(meta.to_json()).encode("utf-8"))
 
     def destroy(self) -> None:
-        """Release members without saving and erase the directory. Idempotent."""
-        self._ended = True
-        for agent in self._members():
-            agent.finalize()
-        self._store.close()  # safe on an already-closed store
-        shutil.rmtree(self.directory, ignore_errors=True)
+        """Release members without saving and erase the directory. Idempotent.
+        Never wakes a resting session."""
+        with self._lock:
+            self._ended = True
+            self._release(save=False)
+            shutil.rmtree(self.directory, ignore_errors=True)  # resting: the rmtree is all
 
     @staticmethod
     def discover[DT: DisplayAbstract](
         factory: "SessionFactory[DT]",
         home_dir: Path | None = None,
     ) -> list["DurableSession[DT]"]:
-        """Stored sessions, oldest first. """
+        """Stored sessions, oldest first."""
         directories = [
             directory
             for directory in _sessions_root(home_dir).glob("*")

@@ -8,6 +8,7 @@ import re
 import secrets
 import socket
 import threading
+import time
 from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import cache
@@ -25,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount
-from starlette.types import Message
+from starlette.types import Message, Scope
 
 from ..core.config import ASSET_DIR
 from .web_display import WebDisplay
@@ -196,10 +197,12 @@ class SessionRename(BaseModel):
 
 
 class WebSession(Protocol):
-    """A mountable session: the service mounts its display under `mount_path`
-    and calls `destroy()` when the user removes it, `close()` when the service
-    stops. `DurableSession` satisfies this structurally. Sessions may also
-    implement `save_meta()` to flush in-memory changes, such as a rename, to storage."""
+    """A mountable session: mounted under `mount_path`. `destroy()` on removal,
+    `close()` on shutdown, `save_meta()` to flush changes such as renames.
+
+    Sessions may rest (see the residency cap): `display_alive` peeks without
+    waking, `offload()` releases the display (a no-op for eager sessions);
+    `fork()` copies under a fresh id, raising ValueError when impossible."""
 
     name: str
 
@@ -209,14 +212,18 @@ class WebSession(Protocol):
     @property
     def display(self) -> WebDisplay: ...
 
+    @property
+    def display_alive(self) -> Optional[WebDisplay]: ...
+
+    def offload(self) -> None: ...
+
+    def save_meta(self) -> None: ...
+
+    def fork(self, name: Optional[str] = None) -> "WebSession": ...
+
     def close(self) -> None: ...
 
     def destroy(self) -> None: ...
-
-
-def _save_meta(session: WebSession) -> None:
-    if save_meta := getattr(session, "save_meta", None):  # optional hook, see WebSession
-        save_meta()
 
 
 SessionSource = Callable[[], "WebSession | AbstractContextManager[tuple[str, WebDisplay]]"]
@@ -245,11 +252,62 @@ class SimpleSession:
     def destroy(self) -> None:
         self.close()
 
+    @property
+    def display_alive(self) -> Optional[WebDisplay]:
+        return self.display  # eager: never rests
+
+    def offload(self) -> None:
+        pass  # a ready-made display cannot rest
+
+    def save_meta(self) -> None:
+        pass  # nothing outlives the process
+
+    def fork(self, name: Optional[str] = None) -> "SimpleSession":
+        raise ValueError("Ephemeral sessions cannot be forked")
+
+
+class _SessionDispatcher:
+    """ASGI app behind each mount: resolves `session.display` per request and
+    caches the built app per display generation (a display's routes close over it)."""
+
+    def __init__(self, service: "WebDisplayService", mount_path: str) -> None:
+        self._service = service
+        self.mount_path = mount_path
+        self._app: Optional[Any] = None
+        self._app_display: Optional[WebDisplay] = None
+        self.last_used = time.monotonic()
+        self.in_flight = 0  # handshakes included: a resolving request pins its display
+
+    def cached_app(self, display: WebDisplay) -> Optional[Any]:
+        return self._app if self._app is not None and self._app_display is display else None
+
+    def rebind(self, app: Any, display: WebDisplay) -> None:
+        self._app = app
+        self._app_display = display
+
+    def invalidate(self) -> None:
+        self._app = None
+        self._app_display = None  # the cached app's routes hold the display's agents
+
+    async def __call__(self, scope: Scope, receive: Any, send: Any) -> None:
+        # materializing a resting session (factory, snapshots) is blocking work:
+        # run it on a worker thread so the event loop keeps serving other sessions.
+        self.in_flight += 1
+        try:
+            app = await asyncio.to_thread(self._service._mount_app, self, asyncio.get_running_loop())
+            if app is None:
+                await JSONResponse({"detail": "Session not found"}, status_code=404)(scope, receive, send)
+                return
+            await app(scope, receive, send)
+        finally:
+            self.in_flight -= 1
+
 
 @dataclass
 class _Mounted:
     session: WebSession
     route: Mount
+    dispatcher: _SessionDispatcher
     managed: bool = False  # factory-created: the service closes it on shutdown
 
 
@@ -265,7 +323,8 @@ class WebDisplayService:
         assets_dir: Path = _DEFAULT_WEB_ASSETS,
         docs_dir: Path = _DEFAULT_DOCS_ASSETS,
         session_factory: Optional[SessionSource] = None,
-        session_forker: Optional[Callable[[WebSession], WebSession]] = None,
+        can_fork: bool = False,
+        resident_sessions: Optional[int] = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -279,7 +338,8 @@ class WebDisplayService:
         self.logout_path = f"{self.base_path}/logout"
         self._sessions: dict[str, _Mounted] = {}
         self._session_factory = session_factory
-        self._session_forker = session_forker
+        self._can_fork = can_fork
+        self._resident_sessions = resident_sessions  # residency cap for offloadable sessions
         self._session_lock = threading.RLock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Optional[uvicorn.Server] = None
@@ -339,10 +399,12 @@ class WebDisplayService:
     def _configure_sessions(self) -> None:
         @self.app.get(self.sessions_api_path)
         async def sessions() -> SessionList:
+            # the frontend polls this route: it doubles as the residency sweep's heartbeat
+            await asyncio.to_thread(self._offload_excess_sessions)
             return SessionList(
                 sessions=self.list_sessions(),
                 can_manage=self._session_factory is not None,
-                can_fork=self._session_forker is not None,
+                can_fork=self._can_fork,
             )
 
         @self.app.get(f"{self.sessions_api_path}/{{session_path:path}}")
@@ -362,7 +424,7 @@ class WebDisplayService:
             try:
                 if name := (request.name or "").strip():
                     session.name = name
-                    _save_meta(session)
+                    session.save_meta()
                 self.mount(session, managed=True)
             except BaseException:
                 session.destroy()
@@ -380,24 +442,21 @@ class WebDisplayService:
 
         @self.app.post(f"{self.sessions_api_path}/fork", status_code=201)
         async def fork_session(request: SessionFork) -> SessionInfo:
-            forker = self._session_forker
-            if forker is None:
+            if not self._can_fork:
                 raise HTTPException(405, "Session forking is disabled")
             with self._session_lock:
                 mounted = self._sessions.get(_normalize_path(request.path))
             if mounted is None:
                 raise HTTPException(404, "Session not found")
             source = mounted.session
-            if source.display._pending.list() or any(agent.is_running for agent in source.display.agents.values()):
-                raise HTTPException(409, "Cannot fork a busy session")
-            try:
-                session = forker(source)  # derives the copy; may reject the source type
+            live = source.display_alive
+            if live is not None and (live.has_waiting_prompts() or live.has_running_agents()):
+                raise HTTPException(409, "Cannot fork a busy session")  # a resting session is never busy
+            try:  # copytree, db backup, and waking the copy are blocking work
+                session = await asyncio.to_thread(source.fork, (request.name or "").strip() or None)
             except ValueError as e:
                 raise HTTPException(409, str(e))
             try:
-                if name := (request.name or "").strip():
-                    session.name = name
-                    _save_meta(session)
                 self.mount(session, managed=True)
             except BaseException:
                 session.destroy()
@@ -483,14 +542,17 @@ class WebDisplayService:
         return SimpleSession(mount_path, display, release=stack.close)
 
     def mount(self, session: WebSession, *, managed: bool = False) -> WebDisplayService:
+        """Mount without touching the display: the dispatcher resolves it per request."""
         mount_path = _normalize_path(session.mount_path)
-        display = session.display
         if "srv" in mount_path.split("/"):
             raise ValueError("Session paths cannot contain a 'srv' segment")  # see _TokenAuthMiddleware
         with self._session_lock:
             if mount_path in self._sessions:
                 raise ValueError(f"A display is already mounted at {mount_path or '/'}")
-            if any(mounted.session.display is display for mounted in self._sessions.values()):
+            live = session.display_alive
+            if live is not None and any(
+                mounted.session.display_alive is live for mounted in self._sessions.values()
+            ):
                 raise ValueError("A WebDisplay can only be mounted once")
             if any(
                 mount_path.startswith(f"{existing}/") or existing.startswith(f"{mount_path}/")
@@ -498,23 +560,16 @@ class WebDisplayService:
                 if mount_path and existing
             ):
                 raise ValueError("Display mount paths cannot overlap")
-            display_app = display.build_app()
-            if self._loop is not None:
-                display._attach(self._loop)
+            dispatcher = _SessionDispatcher(self, mount_path)
             route_path = f"{self.session_path}{mount_path}"
-            try:
-                self.app.mount(route_path, display_app, name=f"session:{mount_path}")
-            except BaseException:
-                if self._loop is not None:
-                    display._detach()
-                raise
+            self.app.mount(route_path, dispatcher, name=f"session:{mount_path}")
             route = self.app.routes[-1]
             assert isinstance(route, Mount)
             root_session = self._sessions.get("")
             if mount_path and root_session is not None:
                 self.app.routes.remove(route)
                 self.app.routes.insert(self.app.routes.index(root_session.route), route)
-            self._sessions[mount_path] = _Mounted(session, route, managed)
+            self._sessions[mount_path] = _Mounted(session, route, dispatcher, managed)
         return self
 
     def unmount(self, path: str) -> None:
@@ -524,9 +579,11 @@ class WebDisplayService:
             if mounted is None:
                 raise HTTPException(404, "Session not found")
             self.app.routes.remove(mounted.route)
-            if self._loop is not None:
-                asyncio.run_coroutine_threadsafe(mounted.session.display._close_clients(), self._loop)
-                mounted.session.display._detach()
+            display = mounted.session.display_alive
+            if self._loop is not None and display is not None:
+                asyncio.run_coroutine_threadsafe(display._close_clients(), self._loop)
+                display._detach()
+            mounted.dispatcher.invalidate()
         mounted.session.destroy()
 
     def rename(self, path: str, name: str) -> SessionInfo:
@@ -539,7 +596,7 @@ class WebDisplayService:
             if mounted is None:
                 raise HTTPException(404, "Session not found")
             mounted.session.name = session_name
-            _save_meta(mounted.session)
+            mounted.session.save_meta()
             return self._session_info(mount_path)
 
     def list_sessions(self) -> list[SessionInfo]:
@@ -548,26 +605,70 @@ class WebDisplayService:
             return [self._session_info(path) for path in reversed(self._sessions)]
 
     def _session_info(self, mount_path: str) -> SessionInfo:
-        session = self._sessions[mount_path].session
-        agents = session.display.agents.values()
-        if session.display._pending.list():
-            status: SessionStatus = "waiting"
-        elif any(agent.is_running for agent in agents):
+        mounted = self._sessions[mount_path]
+        live = mounted.session.display_alive
+        if live is None:
+            status: SessionStatus = "idle"  # resting: nothing can run without a display
+        elif live.has_waiting_prompts():
+            status = "waiting"
+        elif live.has_running_agents():
             status = "running"
         else:
             status = "idle"
-        return SessionInfo(path=mount_path or "/", name=session.name, status=status)
+        return SessionInfo(path=mount_path or "/", name=mounted.session.name, status=status)
+
+    def _mount_app(self, dispatcher: "_SessionDispatcher", loop: asyncio.AbstractEventLoop) -> Optional[Any]:
+        """Resolve the dispatcher's app, materializing a resting session. None once the mount is gone."""
+        with self._session_lock:
+            mounted = self._sessions.get(dispatcher.mount_path)
+            if mounted is None or mounted.dispatcher is not dispatcher:
+                dispatcher.invalidate()
+                return None
+            display = mounted.session.display
+            dispatcher.last_used = time.monotonic()
+            app = dispatcher.cached_app(display)
+            if app is None:
+                loop = self._loop or loop
+                if display._loop not in (None, loop):
+                    raise RuntimeError("A mounted WebDisplay is already attached to a running app")
+                if display._loop is None:
+                    display._attach(loop)  # lazy attach: the service loop, or this request's
+                app = display.build_app()
+                dispatcher.rebind(app, display)
+            return app
+
+    def _offload_excess_sessions(self) -> None:
+        """Residency cap: the least recently served restable sessions go back to sleep.
+        Served, watched, waiting, or running sessions are exempt and keep their slot."""
+        if self._resident_sessions is None:
+            return
+        with self._session_lock:
+            resident = [m for m in self._sessions.values() if m.session.display_alive is not None]
+            excess = len(resident) - self._resident_sessions
+            for mounted in sorted(resident, key=lambda m: m.dispatcher.last_used):
+                if excess <= 0:
+                    break
+                session = mounted.session
+                display = session.display_alive  # recheck: it may have ended since the census
+                if display is None:
+                    continue
+                if (mounted.dispatcher.in_flight or display.has_viewers()
+                        or display.has_waiting_prompts() or display.has_running_agents()):
+                    continue
+                session.offload()
+                if session.display_alive is not None:
+                    continue  # an eager session cannot rest: it keeps its slot
+                mounted.dispatcher.invalidate()
+                if self._loop is not None:
+                    asyncio.run_coroutine_threadsafe(display._close_clients(), self._loop)
+                    display._detach()  # releases serve timers and executors
+                excess -= 1
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
-        loop = asyncio.get_running_loop()
-        with self._session_lock:
-            displays = [mounted.session.display for mounted in self._sessions.values()]
-            if any(display._loop is not None for display in displays):
-                raise RuntimeError("A mounted WebDisplay is already attached to a running app")
-            for display in displays:
-                display._attach(loop)
-            self._loop = loop
+        # displays attach to the loop lazily, on first request: resting sessions
+        # must not be woken just because the service started.
+        self._loop = asyncio.get_running_loop()
         self._started.set()
         try:
             yield
@@ -576,7 +677,10 @@ class WebDisplayService:
             with self._session_lock:
                 self._loop = None
                 for mounted in self._sessions.values():
-                    mounted.session.display._detach()
+                    live = mounted.session.display_alive
+                    if live is not None:
+                        live._detach()
+                        mounted.dispatcher.invalidate()
                 for path, mounted in tuple(self._sessions.items()):
                     if not mounted.managed:
                         continue

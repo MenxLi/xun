@@ -17,12 +17,12 @@ def bare_display(events) -> NullDisplay:
 
 BARE = lambda events, stores=[]: (bare_display(events), [])  # noqa: E731  # fresh or saved: same bare display, no agents
 
-def make_factory(built: list[Agent]):
-    """Fresh or saved factory: one agent per store, or one fresh when none are stored."""
+def make_factory(built: list[Agent], *, fresh_when_empty: bool = True):
+    """One agent per store, loaded; optionally one fresh when none are stored."""
     def factory(events, stores: list[AgentStore] = []):
         display = bare_display(events)
         agents: list[Agent] = []
-        for store in stores or [None]:
+        for store in (stores or [None] if fresh_when_empty else stores):
             agent = Agent(display=display)
             if store is not None:
                 store.load(agent)
@@ -74,8 +74,8 @@ class DurableSessionTest(unittest.TestCase):
             rebuilt: list[Agent] = []
             found = DurableSession.discover(factory=make_factory(rebuilt), home_dir=Path(home))
             self.assertEqual([(m.session_id, m.name) for m in found], [("ran", "Renamed")])
-            self.assertEqual(len(rebuilt), 1)  # stored agent: exactly one, no fresh extra
-
+            self.assertEqual(rebuilt, [])  # discover never wakes: metadata only
+            self.assertIsNotNone(found[0].display)  # first use materializes
             restored = rebuilt[0]  # the session initialized the factory agent
             self.assertEqual((restored.name, restored.identifier), ("survivor", identifier))
             param = cast(dict, restored.conversation.messages[-1].completion_param())
@@ -98,8 +98,11 @@ class DurableSessionTest(unittest.TestCase):
             self.assertEqual(SessionMeta.load(session.directory, fallback_name="s1").name, "After")
 
     def test_fork_copies_the_session_and_is_born_fresh(self) -> None:
+        rebuilt: list[Agent] = []
+        # no phantom fresh agent: the fork inherits this factory, restoring exactly what was saved
         with TemporaryDirectory() as home, patch("time.time", side_effect=itertools.count(1)):
-            session = DurableSession.new("src", name="Origin", home_dir=Path(home), factory=BARE)
+            session = DurableSession.new("src", name="Origin", home_dir=Path(home),
+                                         factory=make_factory(rebuilt, fresh_when_empty=False))
             agent = attach(session, name="worker")
             (session.directory / "workspace" / "note.txt").write_text("copy me")
             agent.conversation.add_user_message("born in source")
@@ -111,20 +114,23 @@ class DurableSessionTest(unittest.TestCase):
                 conn.execute("INSERT INTO events(agent_id, timestamp, data) VALUES ('probe', 1.0, '{}')")
                 conn.commit()
 
-            rebuilt: list[Agent] = []
-            forked = DurableSession.fork("src", home_dir=Path(home), factory=make_factory(rebuilt))
+            forked = session.fork()  # the source stays resting through it all
             self.addCleanup(forked.destroy)
+            self.assertIsNone(session.display_alive)
             self.assertNotEqual(forked.session_id, "src")
             self.assertEqual(forked.name, "Origin (fork)")
             self.assertGreater(forked.created_at, session.created_at)
             self.assertEqual((forked.directory / "workspace" / "note.txt").read_text(), "copy me")
             self.assertEqual((session.directory / "workspace" / "note.txt").read_text(), "copy me")
 
-            restored = rebuilt[0]
+            restored = rebuilt[0]  # fork wakes only the copy: the handoff note needs its agents
             self.assertEqual(restored.identifier, identifier)  # ids ride along: the timeline stays continuous
             self.assertEqual(restored.workspace.workdir, forked.directory / "workspace")
-            param = cast(dict, restored.conversation.messages[-1].completion_param())
+            param = cast(dict, restored.conversation.messages[-2].completion_param())
             self.assertEqual(param["content"], "born in source")
+            handoff = cast(dict, restored.conversation.messages[-1].completion_param())
+            self.assertEqual(handoff["role"], "developer")  # agents are steered off the source's paths
+            self.assertIn(str(session.directory), handoff["content"])
             self.assertEqual(forked._store.count(agent_id="probe"), 1)  # event history comes along
 
     def test_fork_names_on_demand_and_copies_events_from_a_live_source(self) -> None:
@@ -135,17 +141,18 @@ class DurableSessionTest(unittest.TestCase):
                 conn.execute("INSERT INTO events(agent_id, timestamp, data) VALUES ('a', 1.0, '{}')")
                 conn.commit()  # the source store is still open: fork must back it up online
 
-            rebuilt: list[Agent] = []
-            forked = DurableSession.fork("src", name="Custom", home_dir=Path(home), factory=make_factory(rebuilt))
+            forked = session.fork(name="Custom")
             self.addCleanup(forked.destroy)
             self.addCleanup(session.destroy)
             self.assertEqual(forked.name, "Custom")
             self.assertEqual(forked._store.count(agent_id="a"), 1)
 
-    def test_fork_requires_an_existing_source(self) -> None:
+    def test_fork_requires_an_existing_session(self) -> None:
         with TemporaryDirectory() as home:
+            session = DurableSession.new("s1", home_dir=Path(home), factory=BARE)
+            session.destroy()
             with self.assertRaisesRegex(FileNotFoundError, "No such session"):
-                DurableSession.fork("ghost", home_dir=Path(home), factory=BARE)
+                session.fork()
 
     def test_destroy_releases_agents_and_erases_directory(self) -> None:
         with TemporaryDirectory() as home:
@@ -191,6 +198,8 @@ class DurableSessionTest(unittest.TestCase):
             rebuilt: list[Agent] = []
             found = DurableSession.discover(factory=make_factory(rebuilt), home_dir=Path(home))
             self.assertEqual([m.session_id for m in found], ["s0", "s1"])
+            for m in found:
+                m.display  # materialize in discovery order
             self.assertEqual([a.identifier for a in rebuilt], agent_ids + ["p1", "p2"])
             for m in found:
                 m.destroy()
@@ -199,10 +208,13 @@ class DurableSessionTest(unittest.TestCase):
         with TemporaryDirectory() as home:
             built: list[Agent] = []
             session = DurableSession.new("s1", home_dir=Path(home), factory=make_factory(built))
-            self.assertEqual(len(built), 1)  # born with exactly one fresh agent
+            self.assertEqual(built, [])  # born resting: the factory runs on first use
+            self.assertIsNotNone(session.display)
+            self.assertEqual(len(built), 1)  # materialized with exactly one fresh agent
             self.assertTrue(built[0].workspace.workdir.is_dir())  # adopted: session workspace in place
             # killed before any save: session.json exists (attach wrote it) but no snapshots -> fresh again
             back = DurableSession.from_saved("s1", home_dir=Path(home), factory=make_factory(built))
+            self.assertIsNotNone(back.display)
             self.assertEqual(len(built), 2)
             session.destroy()
             back.destroy()
@@ -218,6 +230,48 @@ class DurableSessionTest(unittest.TestCase):
             reopened = DurableSession.from_saved("s1", home_dir=Path(home), factory=BARE)
             self.assertEqual(reopened.name, "Live")
             reopened.destroy()
+
+    def test_offload_saves_members_and_rebuilds_on_next_use(self) -> None:
+        with TemporaryDirectory() as home:
+            built: list[Agent] = []
+            session = DurableSession.new("s1", home_dir=Path(home), factory=make_factory(built))
+            self.assertIsNotNone(session.display)  # one fresh factory agent
+            agent = built[0]
+            agent.conversation.add_user_message("remembered")
+            with agent.run_scope():
+                pass  # run-end save
+            agent.conversation.add_user_message("after run")  # only offload's save carries this
+            identifier, store_before, display_before = agent.identifier, session._store, session.display
+
+            session.offload()
+            self.assertIsNone(session.display_alive)
+            self.assertTrue(Agent.is_finalized(agent))
+            self.assertIn("after run",
+                          (session.directory / "agents" / identifier / "conversation.json").read_text())
+
+            self.assertIsNot(session.display, display_before)  # a fresh generation from the slots
+            self.assertIsNot(session._store, store_before)
+            restored = built[1]
+            self.assertEqual(restored.identifier, identifier)  # ids ride across the sleep
+            param = cast(dict, restored.conversation.messages[-1].completion_param())
+            self.assertEqual(param["content"], "after run")
+            self.assertEqual(restored.workspace.workdir, session.directory / "workspace")
+            session.destroy()
+
+    def test_ending_a_resting_session_never_wakes_it(self) -> None:
+        with TemporaryDirectory() as home:
+            built: list[Agent] = []
+            session = DurableSession.new("s1", home_dir=Path(home), factory=make_factory(built))
+            session.offload()  # resting already: no generation born
+            session.close()
+            self.assertEqual(built, [])  # close/destroy never wake
+            self.assertFalse((session.directory / "agents").exists())  # nothing to save
+            self.assertTrue((session.directory / "session.json").is_file())  # close still stamps meta
+
+            back = DurableSession.from_saved("s1", home_dir=Path(home), factory=make_factory(built))
+            back.destroy()
+            self.assertEqual(built, [])
+            self.assertFalse(back.directory.exists())
 
 
 if __name__ == "__main__":

@@ -257,6 +257,18 @@ class DBEventStoreTest(unittest.TestCase):
             self.assertEqual(store.count(), 2)
             self.assertEqual([e.payload.message for e in store.select()], ["3", "4"])
 
+    def test_closed_store_swallows_late_writers(self) -> None:
+        with TemporaryDirectory() as home:
+            path = Path(home) / "events.db"
+            store = DBEventStore(path)
+            store.add(self._event("one", "kept"))
+            store.close()
+            store.add(self._event("one", "too late"))  # a racy writer of a released generation
+            store.flush()  # also after close
+            reopened = DBEventStore(path)
+            self.addCleanup(reopened.close)
+            self.assertEqual([e.payload.message for e in reopened.select()], ["kept"])
+
     def test_manual_commit_batches_until_flush(self) -> None:
         with TemporaryDirectory() as home:
             path = Path(home) / "events.db"

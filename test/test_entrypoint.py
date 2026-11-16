@@ -58,6 +58,7 @@ class _Service:
 
     def start(self, *, blocking=False):
         self.started = blocking
+        self.mounts[-1].display if self.mounts else None  # served: materializes, as a request would
 
     def stop(self):
         self.stopped = True
@@ -101,6 +102,7 @@ class WebSessionTest(unittest.TestCase):
             initial = service.mounts[0]
             self.assertIsInstance(initial, DurableSession)
             session = service.kwargs["session_factory"]()
+            session.display  # served: materializes
             workdir = self.agents[1].workspace.workdir
             self.assertTrue(workdir.is_dir())
             self.assertEqual(workdir.parent, session.directory)
@@ -120,7 +122,7 @@ class WebSessionTest(unittest.TestCase):
                 patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
             web_session(manage_sessions=True)
             first = _Service.instances[0]
-            restored = first.mounts[0]  # the initial session, closed by teardown
+            restored = first.mounts[0]  # the initial session, served and closed by teardown
 
             web_session(manage_sessions=True)
             second = _Service.instances[-1]
@@ -157,8 +159,9 @@ class WebSessionTest(unittest.TestCase):
                 patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
             web_session(initial_agent=False)
             service = _Service.instances[0]
-            self.assertEqual(self.agents, [])
+            self.assertEqual(self.agents, [])  # the bare root display mounts without agents
             session = service.kwargs["session_factory"]()
+            session.display  # served: materializes
             session.destroy()
 
         self.assertEqual(len(self.agents), 1)
@@ -166,17 +169,16 @@ class WebSessionTest(unittest.TestCase):
         self.assertTrue(service.started)
         self.assertTrue(service.stopped)
 
-    def test_fork_session_copies_files_and_notes_the_model(self) -> None:
-        from xun.entrypoint import _fork_session
-
+    def test_fork_copies_files_and_notes_the_model(self) -> None:
         with patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
             durable = _new_session(None)
             self.addCleanup(durable.destroy)
             source = cast(DurableSession, durable)
+            source.display  # served before forking: materializes the source's agent
             (source.directory / "workspace" / "keep.txt").write_text("carried")
             source.close()
 
-            forked = cast(DurableSession, _fork_session(source))
+            forked = cast(DurableSession, source.fork())
             self.addCleanup(forked.destroy)
             self.assertNotEqual(forked.session_id, source.session_id)
             self.assertEqual((forked.directory / "workspace" / "keep.txt").read_text(), "carried")
@@ -185,21 +187,21 @@ class WebSessionTest(unittest.TestCase):
             self.assertIn("forked", note.args[0])
             self.assertIn(str(forked.directory / "workspace"), note.args[0])
 
-            with self.assertRaisesRegex(ValueError, "durable"):
-                _fork_session(SimpleSession("/ephemeral", NullDisplay()))
+            with self.assertRaisesRegex(ValueError, "forked"):
+                SimpleSession("/ephemeral", NullDisplay()).fork()
 
     def test_forker_wiring_follows_session_management(self) -> None:
         with TemporaryDirectory() as directory, \
                 patch("xun.entrypoint.WebDisplayService", _Service), \
                 patch("xun.entrypoint.setup_agent", side_effect=self.setup_agent):
             web_session(manage_sessions=True)
-            self.assertIsNotNone(_Service.instances[0].kwargs["session_forker"])
+            self.assertTrue(_Service.instances[0].kwargs["can_fork"])
 
             web_session(workdir=directory)  # ephemeral fixed workdir: nothing to fork from
-            self.assertIsNone(_Service.instances[1].kwargs["session_forker"])
+            self.assertFalse(_Service.instances[1].kwargs["can_fork"])
 
             web_session(manage_sessions=False)
-            self.assertIsNone(_Service.instances[2].kwargs["session_forker"])
+            self.assertFalse(_Service.instances[2].kwargs["can_fork"])
 
 
 class EntrypointCliTest(unittest.TestCase):

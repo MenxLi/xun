@@ -967,6 +967,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_service_manages_dynamic_sessions_and_reports_status(self) -> None:
         events: list[tuple[str, str]] = []
+        fork_calls: list[tuple[str, str | None]] = []
         main_agent = _Agent(self.root, "main-agent", "Main")
         main_display = WebDisplay()
         main_agent.display = main_display
@@ -978,21 +979,35 @@ class WebDisplayTest(unittest.TestCase):
                 self.display = WebDisplay()
                 self.name = "new"
 
+            @property
+            def display_alive(self):
+                return self.display
+
+            def offload(self):
+                pass
+
+            def save_meta(self):
+                pass
+
+            def fork(self, name=None):
+                fork_calls.append((self.mount_path, name))
+                forked = NewSession()
+                forked.mount_path = "/sessions/forked"
+                forked.name = name or f"{self.name} (fork)"
+                return forked
+
             def close(self) -> None:
                 events.append((self.mount_path, "close"))
 
             def destroy(self) -> None:
                 events.append((self.mount_path, "destroy"))
 
-        def fork_session(source) -> NewSession:
-            self.assertEqual(source.mount_path, "/sessions/main")
-            forked = NewSession()
-            forked.mount_path = "/sessions/forked"
-            forked.name = "Main session (fork)"
-            return forked
-
-        service = WebDisplayService(token="service-token", session_factory=NewSession, session_forker=fork_session)
-        service.mount(SimpleSession("/sessions/main", main_display, name="Main session"))
+        main = NewSession()
+        main.mount_path = "/sessions/main"
+        main.display = main_display
+        main.name = "Main session"
+        service = WebDisplayService(token="service-token", session_factory=NewSession, can_fork=True)
+        service.mount(main)
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             listing = client.get("/api/sessions").json()
@@ -1047,6 +1062,7 @@ class WebDisplayTest(unittest.TestCase):
             forked = client.post("/api/sessions/fork", json={"path": "/sessions/main"})
             self.assertEqual(forked.status_code, 201)
             self.assertEqual(forked.json(), {"path": "/sessions/forked", "name": "Main session (fork)", "status": "idle"})
+            self.assertEqual(fork_calls, [("/sessions/main", None)])
             self.assertEqual(client.get("/session/sessions/forked/api/config").status_code, 200)
             self.assertEqual(client.post("/api/sessions/fork", json={"path": "/nope"}).status_code, 404)
             main_agent._running = True
@@ -1071,6 +1087,19 @@ class WebDisplayTest(unittest.TestCase):
                 self.mount_path = "/managed"
                 self.display = WebDisplay()
                 self.name = "managed"
+
+            @property
+            def display_alive(self):
+                return self.display
+
+            def offload(self):
+                pass
+
+            def save_meta(self):
+                pass
+
+            def fork(self, name=None):
+                raise ValueError("managed sessions cannot be forked")
 
             def close(self) -> None:
                 events.append("close")
@@ -1120,16 +1149,43 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(exits, ["exit"])  # shutdown re-exits nothing already unmounted
 
     def test_service_rejects_forking_an_unforkable_session(self) -> None:
-        def forker(source):
-            raise ValueError("Only durable sessions can be forked")
-
-        service = WebDisplayService(token="service-token", session_forker=forker)
+        service = WebDisplayService(token="service-token", can_fork=True)
         service.mount(SimpleSession("/", WebDisplay()))
 
         with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
             response = client.post("/api/sessions/fork", json={"path": "/"})
             self.assertEqual(response.status_code, 409)
-            self.assertIn("durable", response.json()["detail"])
+            self.assertIn("forked", response.json()["detail"])
+
+    def test_service_offloads_idle_sessions_beyond_the_residency_cap(self) -> None:
+        from xun.session import DurableSession
+
+        def bare_factory(events, stores=[]):
+            return WebDisplay(event_store=events), []
+
+        with TemporaryDirectory() as home:
+            sessions = [DurableSession.new(f"s{i}", home_dir=Path(home), factory=bare_factory) for i in range(3)]
+            service = WebDisplayService(token="service-token", resident_sessions=2)
+            for session in sessions:
+                service.mount(session)
+            awake = lambda: [s.display_alive is not None for s in sessions]  # noqa: E731
+            try:
+                with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+                    for i in range(3):
+                        self.assertEqual(client.get(f"/session/s{i}/api/config").status_code, 200)
+                    self.assertEqual(awake(), [True, True, True])
+
+                    listed = client.get("/api/sessions").json()["sessions"]  # the sweep runs here
+                    self.assertEqual([s["status"] for s in listed], ["idle"] * 3)  # listing never wakes
+                    self.assertEqual(awake(), [False, True, True])  # least recently served sleeps
+
+                    self.assertEqual(client.get("/session/s0/api/config").status_code, 200)
+                    self.assertEqual(awake(), [True, True, True])  # a request wakes s0
+                    client.get("/api/sessions")  # s0 just served: s1 is now the oldest
+                    self.assertEqual(awake(), [True, False, True])
+            finally:
+                for session in sessions:
+                    session.destroy()
 
     def test_session_management_is_disabled_without_manager(self) -> None:
         response = self.client.post("http://testserver/api/sessions/create", json={"name": "New session"})

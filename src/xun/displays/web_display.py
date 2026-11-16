@@ -188,6 +188,15 @@ class WebDisplay(DisplayAbstract):
             except Exception:
                 pass
 
+    def has_viewers(self) -> bool:
+        return bool(self._clients)
+
+    def has_waiting_prompts(self) -> bool:
+        return bool(self._pending.list())
+
+    def has_running_agents(self) -> bool:
+        return any(agent.is_running for agent in self.agents.values())
+
     def build_app(self) -> FastAPI:
         app = FastAPI(title="Xun Web", docs_url=None, redoc_url=None, lifespan=self._lifespan)
         self._serve = ServeManager(app)

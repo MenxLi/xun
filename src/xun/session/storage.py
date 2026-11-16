@@ -184,6 +184,8 @@ class DBEventStore:
 
     def add(self, event: DisplayEvent) -> None:
         with self._lock:
+            if self._closed:
+                return  # a racy late writer of a released generation: drop, don't crash
             self._conn.execute(
                 "INSERT INTO events(agent_id, timestamp, data) VALUES (?, ?, ?)",
                 (event.agent.identifier, event.timestamp, json.dumps(event.model_dump(mode="json"), ensure_ascii=False)),
@@ -195,6 +197,8 @@ class DBEventStore:
         """Persist writes accumulated since the last commit (no-op otherwise).
         The only durability point besides `close()` when `manual_commit` is set."""
         with self._lock:
+            if self._closed:
+                return
             self._conn.commit()
 
     def agent_ids(self) -> list[str]:
