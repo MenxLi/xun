@@ -163,7 +163,7 @@ def _normalize_path(value: str, name: str = "path") -> str:
     return f"/{stripped}"
 
 
-SessionStatus = Literal["offline", "idle", "running", "waiting"]
+SessionStatus = Literal["asleep", "idle", "running", "waiting"]
 
 
 class SessionInfo(BaseModel):
@@ -312,7 +312,7 @@ class _Mounted:
 
 class Residency(TypedDict):
     """Residency policy for restable sessions"""
-    n_sessions: int  # awake cap: beyond it, least recently served rest first
+    max_awake: int  # awake cap: beyond it, least recently served rest first
     idle_timeout: float  # awake and idle past this (seconds) rest too, cap or not
 
 
@@ -329,7 +329,7 @@ class WebDisplayService:
         docs_dir: Path = _DEFAULT_DOCS_ASSETS,
         session_factory: Optional[SessionSource] = None,
         can_fork: bool = False,
-        residency: Residency = Residency(n_sessions=16, idle_timeout=24 * 3600),
+        residency: Residency = Residency(max_awake=16, idle_timeout=24 * 3600),
     ) -> None:
         self.host = host
         self.port = port
@@ -405,7 +405,7 @@ class WebDisplayService:
         @self.app.get(self.sessions_api_path)
         async def sessions() -> SessionList:
             # the frontend polls this route: sweeps promptly after user activity
-            await asyncio.to_thread(self._offload_idle_sessions)
+            await asyncio.to_thread(self._enforce_residency)
             return SessionList(
                 sessions=self.list_sessions(),
                 can_manage=self._session_factory is not None,
@@ -613,7 +613,7 @@ class WebDisplayService:
         mounted = self._sessions[mount_path]
         live = mounted.session.display_alive
         if live is None:
-            status: SessionStatus = "offline"  # resting: wakes on the next request
+            status: SessionStatus = "asleep"  # resting: wakes on the next request
         elif live.has_waiting_prompts():
             status = "waiting"
         elif live.has_running_agents():
@@ -642,8 +642,8 @@ class WebDisplayService:
                 dispatcher.rebind(app, display)
             return app
 
-    def _offload_idle_sessions(self) -> None:
-        """Residency sweep: rest awake sessions idle past the timeout, and beyond the
+    def _enforce_residency(self) -> None:
+        """Rest awake sessions idle past the timeout, and beyond the
         cap the least recently served go first. Served, watched, waiting, or running
         sessions are exempt and keep their slot."""
         config = self._residency
@@ -655,7 +655,7 @@ class WebDisplayService:
                 (m for m in self._sessions.values() if m.session.display_alive is not None),
                 key=lambda m: m.dispatcher.last_used,
             )
-            excess = len(resident) - config["n_sessions"]
+            excess = len(resident) - config["max_awake"]
             for mounted in resident:
                 if excess <= 0 and mounted.dispatcher.last_used > deadline:
                     break
@@ -680,7 +680,7 @@ class WebDisplayService:
         interval = max(1.0, min(60.0, self._residency["idle_timeout"] / 4))
         while True:
             await asyncio.sleep(interval)
-            await asyncio.to_thread(self._offload_idle_sessions)
+            await asyncio.to_thread(self._enforce_residency)
 
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:

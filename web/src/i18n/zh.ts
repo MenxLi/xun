@@ -56,7 +56,7 @@ const zh: typeof en = {
     idle: '空闲',
     running: '运行中',
     waiting: '等待输入',
-    offline: '已休眠',
+    asleep: '已休眠',
     renameSession: '重命名会话',
     forkSession: '分叉会话',
     busyCannotFork: '会话空闲后才能分叉',

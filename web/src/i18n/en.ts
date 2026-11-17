@@ -54,7 +54,7 @@ export default {
     idle: 'Idle',
     running: 'Running',
     waiting: 'Waiting for input',
-    offline: 'Offline',
+    asleep: 'Asleep',
     renameSession: 'Rename session',
     forkSession: 'Fork session',
     busyCannotFork: 'Wait until the session is idle to fork',

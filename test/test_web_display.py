@@ -1165,7 +1165,7 @@ class WebDisplayTest(unittest.TestCase):
 
         with TemporaryDirectory() as home:
             sessions = [DurableSession.new(f"s{i}", home_dir=Path(home), factory=bare_factory) for i in range(3)]
-            service = WebDisplayService(token="service-token", residency=Residency(n_sessions=2, idle_timeout=float("inf")))
+            service = WebDisplayService(token="service-token", residency=Residency(max_awake=2, idle_timeout=float("inf")))
             for session in sessions:
                 service.mount(session)
             awake = lambda: [s.display_alive is not None for s in sessions]  # noqa: E731
@@ -1176,7 +1176,7 @@ class WebDisplayTest(unittest.TestCase):
                     self.assertEqual(awake(), [True, True, True])
 
                     listed = client.get("/api/sessions").json()["sessions"]  # the sweep runs here
-                    self.assertEqual([s["status"] for s in listed], ["idle", "idle", "offline"])  # newest first; listing never wakes
+                    self.assertEqual([s["status"] for s in listed], ["idle", "idle", "asleep"])  # newest first; listing never wakes
                     self.assertEqual(awake(), [False, True, True])  # least recently served sleeps
 
                     self.assertEqual(client.get("/session/s0/api/config").status_code, 200)
@@ -1197,7 +1197,7 @@ class WebDisplayTest(unittest.TestCase):
             sessions = [DurableSession.new(f"s{i}", home_dir=Path(home), factory=bare_factory) for i in range(2)]
             service = WebDisplayService(
                 token="service-token",
-                residency=Residency(n_sessions=16, idle_timeout=0.05),
+                residency=Residency(max_awake=16, idle_timeout=0.05),
             )
             for session in sessions:
                 service.mount(session)
