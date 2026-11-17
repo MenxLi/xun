@@ -293,7 +293,6 @@ class _Mounted:
     session: WebSession
     route: Mount
     dispatcher: _SessionDispatcher
-    managed: bool = False  # factory-created: the service closes it on shutdown
 
 class Residency(TypedDict):
     """Residency policy for restable sessions"""
@@ -414,7 +413,7 @@ class WebDisplayService:
             except BaseException:
                 session.destroy()
                 raise
-            return self._mount_managed(session)
+            return self._mount_created(session)
 
         @self.app.post(f"{self.sessions_api_path}/remove")
         async def remove_session(request: SessionRemove) -> dict[str, bool]:
@@ -440,7 +439,7 @@ class WebDisplayService:
                 session = await asyncio.to_thread(source.fork, (request.name or "").strip() or None)
             except ValueError as e:
                 raise HTTPException(409, str(e))
-            return self._mount_managed(session)
+            return self._mount_created(session)
 
         @self.app.post(f"{self.sessions_api_path}/rename")
         async def rename_session(request: SessionRename) -> SessionInfo:
@@ -517,16 +516,17 @@ class WebDisplayService:
             raise HTTPException(405, "Session management is disabled")
         return self._session_factory
 
-    def _mount_managed(self, session: WebSession) -> SessionInfo:
+    def _mount_created(self, session: WebSession) -> SessionInfo:
         try:
-            self.mount(session, managed=True)
+            self.mount(session)
         except BaseException:
             session.destroy()
             raise
         return self._session_info(_normalize_path(session.mount_path))
 
-    def mount(self, session: WebSession, *, managed: bool = False) -> WebDisplayService:
-        """Mount without touching the display: the dispatcher resolves it per request."""
+    def mount(self, session: WebSession) -> WebDisplayService:
+        """Mount without touching the display: the dispatcher resolves it per request.
+        The service owns the session from here on: shutdown closes every mount."""
         mount_path = _normalize_path(session.mount_path)
         if "srv" in mount_path.split("/"):
             raise ValueError("Session paths cannot contain a 'srv' segment")  # see _TokenAuthMiddleware
@@ -553,7 +553,7 @@ class WebDisplayService:
             if mount_path and root_session is not None:
                 self.app.routes.remove(route)
                 self.app.routes.insert(self.app.routes.index(root_session.route), route)
-            self._sessions[mount_path] = _Mounted(session, route, dispatcher, managed)
+            self._sessions[mount_path] = _Mounted(session, route, dispatcher)
         return self
 
     def unmount(self, path: str) -> None:
@@ -676,14 +676,11 @@ class WebDisplayService:
             sessions: list[WebSession] = []
             with self._session_lock:
                 self._loop = None
-                for mounted in self._sessions.values():
+                for path, mounted in tuple(self._sessions.items()):
                     live = mounted.session.display_alive
                     if live is not None:
                         live._detach()
-                        mounted.dispatcher.invalidate()
-                for path, mounted in tuple(self._sessions.items()):
-                    if not mounted.managed:
-                        continue
+                    mounted.dispatcher.invalidate()
                     self._sessions.pop(path)
                     self.app.routes.remove(mounted.route)
                     sessions.append(mounted.session)

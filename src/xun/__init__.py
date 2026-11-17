@@ -20,12 +20,12 @@ from .core.slot_semaphore import SlotSemaphore
 from .core.agent import Agent
 
 if TYPE_CHECKING:  # resolved via __getattr__
-    from .displays import Display, WebDisplay, WebDisplayService
+    from .displays import Display, SimpleSession, WebDisplay, WebDisplayService
     from .entrypoint import (setup_agent, interactive_session, web_session,
                              main, main_serve, main_container)
 
 _LAZY = {
-    "displays": ("Display", "WebDisplay", "WebDisplayService"),
+    "displays": ("Display", "SimpleSession", "WebDisplay", "WebDisplayService"),
     "entrypoint": ("setup_agent", "interactive_session", "web_session",
                    "main", "main_serve", "main_container"),
 }
@@ -48,7 +48,7 @@ __all__ = [
     "extension_data_dir",
     "xun_version", "load_env",
     "AgentGetterProtocol", "AgentGetterParam", 
-    "DisplayAbstract", "Display", "NullDisplay", "WebDisplay", "WebDisplayService",
+    "DisplayAbstract", "Display", "NullDisplay", "SimpleSession", "WebDisplay", "WebDisplayService",
     "Command", "CommandRegistry",
     "HookArgs", "Hooks",
     "StateEntry", "StatePersistEntry", "StateRuntimeEntry", "JsonEntry", "RuntimeEntry", "AgentState",

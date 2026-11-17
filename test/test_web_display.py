@@ -923,13 +923,14 @@ class WebDisplayTest(unittest.TestCase):
         })
 
     def test_server_can_stop_and_restart(self) -> None:
-        display = WebDisplay()
-        service = WebDisplayService(port=0).mount(SimpleSession("/", display))
+        service = WebDisplayService(port=0).mount(SimpleSession("/", WebDisplay()))
         self.addCleanup(service.stop)
         service.start()
         first_port = service.port
         self.assertTrue(service._thread and service._thread.is_alive())
         service.stop()
+        self.assertEqual(service.list_sessions(), [])  # stop owns and closes every mount
+        service.mount(SimpleSession("/", WebDisplay()))
         service.start()
         self.assertGreater(first_port, 0)
         self.assertTrue(service._thread and service._thread.is_alive())
@@ -1077,6 +1078,7 @@ class WebDisplayTest(unittest.TestCase):
             ("/sessions/new", "destroy"),
             ("/sessions/new", "destroy"),
             ("/sessions/forked", "destroy"),
+            ("/sessions/main", "close"),  # the service closes every mount it served
         ])
 
     def test_service_closes_managed_session_contexts_on_shutdown(self) -> None:
@@ -1114,7 +1116,7 @@ class WebDisplayTest(unittest.TestCase):
             self.assertEqual(events, [])
 
         self.assertEqual(events, ["close"])  # shutdown closes, never destroys
-        self.assertEqual([session.path for session in service.list_sessions()], ["/main"])
+        self.assertEqual(service.list_sessions(), [])  # ... and unmounts everything it served
 
     def test_service_creates_managed_session_alongside_root_display(self) -> None:
         service = WebDisplayService(
