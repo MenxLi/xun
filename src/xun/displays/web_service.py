@@ -9,11 +9,11 @@ import secrets
 import socket
 import threading
 import time
-from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
+from contextlib import AbstractContextManager, ExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, cast, Literal, Optional, Protocol
+from typing import Any, AsyncGenerator, Callable, cast, Literal, Optional, Protocol, TypedDict
 from urllib.parse import quote, urlencode, urlsplit
 
 import jinja2
@@ -200,7 +200,7 @@ class WebSession(Protocol):
     """A mountable session: mounted under `mount_path`. `destroy()` on removal,
     `close()` on shutdown, `save_meta()` to flush changes such as renames.
 
-    Sessions may rest (see the residency cap): `display_alive` peeks without
+    Sessions may rest (see Residency): `display_alive` peeks without
     waking, `offload()` releases the display (a no-op for eager sessions);
     `fork()` copies under a fresh id, raising ValueError when impossible."""
 
@@ -310,6 +310,11 @@ class _Mounted:
     dispatcher: _SessionDispatcher
     managed: bool = False  # factory-created: the service closes it on shutdown
 
+class Residency(TypedDict):
+    """Residency policy for restable sessions"""
+    n_sessions: int  # awake cap: beyond it, least recently served rest first
+    idle_timeout: float  # awake and idle past this (seconds) rest too, cap or not
+
 
 class WebDisplayService:
     """Mount and serve one or more isolated web displays."""
@@ -324,7 +329,7 @@ class WebDisplayService:
         docs_dir: Path = _DEFAULT_DOCS_ASSETS,
         session_factory: Optional[SessionSource] = None,
         can_fork: bool = False,
-        resident_sessions: Optional[int] = None,
+        residency: Residency = Residency(n_sessions=16, idle_timeout=24 * 3600),
     ) -> None:
         self.host = host
         self.port = port
@@ -339,7 +344,7 @@ class WebDisplayService:
         self._sessions: dict[str, _Mounted] = {}
         self._session_factory = session_factory
         self._can_fork = can_fork
-        self._resident_sessions = resident_sessions  # residency cap for offloadable sessions
+        self._residency = residency
         self._session_lock = threading.RLock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Optional[uvicorn.Server] = None
@@ -399,8 +404,8 @@ class WebDisplayService:
     def _configure_sessions(self) -> None:
         @self.app.get(self.sessions_api_path)
         async def sessions() -> SessionList:
-            # the frontend polls this route: it doubles as the residency sweep's heartbeat
-            await asyncio.to_thread(self._offload_excess_sessions)
+            # the frontend polls this route: sweeps promptly after user activity
+            await asyncio.to_thread(self._offload_idle_sessions)
             return SessionList(
                 sessions=self.list_sessions(),
                 can_manage=self._session_factory is not None,
@@ -637,16 +642,22 @@ class WebDisplayService:
                 dispatcher.rebind(app, display)
             return app
 
-    def _offload_excess_sessions(self) -> None:
-        """Residency cap: the least recently served restable sessions go back to sleep.
-        Served, watched, waiting, or running sessions are exempt and keep their slot."""
-        if self._resident_sessions is None:
-            return
+    def _offload_idle_sessions(self) -> None:
+        """Residency sweep: rest awake sessions idle past the timeout, and beyond the
+        cap the least recently served go first. Served, watched, waiting, or running
+        sessions are exempt and keep their slot."""
+        config = self._residency
+        deadline = time.monotonic() - config["idle_timeout"]
         with self._session_lock:
-            resident = [m for m in self._sessions.values() if m.session.display_alive is not None]
-            excess = len(resident) - self._resident_sessions
-            for mounted in sorted(resident, key=lambda m: m.dispatcher.last_used):
-                if excess <= 0:
+            # one LRU-sorted pass covers both limits: past a fresh session within
+            # the cap, everything remaining is fresher and safe
+            resident = sorted(
+                (m for m in self._sessions.values() if m.session.display_alive is not None),
+                key=lambda m: m.dispatcher.last_used,
+            )
+            excess = len(resident) - config["n_sessions"]
+            for mounted in resident:
+                if excess <= 0 and mounted.dispatcher.last_used > deadline:
                     break
                 session = mounted.session
                 display = session.display_alive  # recheck: it may have ended since the census
@@ -664,15 +675,26 @@ class WebDisplayService:
                     display._detach()  # releases serve timers and executors
                 excess -= 1
 
+    async def _residency_sweeper(self) -> None:
+        """Background sweeps so the idle timeout bites even while no frontend polls."""
+        interval = max(1.0, min(60.0, self._residency["idle_timeout"] / 4))
+        while True:
+            await asyncio.sleep(interval)
+            await asyncio.to_thread(self._offload_idle_sessions)
+
     @asynccontextmanager
     async def _lifespan(self, _app: FastAPI) -> AsyncGenerator[None, None]:
         # displays attach to the loop lazily, on first request: resting sessions
         # must not be woken just because the service started.
         self._loop = asyncio.get_running_loop()
+        sweeper = asyncio.create_task(self._residency_sweeper())
         self._started.set()
         try:
             yield
         finally:
+            sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweeper
             sessions: list[WebSession] = []
             with self._session_lock:
                 self._loop = None

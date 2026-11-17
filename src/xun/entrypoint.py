@@ -174,7 +174,6 @@ def web_session(
         base_path=base_path,
         session_factory=(lambda: _new_session(fixed_workdir)) if manage_sessions else None,
         can_fork=manage_sessions and fixed_workdir is None,  # only durable sessions fork
-        resident_sessions=4,  # idle durable sessions sleep; their next request wakes them
     )
     sessions: list[WebSession] = []
     try:

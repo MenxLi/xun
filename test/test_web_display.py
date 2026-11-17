@@ -27,7 +27,7 @@ from xun.core.display_abstract import (
 )
 from xun.core.running_state import AgentRunningStateMixin, ChainedEvent
 from xun.core.hooks import HookArgs, Hooks
-from xun.displays import SimpleSession, WebDisplay, WebDisplayService
+from xun.displays import Residency, SimpleSession, WebDisplay, WebDisplayService
 from xun.displays.web_serve import MAX_SERVE_SERVERS
 from xun.displays.web_file import MAX_PREVIEW_DOCUMENT_SIZE
 from xun.core.null_display import NullDisplay
@@ -1165,7 +1165,7 @@ class WebDisplayTest(unittest.TestCase):
 
         with TemporaryDirectory() as home:
             sessions = [DurableSession.new(f"s{i}", home_dir=Path(home), factory=bare_factory) for i in range(3)]
-            service = WebDisplayService(token="service-token", resident_sessions=2)
+            service = WebDisplayService(token="service-token", residency=Residency(n_sessions=2, idle_timeout=float("inf")))
             for session in sessions:
                 service.mount(session)
             awake = lambda: [s.display_alive is not None for s in sessions]  # noqa: E731
@@ -1183,6 +1183,32 @@ class WebDisplayTest(unittest.TestCase):
                     self.assertEqual(awake(), [True, True, True])  # a request wakes s0
                     client.get("/api/sessions")  # s0 just served: s1 is now the oldest
                     self.assertEqual(awake(), [True, False, True])
+            finally:
+                for session in sessions:
+                    session.destroy()
+
+    def test_service_offloads_sessions_idle_past_the_timeout(self) -> None:
+        from xun.session import DurableSession
+
+        def bare_factory(events, stores=[]):
+            return WebDisplay(event_store=events), []
+
+        with TemporaryDirectory() as home:
+            sessions = [DurableSession.new(f"s{i}", home_dir=Path(home), factory=bare_factory) for i in range(2)]
+            service = WebDisplayService(
+                token="service-token",
+                residency=Residency(n_sessions=16, idle_timeout=0.05),
+            )
+            for session in sessions:
+                service.mount(session)
+            awake = lambda: [s.display_alive is not None for s in sessions]  # noqa: E731
+            try:
+                with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
+                    self.assertEqual(client.get("/session/s0/api/config").status_code, 200)
+                    self.assertEqual(awake(), [True, False])  # far below the cap
+                    time.sleep(0.1)  # s0 goes stale
+                    client.get("/api/sessions")  # the sweep runs here
+                    self.assertEqual(awake(), [False, False])  # timeout evicts within the cap
             finally:
                 for session in sessions:
                     session.destroy()
