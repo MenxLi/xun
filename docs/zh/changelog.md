@@ -40,7 +40,7 @@
 - 扩展 API 版本区间 `api_max_version` 改为半开区间 `[min, max)`。
 - 显示层 `bind` 类型收窄为存活期智能体 `Agent[T.Alive]`。
 - 新增 `CustomEvent` 显示事件：扩展自定义 JSON 负载，内置显示忽略，为自定义渲染预留。
-- Web 会话抽象为 `WebSession` 协议，服务侧统一 `mount(session)` 挂载；原上下文管理器接口移除。
+- Web 会话抽象为 `WebSession` 协议，服务侧统一 `mount(session)` 挂载；`session_factory` 仍兼容产出 `(mount_path, display)` 上下文管理器的工厂写法。
 
 ### Web 服务与前端
 
