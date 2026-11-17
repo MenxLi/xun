@@ -36,6 +36,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .session-row.active .session-status.idle { background: color-mix(in srgb, var(--accent) 55%, transparent); }
 .session-status.running { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); animation: agent-running-pulse 1.8s ease-in-out infinite; }
 .session-status.waiting { background: var(--warm); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warm) 18%, transparent); }
+.session-status.offline { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 60%, transparent); }
 .session-actions { margin-right: 4px; display: none; flex: none; align-items: center; }
 .session-actions .icon-button { width: 24px; height: 24px; border-radius: 4px; }
 .session-row:hover .session-actions, .session-actions:focus-within, .session-actions.open { display: flex; }

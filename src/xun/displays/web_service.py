@@ -163,7 +163,7 @@ def _normalize_path(value: str, name: str = "path") -> str:
     return f"/{stripped}"
 
 
-SessionStatus = Literal["idle", "running", "waiting"]
+SessionStatus = Literal["offline", "idle", "running", "waiting"]
 
 
 class SessionInfo(BaseModel):
@@ -613,7 +613,7 @@ class WebDisplayService:
         mounted = self._sessions[mount_path]
         live = mounted.session.display_alive
         if live is None:
-            status: SessionStatus = "idle"  # resting: nothing can run without a display
+            status: SessionStatus = "offline"  # resting: wakes on the next request
         elif live.has_waiting_prompts():
             status = "waiting"
         elif live.has_running_agents():

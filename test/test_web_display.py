@@ -1176,7 +1176,7 @@ class WebDisplayTest(unittest.TestCase):
                     self.assertEqual(awake(), [True, True, True])
 
                     listed = client.get("/api/sessions").json()["sessions"]  # the sweep runs here
-                    self.assertEqual([s["status"] for s in listed], ["idle"] * 3)  # listing never wakes
+                    self.assertEqual([s["status"] for s in listed], ["idle", "idle", "offline"])  # newest first; listing never wakes
                     self.assertEqual(awake(), [False, True, True])  # least recently served sleeps
 
                     self.assertEqual(client.get("/session/s0/api/config").status_code, 200)

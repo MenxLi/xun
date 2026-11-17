@@ -143,7 +143,7 @@ export interface WebConfig {
   expose_files: boolean
 }
 
-export type SessionStatus = 'idle' | 'running' | 'waiting'
+export type SessionStatus = 'offline' | 'idle' | 'running' | 'waiting'
 
 export interface SessionInfo {
   path: string
