@@ -288,6 +288,10 @@ class DurableSession[D: DisplayAbstract]:
         live.store.close()
         self._live = None
 
+    def rename(self, name: str) -> None:
+        self.name = name
+        self.save_meta()
+
     def save_meta(self) -> None:
         """Write session.json now, e.g. to persist a rename without a run."""
         if self._ended:

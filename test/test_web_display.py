@@ -986,8 +986,8 @@ class WebDisplayTest(unittest.TestCase):
             def offload(self):
                 pass
 
-            def save_meta(self):
-                pass
+            def rename(self, name):
+                self.name = name
 
             def fork(self, name=None):
                 fork_calls.append((self.mount_path, name))
@@ -1095,8 +1095,8 @@ class WebDisplayTest(unittest.TestCase):
             def offload(self):
                 pass
 
-            def save_meta(self):
-                pass
+            def rename(self, name):
+                self.name = name
 
             def fork(self, name=None):
                 raise ValueError("managed sessions cannot be forked")

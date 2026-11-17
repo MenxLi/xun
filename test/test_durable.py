@@ -90,12 +90,10 @@ class DurableSessionTest(unittest.TestCase):
     def test_save_meta_flushes_a_rename_without_a_run(self) -> None:
         with TemporaryDirectory() as home:
             session = DurableSession.new("s1", name="Before", home_dir=Path(home), factory=BARE)
-            session.name = "After"
-            session.save_meta()
+            session.rename("After")
             self.assertEqual(SessionMeta.load(session.directory, fallback_name="s1").name, "After")
             session.close()
-            session.name = "Too late"
-            session.save_meta()  # an ended session never writes
+            session.rename("Too late")  # an ended session never writes
             self.assertEqual(SessionMeta.load(session.directory, fallback_name="s1").name, "After")
 
     def test_fork_copies_the_session_and_is_born_fresh(self) -> None:

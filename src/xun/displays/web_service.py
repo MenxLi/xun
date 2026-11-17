@@ -13,7 +13,7 @@ from contextlib import AbstractContextManager, ExitStack, asynccontextmanager, s
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, cast, Literal, Optional, Protocol, TypedDict
+from typing import Any, AsyncGenerator, Callable, cast, Literal, Optional, Protocol, TypedDict, Self
 from urllib.parse import quote, urlencode, urlsplit
 
 import jinja2
@@ -81,7 +81,8 @@ class _TokenAuthMiddleware:
         if root_path and request_path.startswith(root_path):
             request_path = request_path[len(root_path):] or "/"
         mount_path = request_path.rstrip("/")
-        if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and mount_path == self.base_path:
+        is_get_head = scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"}
+        if is_get_head and mount_path == self.base_path:
             query = f"?{connection.url.query}" if connection.url.query else ""
             response = RedirectResponse(f"{root_path}{self.chat_path}/{query}")
             await response(scope, receive, log_non_success_response)
@@ -94,13 +95,8 @@ class _TokenAuthMiddleware:
             await self.app(scope, receive, log_non_success_response)
             return
 
-        if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and self.serve_prefix.match(request_path):
-            await self.app(scope, receive, log_non_success_response)
-            return
-
-        if scope["type"] == "http" and scope.get("method") in {"GET", "HEAD"} and (
-            request_path == self.docs_path or request_path.startswith(f"{self.docs_path}/")
-        ):
+        if is_get_head and (self.serve_prefix.match(request_path) or request_path == self.docs_path
+                            or request_path.startswith(f"{self.docs_path}/")):
             await self.app(scope, receive, log_non_success_response)
             return
 
@@ -118,18 +114,11 @@ class _TokenAuthMiddleware:
                 f"{root_path}{self.chat_path}/?{query}" if query else f"{root_path}{self.chat_path}/",
                 status_code=303,
             )
-            response.set_cookie(
-                _COOKIE_NAME,
-                self.token,
-                httponly=True,
-                samesite="strict",
-                secure=connection.url.scheme == "https",
-                path=f"{root_path}{self.base_path}/" or "/",
-            )
+            _auth_cookie(response, self.token, f"{root_path}{self.base_path}/", connection.url.scheme == "https")
             await response(scope, receive, log_non_success_response)
         elif scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
-        elif self._is_display_page_request(scope, request_path):
+        elif is_get_head and mount_path == self.chat_path:
             login_path = f"{root_path}{self.login_path}"
             target = request_path
             if connection.url.query:
@@ -140,18 +129,13 @@ class _TokenAuthMiddleware:
             response = JSONResponse({"detail": "Not authenticated"}, status_code=401)
             await response(scope, receive, log_non_success_response)
 
-    def _is_display_page_request(
-        self,
-        scope: dict[str, Any],
-        request_path: str,
-    ) -> bool:
-        if scope.get("method") not in {"GET", "HEAD"}:
-            return False
-        return request_path.rstrip("/") == self.chat_path
-
 
 def _tokens_match(value: str, expected: str) -> bool:
     return bool(value) and hmac.compare_digest(value, expected)
+
+
+def _auth_cookie(response: Response, token: str, path: str, secure: bool) -> None:
+    response.set_cookie(_COOKIE_NAME, token, httponly=True, samesite="strict", secure=secure, path=path)
 
 
 def _normalize_path(value: str, name: str = "path") -> str:
@@ -198,13 +182,14 @@ class SessionRename(BaseModel):
 
 class WebSession(Protocol):
     """A mountable session: mounted under `mount_path`. `destroy()` on removal,
-    `close()` on shutdown, `save_meta()` to flush changes such as renames.
+    `close()` on shutdown, `rename()` to persist a new name.
 
     Sessions may rest (see Residency): `display_alive` peeks without
     waking, `offload()` releases the display (a no-op for eager sessions);
     `fork()` copies under a fresh id, raising ValueError when impossible."""
 
-    name: str
+    @property
+    def name(self) -> str: ...
 
     @property
     def mount_path(self) -> str: ...
@@ -217,9 +202,9 @@ class WebSession(Protocol):
 
     def offload(self) -> None: ...
 
-    def save_meta(self) -> None: ...
+    def rename(self, name: str) -> None: ...
 
-    def fork(self, name: Optional[str] = None) -> "WebSession": ...
+    def fork(self, name: Optional[str] = None) -> Self: ...
 
     def close(self) -> None: ...
 
@@ -259,8 +244,8 @@ class SimpleSession:
     def offload(self) -> None:
         pass  # a ready-made display cannot rest
 
-    def save_meta(self) -> None:
-        pass  # nothing outlives the process
+    def rename(self, name: str) -> None:
+        self.name = name  # nothing outlives the process
 
     def fork(self, name: Optional[str] = None) -> "SimpleSession":
         raise ValueError("Ephemeral sessions cannot be forked")
@@ -422,24 +407,18 @@ class WebDisplayService:
 
         @self.app.post(f"{self.sessions_api_path}/create", status_code=201)
         async def create_session(request: SessionCreate) -> SessionInfo:
-            factory = self._session_factory
-            if factory is None:
-                raise HTTPException(405, "Session management is disabled")
-            session = self._open_session(factory)
+            session = self._open_session(self._require_factory())
             try:
                 if name := (request.name or "").strip():
-                    session.name = name
-                    session.save_meta()
-                self.mount(session, managed=True)
+                    session.rename(name)
             except BaseException:
                 session.destroy()
                 raise
-            return self._session_info(_normalize_path(session.mount_path))
+            return self._mount_managed(session)
 
         @self.app.post(f"{self.sessions_api_path}/remove")
         async def remove_session(request: SessionRemove) -> dict[str, bool]:
-            if self._session_factory is None:
-                raise HTTPException(405, "Session management is disabled")
+            self._require_factory()
             if len(self._sessions) <= 1:
                 raise HTTPException(409, "The last session cannot be removed")
             self.unmount(request.path)
@@ -461,17 +440,11 @@ class WebDisplayService:
                 session = await asyncio.to_thread(source.fork, (request.name or "").strip() or None)
             except ValueError as e:
                 raise HTTPException(409, str(e))
-            try:
-                self.mount(session, managed=True)
-            except BaseException:
-                session.destroy()
-                raise
-            return self._session_info(_normalize_path(session.mount_path))
+            return self._mount_managed(session)
 
         @self.app.post(f"{self.sessions_api_path}/rename")
         async def rename_session(request: SessionRename) -> SessionInfo:
-            if self._session_factory is None:
-                raise HTTPException(405, "Session management is disabled")
+            self._require_factory()
             return self.rename(request.path, request.name)
 
     def _configure_login(self) -> None:
@@ -490,21 +463,14 @@ class WebDisplayService:
                 return self._login_response(request, target, error="Invalid access token", status_code=401)
             root_path = request.scope.get("root_path", "").rstrip("/")
             response = RedirectResponse(f"{root_path}{target}" if root_path else target, status_code=303)
-            response.set_cookie(
-                _COOKIE_NAME,
-                self.token,
-                httponly=True,
-                samesite="strict",
-                secure=request.url.scheme == "https",
-                path=f"{root_path}{self.base_path}/" or "/",
-            )
+            _auth_cookie(response, self.token, f"{root_path}{self.base_path}/", request.url.scheme == "https")
             return response
 
         @self.app.post(self.logout_path)
         async def logout(request: Request) -> RedirectResponse:
             root_path = request.scope.get("root_path", "").rstrip("/")
             response = RedirectResponse(f"{root_path}{self.login_path}", status_code=303)
-            response.delete_cookie(_COOKIE_NAME, path=f"{root_path}{self.base_path}/" or "/")
+            response.delete_cookie(_COOKIE_NAME, path=f"{root_path}{self.base_path}/")
             return response
 
     def _login_target(self, value: str) -> str:
@@ -545,6 +511,19 @@ class WebDisplayService:
             stack.close()
             raise
         return SimpleSession(mount_path, display, release=stack.close)
+
+    def _require_factory(self) -> SessionSource:
+        if self._session_factory is None:
+            raise HTTPException(405, "Session management is disabled")
+        return self._session_factory
+
+    def _mount_managed(self, session: WebSession) -> SessionInfo:
+        try:
+            self.mount(session, managed=True)
+        except BaseException:
+            session.destroy()
+            raise
+        return self._session_info(_normalize_path(session.mount_path))
 
     def mount(self, session: WebSession, *, managed: bool = False) -> WebDisplayService:
         """Mount without touching the display: the dispatcher resolves it per request."""
@@ -600,8 +579,7 @@ class WebDisplayService:
             mounted = self._sessions.get(mount_path)
             if mounted is None:
                 raise HTTPException(404, "Session not found")
-            mounted.session.name = session_name
-            mounted.session.save_meta()
+            mounted.session.rename(session_name)
             return self._session_info(mount_path)
 
     def list_sessions(self) -> list[SessionInfo]:
