@@ -1,8 +1,9 @@
 """Event ring buffer and standalone-HTML rendering, shared by every display."""
 
 from __future__ import annotations
-from typing import Any, Optional, Sequence, Literal, Self, Protocol, cast
+from typing import Any, Callable, Optional, Sequence, Literal, Self, Protocol, cast
 from collections import deque
+from contextlib import contextmanager
 import json
 import threading
 import time
@@ -362,6 +363,20 @@ class DisplayEventStoreMixin:
     consumers need to set their own capacity via `with_buffer_size`."""
 
     _event_buffer: EventStore | None = None
+    _event_suppressors: tuple[Callable[[DisplayEvent], bool], ...] = ()
+
+    @contextmanager
+    def suppress_filter(self, drop: Callable[[DisplayEvent], bool]):
+        """Within scope, events matching `drop` are muted. Nestable"""
+        saved = self._event_suppressors
+        self._event_suppressors = (*saved, drop)
+        try:
+            yield
+        finally:
+            self._event_suppressors = saved
+
+    def _suppressed(self, event: DisplayEvent) -> bool:
+        return any(drop(event) for drop in self._event_suppressors)
 
     @property
     def event_store(self) -> EventStore:

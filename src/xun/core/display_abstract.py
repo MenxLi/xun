@@ -86,6 +86,7 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
             span=self.span.snapshot(),
             payload=ev,
         )
+        if self.display._suppressed(event): return
         self.display._record_event(event)
         self.display.on_event(event)
 
@@ -104,7 +105,7 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
         self.hooks.before_display_error.invoke(args)
         self.display_event(ErrorEvent(message=args.message))
 
-    # TODO: remove in v1.5
+    # TODO: remove in v1.6
     info = display_info
     warning = display_warning
     error = display_error

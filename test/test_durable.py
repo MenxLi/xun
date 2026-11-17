@@ -7,6 +7,7 @@ from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay
+from xun.core.display_event import AgentBindEvent, UserMessageEvent
 from xun.session import AgentStore, DurableSession
 from xun.session.durable import SessionMeta
 
@@ -256,6 +257,19 @@ class DurableSessionTest(unittest.TestCase):
             param = cast(dict, restored.conversation.messages[-1].completion_param())
             self.assertEqual(param["content"], "after run")
             self.assertEqual(restored.workspace.workdir, session.directory / "workspace")
+            session.destroy()
+
+    def test_rest_cycles_record_no_binding_churn(self) -> None:
+        with TemporaryDirectory() as home:
+            built: list[Agent] = []
+            session = DurableSession.new("s1", home_dir=Path(home), factory=make_factory(built))
+            self.assertIsNotNone(session.display)  # birth: one fresh factory agent
+            built[0].display_event(UserMessageEvent(content="real work", images=[]))
+            session.offload()
+            self.assertIsNotNone(session.display)  # wake: a fresh generation rebuilds the agent
+            self.assertEqual([e.name for e in session.display.events()], ["UserMessageEvent"])
+            attach(session, name="guest")  # outside rest cycles, roster changes still land
+            self.assertEqual([e.name for e in session.display.events()], ["UserMessageEvent", "AgentBindEvent"])
             session.destroy()
 
     def test_ending_a_resting_session_never_wakes_it(self) -> None:

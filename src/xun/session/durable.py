@@ -34,6 +34,7 @@ from dataclasses import asdict, dataclass, field
 from ..core.agent_state import JsonEntry
 from ..core.config import get_home_dir
 from ..core.display_abstract import DisplayAbstract
+from ..core.display_event import AgentBindEvent, AgentUnbindEvent
 from ..core.hooks import HookArgs
 from ..core.util import atomic_write
 from ..core.workspace import DeferredTempDirectory, Workspace
@@ -172,8 +173,9 @@ class DurableSession[D: DisplayAbstract]:
             if display.event_store is not event_store:
                 raise RuntimeError("Display's event store does not match the session's event store")
             self._live = _Live(event_store, display)
-            for agent in agents:
-                self._adopt(agent)
+            with display.suppress_filter(lambda e: isinstance(e.payload, AgentBindEvent)):
+                for agent in agents:
+                    self._adopt(agent)
         return self._live
 
     def offload(self) -> None:
@@ -278,10 +280,11 @@ class DurableSession[D: DisplayAbstract]:
         live = self._live
         if live is None:
             return
-        for agent in self._members():  # bind order keeps closing events chronological
-            agent.finalize()
-            if save:
-                self._slot(agent.identifier).save(agent)
+        with live.display.suppress_filter(lambda e: isinstance(e.payload, AgentUnbindEvent)):
+            for agent in self._members():  # bind order keeps closing events chronological
+                agent.finalize()
+                if save:
+                    self._slot(agent.identifier).save(agent)
         live.store.close()
         self._live = None
 
