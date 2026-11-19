@@ -1,5 +1,25 @@
 # 更新日志
 
+## 1.6.0dev
+
+### 核心
+
+- 显示层新增事件抑制过滤器 `suppress_filter`：作用域内匹配的事件被静默丢弃。
+- 移除 `Agent.info` / `warning` / `error` 兼容别名，统一使用 `display_info` / `display_warning` / `display_error`。
+
+### Web 服务与前端
+
+- 会话休眠（lazy residency）：持久会话空闲时释放显示与事件存储、进入 offline 状态，再次访问自动唤醒重建。驻留策略支持同时限制唤醒数量与空闲超时。
+- 支持分叉（fork）Web 会话：从现有会话复制出一份新会话，仅持久会话可用。
+- 前端 Office 文档预览：docx / xlsx / pptx 内联预览；PDF 改用浏览器内置查看器。
+- 侧边栏会话列表不再压缩行高，滚动条自动隐藏。
+- 文件浏览器宽度上限提高。
+
+### API 变更
+
+- `WebSession` 协议扩展：新增 `display_or_none()`（探看不唤醒）、`offload()`（休眠）、`fork()`（以新 id 复制会话）。
+- `WebDisplayService` 新增 `residency`（`Residency(max_awake, idle_timeout)`）与 `can_fork` 参数；`mount()` 简化，服务侧统一接管会话生命周期。
+
 ## 1.5.2
 
 - `/config` 可一次设置多个配置项；修正设置 `provider.*` 后 OpenAI 客户端不更新的问题。
