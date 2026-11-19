@@ -33,10 +33,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .session-name { min-width: 0; flex: 1; overflow: hidden; color: var(--ink); font-size: 11.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .session-row.active .session-name { color: var(--accent-dark); font-weight: 600; }
 .session-status { width: 6px; height: 6px; flex: none; border-radius: 50%; background: color-mix(in srgb, var(--muted) 42%, transparent); transition: background .15s ease, box-shadow .15s ease; }
-.session-row.active .session-status.idle { background: color-mix(in srgb, var(--accent) 55%, transparent); }
 .session-status.running { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); animation: agent-running-pulse 1.8s ease-in-out infinite; }
 .session-status.waiting { background: var(--warm); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warm) 18%, transparent); }
-.session-status.asleep { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 60%, transparent); }
 .session-actions { margin-right: 4px; display: none; flex: none; align-items: center; }
 .session-actions .icon-button { width: 24px; height: 24px; border-radius: 4px; }
 .session-row:hover .session-actions, .session-actions:focus-within, .session-actions.open { display: flex; }
