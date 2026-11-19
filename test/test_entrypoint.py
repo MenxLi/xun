@@ -58,7 +58,7 @@ class _Service:
 
     def start(self, *, blocking=False):
         self.started = blocking
-        self.mounts[-1].display if self.mounts else None  # served: materializes, as a request would
+        self.mounts[-1].display_or_wake() if self.mounts else None  # served: materializes, as a request would
 
     def stop(self):
         self.stopped = True
@@ -102,7 +102,7 @@ class WebSessionTest(unittest.TestCase):
             initial = service.mounts[0]
             self.assertIsInstance(initial, DurableSession)
             session = service.kwargs["session_factory"]()
-            session.display  # served: materializes
+            session.display_or_wake()  # served: materializes
             workdir = self.agents[1].workspace.workdir
             self.assertTrue(workdir.is_dir())
             self.assertEqual(workdir.parent, session.directory)
@@ -161,7 +161,7 @@ class WebSessionTest(unittest.TestCase):
             service = _Service.instances[0]
             self.assertEqual(self.agents, [])  # the bare root display mounts without agents
             session = service.kwargs["session_factory"]()
-            session.display  # served: materializes
+            session.display_or_wake()  # served: materializes
             session.destroy()
 
         self.assertEqual(len(self.agents), 1)
@@ -174,7 +174,7 @@ class WebSessionTest(unittest.TestCase):
             durable = _new_session(None)
             self.addCleanup(durable.destroy)
             source = cast(DurableSession, durable)
-            source.display  # served before forking: materializes the source's agent
+            source.display_or_wake()  # served before forking: materializes the source's agent
             (source.directory / "workspace" / "keep.txt").write_text("carried")
             source.close()
 

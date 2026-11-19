@@ -184,9 +184,8 @@ class WebSession(Protocol):
     """A mountable session: mounted under `mount_path`. `destroy()` on removal,
     `close()` on shutdown, `rename()` to persist a new name.
 
-    Sessions may rest (see Residency): `display_alive` peeks without
-    waking, `offload()` releases the display (a no-op for eager sessions);
-    `fork()` copies under a fresh id, raising ValueError when impossible."""
+    Sessions may rest (see Residency): `display_or_none` peeks without waking, 
+    `offload()` releases the display; `fork()` copies under a fresh id"""
 
     @property
     def name(self) -> str: ...
@@ -194,11 +193,9 @@ class WebSession(Protocol):
     @property
     def mount_path(self) -> str: ...
 
-    @property
-    def display(self) -> WebDisplay: ...
+    def display_or_wake(self) -> WebDisplay: ...
 
-    @property
-    def display_alive(self) -> Optional[WebDisplay]: ...
+    def display_or_none(self) -> Optional[WebDisplay]: ...
 
     def offload(self) -> None: ...
 
@@ -237,8 +234,10 @@ class SimpleSession:
     def destroy(self) -> None:
         self.close()
 
-    @property
-    def display_alive(self) -> Optional[WebDisplay]:
+    def display_or_wake(self) -> WebDisplay:
+        return self.display
+
+    def display_or_none(self) -> Optional[WebDisplay]:
         return self.display  # eager: never rests
 
     def offload(self) -> None:
@@ -252,8 +251,8 @@ class SimpleSession:
 
 
 class _SessionDispatcher:
-    """ASGI app behind each mount: resolves `session.display` per request and
-    caches the built app per display generation (a display's routes close over it)."""
+    """ASGI app behind each mount: resolves `session.display_or_wake()` per request
+    and caches the built app per display generation (a display's routes close over it)."""
 
     def __init__(self, service: "WebDisplayService", mount_path: str) -> None:
         self._service = service
@@ -432,7 +431,7 @@ class WebDisplayService:
             if mounted is None:
                 raise HTTPException(404, "Session not found")
             source = mounted.session
-            live = source.display_alive
+            live = source.display_or_none()
             if live is not None and (live.has_waiting_prompts() or live.has_running_agents()):
                 raise HTTPException(409, "Cannot fork a busy session")  # a resting session is never busy
             try:  # copytree, db backup, and waking the copy are blocking work
@@ -533,9 +532,9 @@ class WebDisplayService:
         with self._session_lock:
             if mount_path in self._sessions:
                 raise ValueError(f"A display is already mounted at {mount_path or '/'}")
-            live = session.display_alive
+            live = session.display_or_none()
             if live is not None and any(
-                mounted.session.display_alive is live for mounted in self._sessions.values()
+                mounted.session.display_or_none() is live for mounted in self._sessions.values()
             ):
                 raise ValueError("A WebDisplay can only be mounted once")
             if any(
@@ -563,7 +562,7 @@ class WebDisplayService:
             if mounted is None:
                 raise HTTPException(404, "Session not found")
             self.app.routes.remove(mounted.route)
-            display = mounted.session.display_alive
+            display = mounted.session.display_or_none()
             if self._loop is not None and display is not None:
                 asyncio.run_coroutine_threadsafe(display._close_clients(), self._loop)
                 display._detach()
@@ -589,7 +588,7 @@ class WebDisplayService:
 
     def _session_info(self, mount_path: str) -> SessionInfo:
         mounted = self._sessions[mount_path]
-        live = mounted.session.display_alive
+        live = mounted.session.display_or_none()
         if live is None:
             status: SessionStatus = "asleep"  # resting: wakes on the next request
         elif live.has_waiting_prompts():
@@ -607,7 +606,7 @@ class WebDisplayService:
             if mounted is None or mounted.dispatcher is not dispatcher:
                 dispatcher.invalidate()
                 return None
-            display = mounted.session.display
+            display = mounted.session.display_or_wake()
             dispatcher.last_used = time.monotonic()
             app = dispatcher.cached_app(display)
             if app is None:
@@ -630,7 +629,7 @@ class WebDisplayService:
             # one LRU-sorted pass covers both limits: past a fresh session within
             # the cap, everything remaining is fresher and safe
             resident = sorted(
-                (m for m in self._sessions.values() if m.session.display_alive is not None),
+                (m for m in self._sessions.values() if m.session.display_or_none() is not None),
                 key=lambda m: m.dispatcher.last_used,
             )
             excess = len(resident) - config["max_awake"]
@@ -638,14 +637,14 @@ class WebDisplayService:
                 if excess <= 0 and mounted.dispatcher.last_used > deadline:
                     break
                 session = mounted.session
-                display = session.display_alive  # recheck: it may have ended since the census
+                display = session.display_or_none()  # recheck: it may have ended since the census
                 if display is None:
                     continue
                 if (mounted.dispatcher.in_flight or display.has_viewers()
                         or display.has_waiting_prompts() or display.has_running_agents()):
                     continue
                 session.offload()
-                if session.display_alive is not None:
+                if session.display_or_none() is not None:
                     continue  # an eager session cannot rest: it keeps its slot
                 mounted.dispatcher.invalidate()
                 if self._loop is not None:
@@ -677,7 +676,7 @@ class WebDisplayService:
             with self._session_lock:
                 self._loop = None
                 for path, mounted in tuple(self._sessions.items()):
-                    live = mounted.session.display_alive
+                    live = mounted.session.display_or_none()
                     if live is not None:
                         live._detach()
                     mounted.dispatcher.invalidate()

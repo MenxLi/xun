@@ -980,8 +980,10 @@ class WebDisplayTest(unittest.TestCase):
                 self.display = WebDisplay()
                 self.name = "new"
 
-            @property
-            def display_alive(self):
+            def display_or_wake(self):
+                return self.display
+
+            def display_or_none(self):
                 return self.display
 
             def offload(self):
@@ -1090,8 +1092,10 @@ class WebDisplayTest(unittest.TestCase):
                 self.display = WebDisplay()
                 self.name = "managed"
 
-            @property
-            def display_alive(self):
+            def display_or_wake(self):
+                return self.display
+
+            def display_or_none(self):
                 return self.display
 
             def offload(self):
@@ -1170,7 +1174,7 @@ class WebDisplayTest(unittest.TestCase):
             service = WebDisplayService(token="service-token", residency=Residency(max_awake=2, idle_timeout=float("inf")))
             for session in sessions:
                 service.mount(session)
-            awake = lambda: [s.display_alive is not None for s in sessions]  # noqa: E731
+            awake = lambda: [s.display_or_none() is not None for s in sessions]  # noqa: E731
             try:
                 with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
                     for i in range(3):
@@ -1203,7 +1207,7 @@ class WebDisplayTest(unittest.TestCase):
             )
             for session in sessions:
                 service.mount(session)
-            awake = lambda: [s.display_alive is not None for s in sessions]  # noqa: E731
+            awake = lambda: [s.display_or_none() is not None for s in sessions]  # noqa: E731
             try:
                 with TestClient(service.app, headers={"Authorization": "Bearer service-token"}) as client:
                     self.assertEqual(client.get("/session/s0/api/config").status_code, 200)

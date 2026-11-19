@@ -108,7 +108,7 @@ class DurableSession[D: DisplayAbstract]:
     """The session root. Construct through `new()`, `from_saved()`, or `fork()`.
 
     Thread-safe (`_lock` is reentrant: `_attach` initializes agents under it):
-    the session is resident only while someone holds `display` or is serving it."""
+    the session is resident only while someone holds `display_or_wake()` or is serving it."""
 
     directory: Path
     name: str
@@ -147,14 +147,12 @@ class DurableSession[D: DisplayAbstract]:
         stored = SessionMeta.load(directory, fallback_name=session_id)
         return DurableSession(directory, stored.name, stored.created_at, factory)
 
-    @property
-    def display_alive(self) -> "D | None":
+    def display_or_none(self) -> "D | None":
         """The display while resident; None when resting. Never materializes."""
         return self._live.display if self._live is not None else None
 
-    @property
-    def display(self) -> D:
-        """The session's display, materialized on first use (see `offload`)."""
+    def display_or_wake(self) -> D:
+        """The session's display, materializing it if resting (see `offload`)."""
         with self._lock:
             return self._materialize().display
 
@@ -181,7 +179,7 @@ class DurableSession[D: DisplayAbstract]:
     def offload(self) -> None:
         """Release the resident generation: members are saved and finalized, then the
         display and store are dropped. The session stays open and re-materializes on
-        the next `display`. Idempotent; a no-op on an ended or resting session."""
+        the next `display_or_wake()`. Idempotent; a no-op on an ended or resting session."""
         with self._lock:
             if not self._ended:
                 self._release(save=True)
@@ -206,7 +204,7 @@ class DurableSession[D: DisplayAbstract]:
             forked = DurableSession(directory, name or f"{self.name} (fork)", time.time(), self._factory)
             forked.save_meta()
             workdir = forked.directory / "workspace"
-            for agent in forked.display.agents.values():
+            for agent in forked.display_or_wake().agents.values():
                 agent.conversation.add_developer_message(
                     f"This session was forked from another session; its workspace was copied "
                     f"to {workdir}, which is now the working directory. Paths under "
@@ -249,7 +247,7 @@ class DurableSession[D: DisplayAbstract]:
         agent.state[MEMBER_KEY] = JsonEntry(True)
 
         def save(args: HookArgs.RunArgs) -> None:
-            if self._ended or args.agent.display is not self.display_alive:
+            if self._ended or args.agent.display is not self.display_or_none():
                 return  # a late save must not touch an ended or offloaded generation
             self._slot(args.agent.identifier).save(args.agent)
             self.save_meta()
