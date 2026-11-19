@@ -8,12 +8,13 @@ import base64
 import io
 import os
 from typing import Optional, Sequence
+from uuid import uuid4
 
 import httpx
 import rich
 from PIL import Image
 
-from xun import ExtensionContext, ToolCallContext as Context, tool_attr
+from xun import Agent, Command, ExtensionContext, ToolCallContext as Context, tool_attr
 
 _BASE_URL = os.environ.get("VLLM_OMNI_BASE_URL", "").rstrip("/")
 _API_KEY = os.environ.get("VLLM_OMNI_API_KEY", "") or "none"
@@ -118,7 +119,7 @@ def _save(img: Image.Image, path) -> None:
     img.save(path, format=fmt)
 
 
-@tool_attr(name="generate_image")
+@tool_attr(name="image-generate")
 def tool_generate_image(
     ctx: Context,
     prompt: str,
@@ -139,7 +140,7 @@ def tool_generate_image(
     return str(resolved.path)
 
 
-@tool_attr(name="edit_image")
+@tool_attr(name="image-edit")
 def tool_edit_image(
     ctx: Context,
     prompt: str,
@@ -166,10 +167,47 @@ def tool_edit_image(
     return str(resolved.path)
 
 
+def _default_out(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex[:6]}.png"
+
+
+def cmd_image_generate(agent: Agent[Agent.T.Init], args: list[str]) -> None:
+    """Generate an image: /image-generate "your prompt" [out.png] (quote the prompt)."""
+    if not args:
+        raise ValueError('Usage: /image-generate "your prompt" [out.png]')
+    img = generate_image(args[0])[0]
+    out = agent.workspace.resolve(args[1] if len(args) > 1 else _default_out("image")).path
+    _save(img, out)
+    agent.display_info(f"Generated image saved to `{out}`")
+
+
+def cmd_image_edit(agent: Agent[Agent.T.Init], args: list[str]) -> None:
+    """Edit image(s): /image-edit "prompt" in1.png [in2.png ...] [out=path.png] (quote the prompt)."""
+    if len(args) < 2:
+        raise ValueError('Usage: /image-edit "prompt" in1.png [in2.png ...] [out=path.png]')
+    prompt, out, inputs = args[0], None, []
+    for arg in args[1:]:
+        if out is None and arg.startswith("out="):
+            out = arg[4:]
+        else:
+            inputs.append(arg)
+    if not inputs:
+        raise ValueError('Usage: /image-edit "prompt" in1.png [in2.png ...] [out=path.png]')
+    images = [Image.open(agent.workspace.resolve(p).path).convert("RGB") for p in inputs]
+    img = generate_image(prompt, images)[0]
+    out_path = agent.workspace.resolve(out or _default_out("edit")).path
+    _save(img, out_path)
+    agent.display_info(f"Edited image saved to `{out_path}`")
+
+
 def setup_extension(ctx: ExtensionContext) -> None:
     if not _BASE_URL:
         raise RuntimeError("VLLM_OMNI_BASE_URL not set, im_gen extension cannot be set up.")
     ctx.agent.toolbox.register(tool_generate_image, tool_edit_image)
+    ctx.agent.command.register(
+        Command(name="image-generate", handler=cmd_image_generate),
+        Command(name="image-edit", handler=cmd_image_edit),
+    )
 
 
 if __name__ == "__main__":
