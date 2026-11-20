@@ -12,6 +12,7 @@ zip packing runs on a thread pool so it never blocks the event loop.
 
 from __future__ import annotations
 
+import io
 import mimetypes
 import os
 import re
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Callable, TYPE_CHECKING
 
 import puremagic
+from PIL import Image
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -115,6 +117,7 @@ MAX_ARCHIVE_SIZE = 1_073_741_824  # 1 GiB hard cap on the packed archive
 MAX_PREVIEW_TEXT_SIZE = 1_000_000  # 1 MB cap on inline text previews
 MAX_PREVIEW_IMAGE_SIZE = 20_971_520  # 20 MiB cap on inline image previews
 MAX_PREVIEW_DOCUMENT_SIZE = 20_000_000  # 20 MB cap on inline document previews
+THUMB_SIZE = 384  # thumbnail longest edge, px (banner shows at ~200px CSS, 2x-safe)
 CHUNK_SIZE = 1024 * 1024
 _SLASH_NAME = re.compile(r"[/\\]")
 
@@ -172,6 +175,16 @@ def _media_type(path: Path, file_stat: os.stat_result | None = None) -> str:
 def _is_text_media(media_type: str) -> bool:
     """Shared gate for inline preview and text saving."""
     return media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES
+
+
+def _make_thumbnail(path: Path, size: int = THUMB_SIZE) -> bytes:
+    """Downscale to a WebP thumbnail; draft mode lets JPEGs decode already reduced."""
+    with Image.open(path) as img:
+        img.draft("RGB", (size, size))
+        img.thumbnail((size, size))
+        buffer = io.BytesIO()
+        img.save(buffer, "WEBP", quality=80)
+    return buffer.getvalue()
 
 
 def _slugify(path: str) -> str:
@@ -307,6 +320,33 @@ def build_file_router(agent_getter: AgentGetter) -> APIRouter:
         if not target.is_file():
             raise HTTPException(404, "File not found")
         return FileResponse(target, media_type=_media_type(target), filename=target.name)
+
+    @router.get("/api/files/{agent_id}/thumb")
+    def thumbnail(agent_id: str, path: str) -> Response:
+        """WebP thumbnail for images; sync on purpose so decoding runs on the thread pool."""
+        target = resolve_path(agent_getter(agent_id), path)
+        try:
+            file_stat = target.stat()
+        except OSError as exc:
+            raise HTTPException(404, "File not found") from exc
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise HTTPException(404, "File not found")
+        if not _media_type(target, file_stat).startswith("image/"):
+            raise HTTPException(415, "Thumbnails are only available for images")
+        if file_stat.st_size > MAX_PREVIEW_IMAGE_SIZE:
+            raise HTTPException(413, "Image is too large to thumbnail")
+        try:
+            payload = _make_thumbnail(target)
+        except Exception:
+            # PIL raises a wide family (up to DecompressionBombError) on broken or hostile images
+            raise HTTPException(415, "Image cannot be decoded")
+        # weak ETag from mtime+size: stale thumbs refetch, unchanged ones stay cached
+        etag = f'W/"{file_stat.st_mtime_ns:x}-{file_stat.st_size:x}"'
+        return Response(
+            content=payload,
+            media_type="image/webp",
+            headers={**INLINE_SECURITY_HEADERS, "ETag": etag, "Cache-Control": "private, max-age=86400"},
+        )
 
     @router.get("/api/files/{agent_id}/archive")
     async def download_archive(agent_id: str, path: str = "") -> FileResponse:

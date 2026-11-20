@@ -31,6 +31,7 @@ const search = ref('')
 const entryIcon = (entry: FileEntry) => entry.kind === 'directory' ? Folder : entry.name.toLowerCase() === 'agents.md' ? Bot : File
 const previewEntry = ref<FileInfo | null>(null)
 const openInEdit = ref(false)
+const previewStartFullscreen = ref(false)
 const infoEntry = ref<PathInfo | null>(null)
 const dialog = ref<'delete' | null>(null)
 const dialogEntry = ref<FileEntry | null>(null)
@@ -148,7 +149,7 @@ function resizePreview(delta: number) {
   settings.previewHeight = clamp(settings.previewHeight - delta, 120, window.innerHeight - 220)
 }
 
-function setPreview(entry: FileInfo | null, asNewFile = false) {
+function setPreview(entry: FileInfo | null, asNewFile = false, fullscreen = false) {
   const current = previewEntry.value
   if (entry && !asNewFile && current?.path === entry.path && current.modified_at === entry.modified_at) return
   const apply = () => {
@@ -156,6 +157,9 @@ function setPreview(entry: FileInfo | null, asNewFile = false) {
     openInEdit.value = entry !== null && asNewFile
     previewDirty.value = false
     state.value.previewPath = entry?.path ?? null
+    // one-shot: FilePreview reads it on mount only, so it must not leak to later opens
+    previewStartFullscreen.value = fullscreen
+    if (fullscreen) void nextTick(() => { previewStartFullscreen.value = false })
   }
   if (current && previewDirty.value) {
     pendingPreviewDrop.value = apply
@@ -190,9 +194,11 @@ async function restoreBrowserState() {
   await refresh()
   if (!previewPath || !props.available || !agentId || sessionKey !== props.sessionKey || agentId !== props.agentId) return
   const request = ++metadataRequest
+  const fullscreen = state.value.previewFullscreen
+  state.value.previewFullscreen = false
   try {
     const file = asFileInfo(await api.fileInfo(agentId, previewPath))
-    if (request === metadataRequest && sessionKey === props.sessionKey && agentId === props.agentId && file) setPreview(file)
+    if (request === metadataRequest && sessionKey === props.sessionKey && agentId === props.agentId && file) setPreview(file, false, fullscreen)
   } catch {
     // The preview may have been removed while this session was inactive.
   }
@@ -228,9 +234,20 @@ async function refresh() {
   }
 }
 
-defineExpose({ refresh })
+defineExpose({ refresh, openPath, openDir })
 
-async function open(entry: FileEntry) {
+// Open a workspace file in the preview pane from outside the listing (e.g. a
+// file reference in a message), maximized since there is no listing context.
+async function openPath(target: string) {
+  await open({ name: target.split('/').pop() || target, path: target, kind: 'file' }, true)
+}
+
+// Browse a folder referenced from outside the listing (e.g. a message card).
+async function openDir(target: string) {
+  await open({ name: target.split('/').pop() || target, path: target, kind: 'directory' })
+}
+
+async function open(entry: FileEntry, fullscreen = false) {
   if (entry.kind === 'directory') {
     cancelInlineEdit(true)
     path.value = entry.path
@@ -240,7 +257,7 @@ async function open(entry: FileEntry) {
     const request = ++metadataRequest
     try {
       const file = asFileInfo(await api.fileInfo(props.agentId, entry.path))
-      if (request === metadataRequest) setPreview(file)
+      if (request === metadataRequest) setPreview(file, false, fullscreen)
     } catch (reason) {
       if (request === metadataRequest) error.value = errorMessage(reason, t('files.inspectFileError'))
     }
@@ -587,6 +604,7 @@ function serveRemaining(server: ServeServer): string {
       :agent-id="agentId"
       :entry="previewEntry"
       :open-in-edit="openInEdit"
+      :start-fullscreen="previewStartFullscreen"
       :style="{ height: `${settings.previewHeight}px` }"
       @resize="resizePreview"
       @close="setPreview(null)"

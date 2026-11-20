@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from .display_abstract import ModelMessageEvent, ModelWorkingEvent, ToolCallEvent, ToolResultEvent
 from .error_catch import ErrorInfo, Result, except_safe
 from .openai_helper import accumulate_tool_calls, ChatCompletionMessageWithReasoning
-from .types import CancelledError, ToolResultType
+from .types import CancelledError, ConclusiveToolResult, ToolResultType
 from .hooks import HookArgs
 
 # rename for semantics
@@ -86,13 +86,24 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
     for tool_id, tr in tool_results:
         agent.conversation.add_tool_result(tool_id, tr)
 
+    final = next((value for _, tr in tool_results if isinstance(value := tr.value, ConclusiveToolResult)), None)
+    if final is not None:
+        # display only, content already in the conversation as the tool result
+        agent.display_event(ModelMessageEvent(
+            model_call_id=str(uuid.uuid4()),
+            content=final.content,
+            total_tokens=agent.conversation.total_tokens or 0,
+            conclusive=True,
+            meta=final.meta,
+        ))
+
     after_exec_arg = HookArgs.AfterExecutionStepArgs(
         agent=agent,
-        should_continue=bool(tool_results)
+        should_continue=bool(tool_results) and final is None
     )
     agent.hooks.after_execution_step.invoke(after_exec_arg)
 
-    return after_exec_arg.should_continue, message.content or ""
+    return after_exec_arg.should_continue, final.content if final is not None else (message.content or "")
 
 
 def _is_retryable_completion_error(error: Exception) -> bool:

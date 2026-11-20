@@ -1,5 +1,7 @@
-from typing import Callable, Literal
+from typing import Callable, Literal, NotRequired, TypedDict
 from ..core.toolcall import tool_attr, ToolCallContext
+from ..core.types import ConclusiveToolResult, JsonType
+from .common import resolve_path
 
 @tool_attr(name="ask_preference")
 def framework_ask_user_preference(
@@ -50,5 +52,44 @@ def framework_extract_compacted_tool_result(
         raise ValueError(f"No compacted tool call result found for ID '{toolcall_id}'.")
     return content
 
+class ArtifactRef(TypedDict):
+    """A workspace artifact produced by the agent: a file or folder, relative to the workdir."""
+    path: str
+    note: NotRequired[str]
+
+@tool_attr(name="respond_with_artifacts")
+def framework_respond_with_artifacts(
+    ctx: ToolCallContext,
+    content: str,
+    artifacts: list[ArtifactRef],
+) -> ConclusiveToolResult:
+    """
+    Deliver the final reply and end the turn.
+    Call this as the last step of the task, whenever you need to deliver a reply with file references.
+
+    - `content`: the text reply shown to the user.
+    - `artifacts`: files/folders you want to refer to, each with `path` (relative to the working directory) and an optional `note`.
+      Whenever your reply involves files you produced, attach them here.
+
+    If you just need to reply without attaching files, just end the turn without tool calls.
+    """
+    workdir = ctx.agent.workspace.workdir.resolve()
+    refs: list[JsonType] = []
+    seen: set[str] = set()
+    for ref in artifacts:
+        resolved = resolve_path(ctx, ref["path"])
+        if not resolved.in_workdir:
+            raise ValueError(f"'{ref['path']}' is outside the working directory; report artifacts relative to it.")
+        path = resolved.path.resolve()  # normalize for relative_to; ResolvedPath.path keeps '..' verbatim
+        is_dir = path.is_dir()
+        if not (is_dir or path.is_file()):
+            raise ValueError(f"'{ref['path']}' does not exist or is not a file/folder.")
+        rel = path.relative_to(workdir).as_posix()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        refs.append({"path": rel, "dir": is_dir, "note": ref.get("note")})
+    return ConclusiveToolResult(content=content, meta={"artifacts": refs})
+
 def expose_framework_tools() -> list[Callable]:
-    return [framework_ask_user_preference, framework_extract_compacted_tool_result]
+    return [framework_ask_user_preference, framework_extract_compacted_tool_result, framework_respond_with_artifacts]

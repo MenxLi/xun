@@ -26,3 +26,10 @@ export function renderKind(mediaType: string | null, path: string): RenderKind |
 export function usesNativeViewer(kind: PreviewKind): kind is 'pdf' {
   return kind === 'pdf'
 }
+
+// extensions the /thumb endpoint can rasterize server-side; extend alongside the backend
+const THUMB_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'avif'])
+
+export function canThumb(path: string): boolean {
+  return THUMB_EXTS.has(path.split('.').pop()?.toLowerCase() ?? '')
+}

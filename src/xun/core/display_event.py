@@ -31,6 +31,8 @@ class ModelMessageEvent(BaseModel):
     """ Total tokens consumed by the conversation so far, as reported by the provider. """
     conclusive: bool = False
     """Whether the message concludes the execution, i.e. it is not followed by tool calls."""
+    meta: dict[str, JsonType] = Field(default_factory=dict)
+    """Extra metadata, such as file references, should be included via ConclusiveToolResult"""
 
 class ToolCallEvent(BaseModel):
     tool_call_id: str

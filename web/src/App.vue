@@ -318,6 +318,25 @@ function closeFiles() {
   else settings.filesOpen = false
 }
 
+// Open a referenced workspace artifact from the lazily mounted file panel:
+// folders browse, files preview maximized. When the panel is closed, stage the
+// target in the per-session browser state for FileBrowser to restore on mount.
+function openArtifact(path: string, dir: boolean) {
+  if (showFiles.value && fileBrowser.value) {
+    if (dir) void fileBrowser.value.openDir(path)
+    else void fileBrowser.value.openPath(path)
+    return
+  }
+  if (dir) {
+    browserState.value.path = path
+  } else {
+    browserState.value.previewPath = path
+    browserState.value.previewFullscreen = true
+  }
+  if (narrowLayout.value) narrowPanel.value = 'files'
+  else settings.filesOpen = true
+}
+
 function updateLayout() {
   const next = window.innerWidth < 900
   if (next !== narrowLayout.value) narrowPanel.value = null
@@ -760,7 +779,7 @@ onBeforeUnmount(() => {
 
       <div class="stream-wrap">
       <StickyScroll :key="currentSessionPath" ref="stream" :size="streamSize">
-        <EventStream v-if="streamEvents.length" :key="streamViewKey" :events="streamEvents" :markdown="settings.markdown" :running-agents="runningAgents" :selected-agent-id="selectedAgentId" />
+        <EventStream v-if="streamEvents.length" :key="streamViewKey" :events="streamEvents" :markdown="settings.markdown" :running-agents="runningAgents" :selected-agent-id="selectedAgentId" :files-available="exposeFiles === true" @preview-artifact="openArtifact" />
         <div v-if="visiblePrompts.length || visibleSteering.length" class="prompt-stream">
           <PromptCard
             v-for="prompt in visiblePrompts"

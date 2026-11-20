@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from .core.display_abstract import DisplayAbstract
 from .core.null_display import NullDisplay
-from .core.types import Result, ToolResultType, ErrorInfo, CancelledError, ToJson, FromJson
+from .core.types import Result, ToolResultType, ErrorInfo, CancelledError, ConclusiveToolResult, ToJson, FromJson
 from .core.agent_state import StateEntry, StatePersistEntry, StateRuntimeEntry, JsonEntry, RuntimeEntry, AgentState
 from .core.hooks import HookArgs, Hooks
 from .core.command import Command, CommandRegistry
@@ -55,5 +55,6 @@ __all__ = [
     "CompactorAbstract", "AutoCompactor",
     "setup_agent", "interactive_session", "web_session",
     "main", "main_serve", "main_container",
-    "Result", "ToolResultType", "ErrorInfo", "CancelledError", "ToJson", "FromJson",
+    "Result", "ToolResultType", "ErrorInfo", "CancelledError", "ConclusiveToolResult",
+    "ToJson", "FromJson",
 ]

@@ -13,7 +13,7 @@ import type { FileInfo, SavedFile } from '../types'
 
 type PreviewView = 'render' | 'source' | 'edit'
 
-const props = defineProps<{ agentId: string; entry: FileInfo; openInEdit?: boolean }>()
+const props = defineProps<{ agentId: string; entry: FileInfo; openInEdit?: boolean; startFullscreen?: boolean }>()
 const emit = defineEmits<{
   resize: [delta: number]
   close: []
@@ -59,7 +59,7 @@ watch([() => props.entry.path, () => props.entry.modified_at], ([path, modifiedA
   text.value = ''
   buffer.value = ''
   view.value = kind.value === 'text' ? (props.openInEdit ? 'edit' : render.value ? 'render' : 'source') : 'render'
-  fullscreen.value = view.value === 'edit'
+  fullscreen.value = props.startFullscreen || view.value === 'edit'
   if (!previous || previous[0] !== path) zoom.value = 100
   if (props.openInEdit) return  // a staged new file has nothing on disk to read yet
   if (kind.value !== 'text') return

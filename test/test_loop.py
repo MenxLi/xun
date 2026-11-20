@@ -6,9 +6,11 @@ from typing import cast
 from unittest.mock import patch
 
 from xun import Agent, NullDisplay
-from xun.core.display_abstract import DisplayAbstract, DisplayEvent
+from xun.core.display_abstract import DisplayAbstract, DisplayEvent, ModelMessageEvent
 from xun.core.hooks import HookArgs
-from xun.core.loop import _execute_step
+from xun.core.loop import _execute_step, execution_loop
+from xun.core.toolbox import ToolBox
+from xun.core.types import ConclusiveToolResult
 from xun.core.workspace import Workspace
 
 
@@ -80,6 +82,103 @@ class CompletionRetryTest(unittest.TestCase):
         raised, _ = self._run(auto_confirm=True)
         self.assertIn("provider unavailable", str(raised))
         self.assertEqual(self.attempts, 4)
+
+
+class _RecordingDisplay(DisplayAbstract):
+    def __init__(self) -> None:
+        self.received: list[DisplayEvent] = []
+
+    def on_event(self, event: DisplayEvent) -> None:
+        self.received.append(event)
+
+    def get_choice(self, request: DisplayAbstract.ChoiceRequest) -> str:
+        return "No"
+
+
+def _tool_call_chunk(tool_name: str, arguments: str):
+    delta = SimpleNamespace(
+        content=None,
+        tool_calls=[SimpleNamespace(
+            index=0,
+            id="call-1",
+            type="function",
+            function=SimpleNamespace(name=tool_name, arguments=arguments),
+        )],
+    )
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta)], usage=None)
+
+def _usage_chunk(total_tokens: int):
+    usage = SimpleNamespace(
+        completion_tokens=10,
+        prompt_tokens=total_tokens - 10,
+        total_tokens=total_tokens,
+        prompt_tokens_details=None,
+    )
+    return SimpleNamespace(choices=[], usage=usage)
+
+
+class ConclusiveToolResultTest(unittest.TestCase):
+    """A tool returning ConclusiveToolResult must close the run and carry meta to the closing message."""
+
+    def setUp(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self.display = _RecordingDisplay()
+        self.agent = Agent(
+            display=self.display,
+            workspace=Workspace(workdir=Path(self._tmp.name)),
+        )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _run(self, tool, name: str = "finish", tokens: int = 123) -> tuple[str, list[DisplayEvent]]:
+        self.agent.openai_client = SimpleNamespace(  # type: ignore[assignment]
+            chat=SimpleNamespace(completions=SimpleNamespace(
+                create=lambda **kwargs: iter([_tool_call_chunk(name, '{"summary": "done"}'), _usage_chunk(tokens)])
+            ))
+        )
+        self.agent.toolbox = ToolBox().register(tool)
+        params = HookArgs.BeforeExecutionArgs(agent=cast("Agent[Agent.T.Init]", self.agent), schema=None, max_iterations=1)
+        result = execution_loop(params)
+        return cast(str, result), list(self.display.received)
+
+    def test_conclusive_result_closes_the_run_with_meta_and_paired_history(self) -> None:
+        def finish(summary: str) -> ConclusiveToolResult:
+            """Finish the task."""
+            return ConclusiveToolResult(content=summary, meta={"artifacts": [{"path": "out/report.md", "dir": False, "note": "report"}]})
+
+        result, received = self._run(finish)
+        self.assertEqual(result, "done")
+
+        names = [event.name for event in received]
+        self.assertEqual(names, ["ModelWorkingEvent", "ToolCallEvent", "ToolResultEvent", "ModelMessageEvent"])
+
+        closing = received[-1].payload
+        assert isinstance(closing, ModelMessageEvent)
+        self.assertTrue(closing.conclusive)
+        self.assertEqual(closing.content, "done")
+        self.assertEqual(closing.total_tokens, 123)
+        self.assertEqual(closing.meta, {"artifacts": [{"path": "out/report.md", "dir": False, "note": "report"}]})
+
+        # closing message sits outside the tool-call span so displays render it top-level
+        self.assertIsNone(received[-1].span.tool_call)
+
+        # history ends at the paired tool result; the closing message is display-only
+        history = self.agent.conversation.messages
+        roles = [message.role for message in history]
+        self.assertEqual(roles[-2:], ["assistant", "tool"])
+        self.assertIn("artifacts", history[-1].content_str)
+        self.assertIn("done", history[-1].content_str)
+
+    def test_tool_error_does_not_end_the_run(self) -> None:
+        def failing(summary: str) -> ConclusiveToolResult:
+            """Fail on purpose."""
+            raise RuntimeError("nope")
+
+        with self.assertRaises(RuntimeError) as raised:
+            self._run(failing, name="failing", tokens=50)
+        self.assertIn("Maximum tool call iterations", str(raised.exception))
+        self.assertNotIn("ModelMessageEvent", [event.name for event in self.display.received])
 
 
 if __name__ == "__main__":

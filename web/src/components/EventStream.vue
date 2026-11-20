@@ -8,11 +8,15 @@ import HtmlText from './HtmlText.vue'
 import ToolCalls from './ToolCalls.vue'
 import ConfirmPill from './ConfirmPill.vue'
 import ActivityPreview from './ActivityPreview.vue'
+import ArtifactRefCard from './ArtifactRefCard.vue'
 import { eventTime, formatTokens, fullEventTime } from '../api'
 import { copyText } from '../clipboard'
+import { artifactRefsOf } from '../types'
+import { canThumb } from '../preview'
 import type { AgentInfo, ConfirmDisplayEvent, DisplayEvent, ModelMessageDisplayEvent, ToolCallDisplayEvent, ToolItem } from '../types'
 
-const props = defineProps<{ events: DisplayEvent[]; markdown: boolean; runningAgents: Set<string>; selectedAgentId: string }>()
+const props = defineProps<{ events: DisplayEvent[]; markdown: boolean; runningAgents: Set<string>; selectedAgentId: string; filesAvailable: boolean }>()
+const emit = defineEmits<{ previewArtifact: [path: string, dir: boolean] }>()
 const { t } = useI18n()
 
 type TurnStep =
@@ -232,6 +236,15 @@ function displayText(event: DisplayEvent): string {
   return event.name === 'InfoEvent' && isUser(event) ? value.slice(7) : value
 }
 
+function artifactRefs(event: DisplayEvent) {
+  return event.name === 'ModelMessageEvent' ? artifactRefsOf(event) : []
+}
+
+// gallery banners only when the whole row can show thumbnails; mixed rows go compact
+function artifactsBig(refs: ReturnType<typeof artifactRefs>) {
+  return props.filesAvailable && refs.every(ref => ref.dir !== true && canThumb(ref.path))
+}
+
 const copiedKey = ref('')
 let copyTimer = 0
 
@@ -429,6 +442,17 @@ onBeforeUnmount(() => window.clearTimeout(copyTimer))
             <MarkdownText :content="displayText(item.data)" :enabled="markdown" />
           </CollapsibleMessage>
           <MarkdownText v-else-if="displayText(item.data)" :content="displayText(item.data)" :enabled="markdown" :plain="isPlainTextEvent(item.data)" />
+          <div v-if="artifactRefs(item.data).length" class="artifact-refs">
+            <ArtifactRefCard
+              v-for="ref in artifactRefs(item.data)"
+              :key="ref.path"
+              :artifact="ref"
+              :agent-id="item.data.agent.identifier"
+              :preview-enabled="filesAvailable"
+              :big="artifactsBig(artifactRefs(item.data))"
+              @activate="emit('previewArtifact', ref.path, ref.dir === true)"
+            />
+          </div>
           <div v-if="item.data.name === 'UserMessageEvent' && item.data.payload.images.length" class="message-images">
             <a v-for="image in item.data.payload.images" :key="image.value" :href="image.value" target="_blank" rel="noopener noreferrer">
               <img :src="image.value" :alt="t('stream.attachedImage')">

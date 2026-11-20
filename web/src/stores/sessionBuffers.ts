@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 
 export type AttachedImage = { file: File; url: string }
-export type BrowserState = { path: string; previewPath: string | null }
+export type BrowserState = { path: string; previewPath: string | null; previewFullscreen: boolean }
 export type SessionBuffer = {
   input: string
   images: AttachedImage[]
@@ -14,7 +14,7 @@ function createBuffer(): SessionBuffer {
     input: '',
     images: [],
     selectedAgentId: '',
-    browser: { path: '', previewPath: null },
+    browser: { path: '', previewPath: null, previewFullscreen: false },
   }
 }
 

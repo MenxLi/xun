@@ -152,6 +152,8 @@ export const api = {
     fetchOk(api.contentUrl(agentId, path)).then(response => response.text()),
   downloadUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/download?${query({ path })}`),
+  thumbUrl: (agentId: string, path: string) =>
+    appUrl(`/api/files/${encodeURIComponent(agentId)}/thumb?${query({ path })}`),
   archiveUrl: (agentId: string, path: string) =>
     appUrl(`/api/files/${encodeURIComponent(agentId)}/archive?${query({ path })}`),
   upload: (agentId: string, path: string, files: File[]) => {

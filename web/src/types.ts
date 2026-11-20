@@ -55,13 +55,19 @@ export interface ImageDescriptor {
   value: string
 }
 
+export interface ArtifactRef {
+  path: string
+  dir?: boolean
+  note?: string
+}
+
 export type DisplayEvent =
   | EventEnvelope<'AgentBindEvent', Record<string, never>>
   | EventEnvelope<'AgentUnbindEvent', Record<string, never>>
   | EventEnvelope<'AgentRunningStartEvent', Record<string, never>>
   | EventEnvelope<'AgentRunningEndEvent', Record<string, never>>
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
-  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number; conclusive: boolean }>
+  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number; conclusive: boolean; meta?: Record<string, unknown> }>
   | ToolCallDisplayEvent
   | ToolResultDisplayEvent
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
@@ -78,6 +84,14 @@ export type DisplayEvent =
   | EventEnvelope<'CustomEvent', { value: unknown }>
 
 export type ModelMessageDisplayEvent = Extract<DisplayEvent, { name: 'ModelMessageEvent' }>
+
+// Workspace artifacts (files/folders) attached by a tool to the closing message's meta.
+export function artifactRefsOf(event: ModelMessageDisplayEvent): ArtifactRef[] {
+  const refs = event.payload.meta?.artifacts
+  if (!Array.isArray(refs)) return []
+  return refs.filter((ref): ref is ArtifactRef =>
+    typeof ref === 'object' && ref !== null && typeof (ref as ArtifactRef).path === 'string')
+}
 export type ConfirmDisplayEvent = Extract<DisplayEvent, { name: 'ConfirmEvent' }>
 
 export type ToolItem = { key: string; call: ToolCallDisplayEvent; result?: ToolResultDisplayEvent }

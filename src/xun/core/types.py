@@ -20,7 +20,7 @@ else:
 
 import json
 from typing import Callable, Literal, Protocol, Self, Union, cast
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # These are not an abstract that must obey a specific inheritance,
 # but a suggested contract for all classes implementing JSON ser/de.
@@ -130,4 +130,15 @@ class CancelledError(Exception):
 type ModelCapabilityType = Literal['vision']
 ModelCapabilityOptions = set(['vision'])
 
-type ToolResultType = Result[JsonType, ErrorInfo]
+type ToolResultType = Result[JsonType | ConclusiveToolResult, ErrorInfo]
+
+@dataclass
+class ConclusiveToolResult(ToJson):
+    """Tool result that ends the run: content/meta become the closing model message.
+    The meta schema is a tool/display convention; core only transports it.
+    execute() returns content only; meta reaches callers via display events."""
+    content: str
+    meta: dict[str, JsonType] = field(default_factory=dict)
+
+    def to_json(self) -> dict[str, JsonType]:
+        return {"content": self.content, "meta": dict(self.meta)}

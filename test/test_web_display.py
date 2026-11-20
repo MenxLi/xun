@@ -496,6 +496,27 @@ class WebDisplayTest(unittest.TestCase):
                 response = self.client.get(f"api/files/agent-1/content/{name}")
                 self.assertEqual(response.status_code, 415)
 
+    def test_thumbnail_serves_webp_for_images_only(self) -> None:
+        image = Image.new("RGB", (900, 600), "seagreen")
+        buffer = BytesIO()
+        image.save(buffer, "PNG")
+        (self.root / "pic.png").write_bytes(buffer.getvalue())
+        (self.root / "note.txt").write_text("not an image", encoding="utf-8")
+
+        response = self.client.get("api/files/agent-1/thumb", params={"path": "pic.png"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "image/webp")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertIn("W/", response.headers["etag"])
+        thumb = Image.open(BytesIO(response.content))
+        self.assertEqual(thumb.format, "WEBP")
+        self.assertLessEqual(max(thumb.size), 384)
+
+        refused = self.client.get("api/files/agent-1/thumb", params={"path": "note.txt"})
+        self.assertEqual(refused.status_code, 415)
+        missing = self.client.get("api/files/agent-1/thumb", params={"path": "gone.png"})
+        self.assertEqual(missing.status_code, 404)
+
     def test_download_folder_as_archive(self) -> None:
         folder = self.root / "assets" / "nested"
         folder.mkdir(parents=True)
