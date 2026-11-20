@@ -1,6 +1,6 @@
 import hashlib, datetime
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 import rich
 import rich.box
 import rich.table
@@ -12,10 +12,12 @@ import rich.markup
 import rich.text
 
 from ..core.display_abstract import *
+from ..core.types import JsonType
 from .cli_session import CliSession, CommandProvider
 if TYPE_CHECKING:
     from ..core.agent import Agent
     from ..core.agent_lifecycle import T
+    from ..tools.framework import ArtifactRefOut
 
 class Display(DisplayAbstract):
     def __init__(self, event_buffer_size: int = 1000):
@@ -166,7 +168,7 @@ class Display(DisplayAbstract):
             return f"{t}"
         if not ev.content.strip(): 
             return
-        self._print(rich.console.Group(
+        parts = [
             rich.text.Text.assemble(
                 ("──── ", "dim cyan"),
                 (event.agent.name, "bold cyan"),
@@ -174,12 +176,34 @@ class Display(DisplayAbstract):
             rich.text.Text(""),
             rich.markdown.Markdown(ev.content, code_theme="monokai", hyperlinks=True),
             rich.text.Text(""),
-            rich.rule.Rule(
-                rich.text.Text(f"{fmt_tokens(ev.total_tokens)} tokens", style="dim"),
-                style="dim cyan",
-                align="right",
-            ),
+        ]
+
+        if refs := self.__artifact_refs(ev.meta):
+            parts.append(rich.text.Text.from_markup("[dim]artifacts[/dim]"))
+            for ref in refs:
+                line = rich.text.Text("  ")
+                line.append(rich.markup.escape(ref["path"] + ("/" if ref["dir"] else "")), style="cyan")
+                if note := ref.get("note"):
+                    line.append(f" · {rich.markup.escape(note)}", style="dim")
+                parts.append(line)
+            parts.append(rich.text.Text(""))
+
+        parts.append(rich.rule.Rule(
+            rich.text.Text(f"{fmt_tokens(ev.total_tokens)} tokens", style="dim"),
+            style="dim cyan",
+            align="right",
         ))
+        self._print(rich.console.Group(*parts))
+
+    @staticmethod
+    def __artifact_refs(meta: dict[str, JsonType]) -> list["ArtifactRefOut"]:
+        raw = meta.get("artifacts")
+        if not isinstance(raw, list):
+            return []
+        return [cast("ArtifactRefOut", ref) for ref in raw
+                if isinstance(ref, dict) and isinstance(ref.get("path"), str)
+                and isinstance(ref.get("dir"), bool)
+                and (ref.get("note") is None or isinstance(ref.get("note"), str))]
 
     def _show_warning(self, event: DisplayEvent[WarningEvent]) -> None:
         self._print(f"[bold yellow]warning[/bold yellow] · {event.payload.message}")

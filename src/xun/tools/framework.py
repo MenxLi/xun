@@ -1,4 +1,4 @@
-from typing import Callable, Literal, NotRequired, TypedDict
+from typing import Callable, Literal, NotRequired, TypedDict, cast
 from ..core.toolcall import tool_attr, ToolCallContext
 from ..core.types import ConclusiveToolResult, JsonType
 from .common import resolve_path
@@ -53,9 +53,17 @@ def framework_extract_compacted_tool_result(
     return content
 
 class ArtifactRef(TypedDict):
-    """A workspace artifact produced by the agent: a file or folder, relative to the workdir."""
     path: str
     note: NotRequired[str]
+
+class ArtifactRefOut(TypedDict):
+    path: str
+    dir: bool
+    note: NotRequired[str]
+
+class ArtifactMeta(TypedDict):
+    """The meta schema of respond_with_artifacts; displays narrow to this."""
+    artifacts: list[ArtifactRefOut]
 
 @tool_attr(name="respond_with_artifacts")
 def framework_respond_with_artifacts(
@@ -74,7 +82,7 @@ def framework_respond_with_artifacts(
     If you just need to reply without attaching files, just end the turn without tool calls.
     """
     workdir = ctx.agent.workspace.workdir.resolve()
-    refs: list[JsonType] = []
+    refs: list[ArtifactRefOut] = []
     seen: set[str] = set()
     for ref in artifacts:
         resolved = resolve_path(ctx, ref["path"])
@@ -88,8 +96,13 @@ def framework_respond_with_artifacts(
         if rel in seen:
             continue
         seen.add(rel)
-        refs.append({"path": rel, "dir": is_dir, "note": ref.get("note")})
-    return ConclusiveToolResult(content=content, meta={"artifacts": refs})
+        out: ArtifactRefOut = {"path": rel, "dir": is_dir}
+        if note := ref.get("note"):
+            out["note"] = note
+        refs.append(out)
+    # TypedDicts are statically incompatible with dict[str, JsonType] (invariance);
+    # the payload is plain JSON at runtime, so widen once here for the core transport
+    return ConclusiveToolResult(content=content, meta=cast(dict[str, JsonType], ArtifactMeta(artifacts=refs)))
 
 def expose_framework_tools() -> list[Callable]:
     return [framework_ask_user_preference, framework_extract_compacted_tool_result, framework_respond_with_artifacts]

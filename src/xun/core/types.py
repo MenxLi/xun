@@ -135,8 +135,9 @@ type ToolResultType = Result[JsonType | ConclusiveToolResult, ErrorInfo]
 @dataclass
 class ConclusiveToolResult(ToJson):
     """Tool result that ends the run: content/meta become the closing model message.
-    The meta schema is a tool/display convention; core only transports it.
-    execute() returns content only; meta reaches callers via display events."""
+    The meta schema is a tool/display convention; core only transports it (plain JSON);
+    consumers narrow it with their own TypedDicts. execute() returns content only;
+    meta currently reaches callers via display events."""
     content: str
     meta: dict[str, JsonType] = field(default_factory=dict)
 

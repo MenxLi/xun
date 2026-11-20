@@ -119,6 +119,25 @@ class DisplayTest(unittest.TestCase):
 
         self.assertFalse(input_thread.is_alive())
 
+    def test_model_message_meta_renders_artifact_lines(self) -> None:
+        display = Display()
+        output = io.StringIO()
+        display.console = rich.console.Console(file=output, force_terminal=True, width=100)
+        display.on_event(_ev(ModelMessageEvent(
+            model_call_id="m1", content="built", total_tokens=42,
+            meta={"artifacts": [
+                {"path": "out/report.md", "dir": False, "note": "the report"},
+                {"path": "out assets", "dir": True},
+                {"no_path": 1},
+            ]},
+        )))
+        rendered = output.getvalue()
+        self.assertIn("artifacts", rendered)
+        self.assertIn("out/report.md", rendered)
+        self.assertIn("the report", rendered)
+        self.assertIn("out assets/", rendered)
+        self.assertNotIn("no_path", rendered)
+
     def test_running_events_are_ignored(self) -> None:
         display = Display()
         display._unhandled = Mock()
