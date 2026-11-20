@@ -130,7 +130,7 @@ def tool_generate_image(
 ) -> str:
     """
     Generate an image from a text prompt, save it to output_path, and return the path.
-    size: "WIDTHxHEIGHT", e.g. "1024x1024". seed: set for reproducibility.
+    size: "WIDTHxHEIGHT", e.g. "512x512". seed: set for reproducibility.
     """
     img = generate_image(prompt, size=size, seed=seed,
                          negative_prompt=negative_prompt)[0]
