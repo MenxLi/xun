@@ -94,7 +94,7 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
             content=final.content,
             total_tokens=agent.conversation.total_tokens or 0,
             conclusive=True,
-            meta=final.meta,
+            meta=dict(final.meta),  # copy in case filter alter
         ))
 
     after_exec_arg = HookArgs.AfterExecutionStepArgs(

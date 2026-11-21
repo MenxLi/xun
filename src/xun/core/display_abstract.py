@@ -86,7 +86,8 @@ class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
             span=self.span.snapshot(),
             payload=ev,
         )
-        if self.display._suppressed(event): return
+        event = self.display._filter_event(event)
+        if event is None: return
         self.display._record_event(event)
         self.display.on_event(event)
 

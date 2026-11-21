@@ -363,20 +363,25 @@ class DisplayEventStoreMixin:
     consumers need to set their own capacity via `with_buffer_size`."""
 
     _event_buffer: EventStore | None = None
-    _event_suppressors: tuple[Callable[[DisplayEvent], bool], ...] = ()
+    _event_filters: tuple[Callable[[DisplayEvent], Optional[DisplayEvent]], ...] = ()
 
     @contextmanager
-    def suppress_filter(self, drop: Callable[[DisplayEvent], bool]):
-        """Within scope, events matching `drop` are muted. Nestable"""
-        saved = self._event_suppressors
-        self._event_suppressors = (*saved, drop)
+    def event_filter(self, transform: Callable[[DisplayEvent], Optional[DisplayEvent]]):
+        """Within scope, events are piped through `transform`: return a rewritten event, or
+        None to mute it. Filters chain in registration order; nestable."""
+        saved = self._event_filters
+        self._event_filters = (*saved, transform)
         try:
             yield
         finally:
-            self._event_suppressors = saved
+            self._event_filters = saved
 
-    def _suppressed(self, event: DisplayEvent) -> bool:
-        return any(drop(event) for drop in self._event_suppressors)
+    def _filter_event(self, event: DisplayEvent) -> Optional[DisplayEvent]:
+        filtered: Optional[DisplayEvent] = event
+        for transform in self._event_filters:
+            if (filtered := transform(filtered)) is None:
+                return None
+        return filtered
 
     @property
     def event_store(self) -> EventStore:

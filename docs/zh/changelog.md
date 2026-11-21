@@ -5,7 +5,7 @@
 ### 核心
 
 - 新增终结工具 `respond_with_artifacts`，可结束执行并返回产物。
-- 显示层新增事件抑制过滤器 `suppress_filter`：作用域内匹配的事件被静默丢弃。
+- 显示层新增作用域事件过滤器 `event_filter`：作用域内事件经由 `ev -> Optional[ev]` 链式改写，返回 `None` 则静默丢弃。
 - 移除 `Agent.info` / `warning` / `error` 兼容别名，统一使用 `display_info` / `display_warning` / `display_error`。
 
 ### Web 服务与前端

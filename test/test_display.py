@@ -323,6 +323,28 @@ def _render(events, title="Session") -> str:
     return display.render_history_as_html(title=title)
 
 
+class EventFilterTest(unittest.TestCase):
+    def test_filter_drops_rewrites_and_chains_in_scope(self) -> None:
+        display = Display()
+        def shout(e):  # in-place rewrite is allowed: events are fresh to the pipeline
+            e.payload.content = e.payload.content.upper()
+            return e
+        mute = lambda e: None if e.payload.content == "mute" else e
+        ev = lambda c: _ev(ModelMessageEvent(model_call_id="m", content=c, total_tokens=1))
+
+        with display.event_filter(mute):
+            self.assertIsNone(display._filter_event(ev("mute")))
+            self.assertIsNotNone(display._filter_event(ev("keep")))
+        self.assertIsNotNone(display._filter_event(ev("mute")))  # out of scope
+
+        with display.event_filter(shout):
+            kept = display._filter_event(ev("hi"))
+            assert kept is not None
+            self.assertEqual(kept.payload.content, "HI")
+            with display.event_filter(lambda e: None if e.payload.content == "HI" else e):
+                self.assertIsNone(display._filter_event(ev("hi")))  # chained: sees earlier rewrites
+
+
 class RenderHistoryAsHtmlTest(unittest.TestCase):
     def test_tool_call_result_pairing_expands_json(self) -> None:
         events = [

@@ -171,7 +171,7 @@ class DurableSession[D: DisplayAbstract]:
             if display.event_store is not event_store:
                 raise RuntimeError("Display's event store does not match the session's event store")
             self._live = _Live(event_store, display)
-            with display.suppress_filter(lambda e: isinstance(e.payload, AgentBindEvent)):
+            with display.event_filter(lambda e: None if isinstance(e.payload, AgentBindEvent) else e):
                 for agent in agents:
                     self._adopt(agent)
         return self._live
@@ -278,7 +278,7 @@ class DurableSession[D: DisplayAbstract]:
         live = self._live
         if live is None:
             return
-        with live.display.suppress_filter(lambda e: isinstance(e.payload, AgentUnbindEvent)):
+        with live.display.event_filter(lambda e: None if isinstance(e.payload, AgentUnbindEvent) else e):
             for agent in self._members():  # bind order keeps closing events chronological
                 agent.finalize()
                 if save:
