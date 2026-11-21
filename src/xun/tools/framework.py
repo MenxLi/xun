@@ -79,8 +79,8 @@ def framework_respond_with_artifacts(
       artifacts in the text itself, as if no file references were attached.
     - `artifacts`: files/folders you want to refer to, each with `path` (relative to the working
       directory) and an optional `note`. Whenever your reply involves files you produced, attach
-      them here; this is display metadata that renders the files as cards, never a substitute
-      for describing them in `content`.
+      them here; this is display metadata that may be rendered for better visualization, never 
+      a substitution for `content`.
 
     If you just need to reply without attaching files, just end the turn without tool calls.
     """

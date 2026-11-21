@@ -1,8 +1,7 @@
-"""Image generation and editing via a vllm-omni server (OpenAI-compatible).
-
-Env: VLLM_OMNI_BASE_URL (required), VLLM_OMNI_API_KEY, VLLM_OMNI_MODEL.
-APIs: https://docs.vllm.ai/projects/vllm-omni/en/latest/serving/image_generation_api/
+"""Image generation and editing via a vllm-omni server (OpenAI-compatible).  
+Refer to: https://docs.vllm.ai/projects/vllm-omni/en/latest/serving/image_generation_api/
 """
+# Env: VLLM_OMNI_BASE_URL (required), VLLM_OMNI_API_KEY, VLLM_OMNI_MODEL.
 
 import base64
 import io
