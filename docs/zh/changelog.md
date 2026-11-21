@@ -6,6 +6,7 @@
 
 - 新增终结工具 `respond_with_artifacts`，可结束执行并返回产物。
 - 显示层新增作用域事件过滤器 `event_filter`：作用域内事件经由 `ev -> Optional[ev]` 链式改写，返回 `None` 则静默丢弃。
+- 显示事件封装新增 `meta` 字段，可对任意事件做显示侧注记。
 - 移除 `Agent.info` / `warning` / `error` 兼容别名，统一使用 `display_info` / `display_warning` / `display_error`。
 
 ### Web 服务与前端
@@ -22,7 +23,7 @@
 
 ### API 变更
 
-- 工具结果新增 `ConclusiveToolResult`：可结束执行的终结结果，`content` 返回文字给调用方，`meta` 经显示事件以纯 JSON 透传，显示层自行解析。
+- 工具结果新增 `ConclusiveToolResult`：可结束执行的终结结果，`content` 返回文字给调用方，`meta` 以纯 JSON 挂在 `DisplayEvent` 包装层透传，显示层自行解析。
 - `WebSession` 协议扩展：新增 `display_or_none()`（探看不唤醒）、`offload()`（休眠）、`fork()`（以新 id 复制会话）。
 - `WebDisplayService` 新增 `residency`（`Residency(max_awake, idle_timeout)`）与 `can_fork` 参数；`mount()` 简化，服务侧统一接管会话生命周期。
 

@@ -89,13 +89,15 @@ def _execute_step(params: ExecutionLoopParams, remaining_iterations: int) -> tup
     final = next((value for _, tr in tool_results if isinstance(value := tr.value, ConclusiveToolResult)), None)
     if final is not None:
         # display only, content already in the conversation as the tool result
-        agent.display_event(ModelMessageEvent(
-            model_call_id=str(uuid.uuid4()),
-            content=final.content,
-            total_tokens=agent.conversation.total_tokens or 0,
-            conclusive=True,
-            meta=dict(final.meta),  # copy in case filter alter
-        ))
+        agent.display_event(
+            ModelMessageEvent(
+                model_call_id=str(uuid.uuid4()),
+                content=final.content,
+                total_tokens=agent.conversation.total_tokens or 0,
+                conclusive=True,
+            ),
+            meta=dict(final.meta),  # copy: the conversation's dict stays owned by the model-facing history
+        )
 
     after_exec_arg = HookArgs.AfterExecutionStepArgs(
         agent=agent,

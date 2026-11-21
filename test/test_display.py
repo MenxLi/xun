@@ -125,12 +125,11 @@ class DisplayTest(unittest.TestCase):
         display.console = rich.console.Console(file=output, force_terminal=True, width=100)
         display.on_event(_ev(ModelMessageEvent(
             model_call_id="m1", content="built", total_tokens=42,
-            meta={"artifacts": [
-                {"path": "out/report.md", "dir": False, "note": "the report"},
-                {"path": "out assets", "dir": True},
-                {"no_path": 1},
-            ]},
-        )))
+        ), meta={"artifacts": [
+            {"path": "out/report.md", "dir": False, "note": "the report"},
+            {"path": "out assets", "dir": True},
+            {"no_path": 1},
+        ]}))
         rendered = output.getvalue()
         self.assertIn("artifacts", rendered)
         self.assertIn("out/report.md", rendered)
@@ -312,8 +311,9 @@ class CliSessionTest(unittest.TestCase):
 AGENT = AgentInfo(name="Xun", identifier="agent-1", workdir=Path.cwd())
 
 
-def _ev(payload):
-    return DisplayEvent(name=payload.__class__.__name__, agent=AGENT, span=SpanSnapshot(), payload=payload)
+def _ev(payload, meta=None):
+    return DisplayEvent(name=payload.__class__.__name__, agent=AGENT, span=SpanSnapshot(),
+                        meta=meta or {}, payload=payload)
 
 
 def _render(events, title="Session") -> str:

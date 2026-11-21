@@ -15,7 +15,7 @@ from .agent_lifecycle import T, LifecycleT
 from .display_event import *  # re-export event payloads: ModelMessageEvent, ToolCallEvent, ...
 from .display_event import (  # names used directly in this module
     AgentInfo, ChoiceOutcome, ConfirmEvent, DisplayEvent, DisplayEventType,
-    ErrorEvent, InfoEvent, WarningEvent,
+    ErrorEvent, InfoEvent, JsonType, WarningEvent,
 )
 from .display_store import DisplayEventStoreMixin
 from .tracing import SpanContext
@@ -79,11 +79,12 @@ class AgentDisplayProtocol(Protocol):
 
 class AgentDisplayMixin(AgentDisplayProtocol, Generic[LifecycleT]):
     """Display-facing helpers for Agent: event emission, messages and prompts."""
-    def display_event(self, ev: DisplayEventType) -> None:
+    def display_event(self, ev: DisplayEventType, meta: dict[str, JsonType] | None = None) -> None:
         event = DisplayEvent(
             name=ev.__class__.__name__,
             agent=AgentInfo.from_agent(self),
             span=self.span.snapshot(),
+            meta=meta or {},
             payload=ev,
         )
         event = self.display._filter_event(event)

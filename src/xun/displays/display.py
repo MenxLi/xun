@@ -178,7 +178,7 @@ class Display(DisplayAbstract):
             rich.text.Text(""),
         ]
 
-        if refs := self.__artifact_refs(ev.meta):
+        if refs := self.__artifact_refs(event.meta):
             parts.append(rich.text.Text.from_markup("[dim]artifacts[/dim]"))
             for ref in refs:
                 line = rich.text.Text("  ")

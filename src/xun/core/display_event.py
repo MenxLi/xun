@@ -31,8 +31,6 @@ class ModelMessageEvent(BaseModel):
     """ Total tokens consumed by the conversation so far, as reported by the provider. """
     conclusive: bool = False
     """Whether the message concludes the execution, i.e. it is not followed by tool calls."""
-    meta: dict[str, JsonType] = Field(default_factory=dict)
-    """Extra metadata, such as file references, should be included via ConclusiveToolResult"""
 
 class ToolCallEvent(BaseModel):
     tool_call_id: str
@@ -248,6 +246,10 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
     span: SpanSnapshot
     """ The span context snapshot when the event was emitted, for trace attribution. """
 
+    meta: dict[str, JsonType] = Field(default_factory=dict)
+    """ Display-side annotations on top of the payload (the event itself stays what happened).
+    Key schemas are tool/display conventions, e.g. 'artifacts' from respond_with_artifacts. """
+
     payload: DisplayEventT
     """ The actual event data. """
 
@@ -270,6 +272,7 @@ class DisplayEvent(BaseModel, Generic[DisplayEventT]):
             agent=agent_info,
             timestamp=timestamp,
             span=data.get("span") or SpanSnapshot(),
+            meta=data.get("meta") or {},
             payload=event_cls(**event_data)   # type: ignore
         )
 

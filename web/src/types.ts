@@ -35,6 +35,7 @@ type EventEnvelope<Name extends string, Payload> = {
   agent: AgentInfo
   span: SpanSnapshot
   timestamp: number
+  meta?: Record<string, unknown>
   payload: Payload
 }
 
@@ -67,7 +68,7 @@ export type DisplayEvent =
   | EventEnvelope<'AgentRunningStartEvent', Record<string, never>>
   | EventEnvelope<'AgentRunningEndEvent', Record<string, never>>
   | EventEnvelope<'ModelWorkingEvent', { model_call_id: string; remaining_iterations?: number | null }>
-  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number; conclusive: boolean; meta?: Record<string, unknown> }>
+  | EventEnvelope<'ModelMessageEvent', { model_call_id: string; content: string; reasoning?: string | null; total_tokens: number; conclusive: boolean }>
   | ToolCallDisplayEvent
   | ToolResultDisplayEvent
   | EventEnvelope<'ShowHistoryEvent', { history: Array<{ role: string; content: unknown }> }>
@@ -87,7 +88,7 @@ export type ModelMessageDisplayEvent = Extract<DisplayEvent, { name: 'ModelMessa
 
 // Workspace artifacts (files/folders) attached by a tool to the closing message's meta.
 export function artifactRefsOf(event: ModelMessageDisplayEvent): ArtifactRef[] {
-  const refs = event.payload.meta?.artifacts
+  const refs = event.meta?.artifacts
   if (!Array.isArray(refs)) return []
   return refs.filter((ref): ref is ArtifactRef =>
     typeof ref === 'object' && ref !== null && typeof (ref as ArtifactRef).path === 'string')

@@ -158,7 +158,7 @@ class ConclusiveToolResultTest(unittest.TestCase):
         self.assertTrue(closing.conclusive)
         self.assertEqual(closing.content, "done")
         self.assertEqual(closing.total_tokens, 123)
-        self.assertEqual(closing.meta, {"artifacts": [{"path": "out/report.md", "dir": False, "note": "report"}]})
+        self.assertEqual(received[-1].meta, {"artifacts": [{"path": "out/report.md", "dir": False, "note": "report"}]})
 
         # closing message sits outside the tool-call span so displays render it top-level
         self.assertIsNone(received[-1].span.tool_call)
